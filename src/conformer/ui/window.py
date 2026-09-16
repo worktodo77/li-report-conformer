@@ -432,7 +432,7 @@ class MainWindow(QMainWindow):
         self.tally_bar.setVisible(bool(self.judgment_calls))
         self._update_tally()
 
-    def _build_complete_state(self, output_path, decisions_log):
+    def _build_complete_state(self, output_path, decisions_log, audit=None):
         self._clear_body()
         self.tally_bar.setVisible(False)
 
@@ -472,6 +472,26 @@ class MainWindow(QMainWindow):
         card_layout.addLayout(btn_layout)
 
         self.body_layout.addWidget(card)
+
+        audit = audit or []
+        integ_sec = QLabel('FIGURE INTEGRITY')
+        integ_sec.setObjectName('sectionLabel')
+        self.body_layout.addWidget(integ_sec)
+        if not audit:
+            ok = QLabel('✓  Figure numbering is sequential and section-matched; captions match the Table of Figures.')
+            ok.setStyleSheet('font-size: 12px; color: #2e7d32;')
+            ok.setWordWrap(True)
+            self.body_layout.addWidget(ok)
+        else:
+            warn = QLabel(f'⚠  {len(audit)} issue(s) found — Word will renumber on open, but review these:')
+            warn.setStyleSheet('font-size: 12px; color: #b26a00; font-weight: 600;')
+            warn.setWordWrap(True)
+            self.body_layout.addWidget(warn)
+            for lvl, msg in audit:
+                row = QLabel(f'• [{lvl}] {msg}')
+                row.setStyleSheet('font-size: 11px; color: #66707a;')
+                row.setWordWrap(True)
+                self.body_layout.addWidget(row)
 
         if decisions_log:
             log_sec = QLabel(f'DECISION LOG ({len(decisions_log)})')
@@ -645,7 +665,7 @@ class MainWindow(QMainWindow):
                 'action': action,
             })
 
-        self._build_complete_state(output_path, decisions_log)
+        self._build_complete_state(output_path, decisions_log, getattr(fresh, 'audit', []))
 
     def _save_output(self, fresh):
         src = self.input_path
@@ -673,6 +693,7 @@ class MainWindow(QMainWindow):
             'timestamp': ts,
             'mechanical': fresh.log,
             'judgment': fresh.judgment,
+            'figure_audit': [{'level': lvl, 'message': msg} for lvl, msg in getattr(fresh, 'audit', [])],
         }
         with open(log_path, 'w') as f:
             json.dump(log_data, f, indent=2)

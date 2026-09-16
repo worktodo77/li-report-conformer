@@ -32,22 +32,33 @@ class JudgmentCall:
     original_style: str = ''
 
 # ---------------------------------------------------------------- shared helpers (same as corrupt.py)
+# Empty body-level marker elements (self-closing): bookmarks, comment ranges, tracked move/
+# permission/custom-xml ranges. These sit BETWEEN paragraphs in reviewed drafts.
+BODY_MARKERS = ('bookmarkStart', 'bookmarkEnd', 'commentRangeStart', 'commentRangeEnd',
+                'moveFromRangeStart', 'moveFromRangeEnd', 'moveToRangeStart', 'moveToRangeEnd',
+                'permStart', 'permEnd', 'customXmlInsRangeStart', 'customXmlInsRangeEnd',
+                'customXmlDelRangeStart', 'customXmlDelRangeEnd',
+                'customXmlMoveFromRangeStart', 'customXmlMoveFromRangeEnd',
+                'customXmlMoveToRangeStart', 'customXmlMoveToRangeEnd', 'proofErr')
+
 def split_body(body):
     items = []; i = 0
+    marker_re = re.compile(r'<w:(%s)\b' % '|'.join(BODY_MARKERS))
     while i < len(body):
-        m = re.match(r'<w:(p|tbl|sectPr|bookmarkStart|bookmarkEnd|sdt)\b', body[i:])
+        mk = marker_re.match(body, i)
+        if mk:
+            items.append(body[i:body.index('/>', i) + 2]); i = body.index('/>', i) + 2; continue
+        m = re.match(r'<w:(p|tbl|sectPr|sdt)\b', body[i:])
         if not m: raise ValueError(body[i:i+60])
         tag = m.group(1)
-        if tag in ('bookmarkStart', 'bookmarkEnd'): e = body.index('/>', i) + 2
-        else:
-            depth = 0; j = i; pat = re.compile(r'<(/?)w:%s\b([^>]*?)(/?)>' % tag)
-            while True:
-                mm = pat.search(body, j)
-                if mm.group(1) == '' and mm.group(3) == '': depth += 1
-                elif mm.group(1) == '/': depth -= 1
-                j = mm.end()
-                if depth == 0: break
-            e = j
+        depth = 0; j = i; pat = re.compile(r'<(/?)w:%s\b([^>]*?)(/?)>' % tag)
+        while True:
+            mm = pat.search(body, j)
+            if mm.group(1) == '' and mm.group(3) == '': depth += 1
+            elif mm.group(1) == '/': depth -= 1
+            j = mm.end()
+            if depth == 0: break
+        e = j
         items.append(body[i:e]); i = e
     return items
 RPR_ORDER=['rStyle','rFonts','b','bCs','i','iCs','caps','smallCaps','strike','dstrike','outline','shadow','emboss','imprint','noProof','snapToGrid','vanish','webHidden','color','spacing','w','kern','position','sz','szCs','highlight','u','effect','bdr','shd','fitText','vertAlign','rtl','cs','em','lang','eastAsianLayout','specVanish','oMath','rPrChange']
@@ -100,7 +111,20 @@ def normalize(xml):
     for t,o in (('rPr',RPR_ORDER),('pPr',PPR_ORDER),('tblPr',TBLPR_ORDER),('tcPr',TCPR_ORDER)): xml=reorder(xml,t,o)
     return xml
 def esc(s): return s.replace('&','&amp;').replace('<','&lt;').replace('>','&gt;')
-def text_of(x): return re.sub('<[^>]+>', '', re.sub(r'<w:instrText.*?</w:instrText>', '', x, flags=re.S))
+
+_TYPO_MONTHS = 'January|February|March|April|May|June|July|August|September|October|November|December'
+def typo_text(t):
+    """The house typography transform on a single text token (smart quotes, en dashes, sentence
+    spacing, date/ligature fixes). Shared by the typography pass AND the content-stream gate as the
+    ONLY authorized text change, so any other text edit is caught."""
+    t = re.sub(r'(\d)"', r'\1-inch', t)
+    t = re.sub(r'(^|[\s(\[])"', '\\1\u201c', t); t = t.replace('"', '\u201d')
+    t = re.sub(r"(^|[\s(\[])'", '\\1\u2018', t); t = t.replace("'", '\u2019')
+    t = re.sub(r'(\w)--(\w)', '\\1\u2013\\2', t)
+    t = re.sub(r'([a-z\)])\. ([A-Z])', r'\1.  \2', t)
+    t = re.sub(r'\b0(\d) (%s)' % _TYPO_MONTHS, r'\1 \2', t)
+    return t.replace('\ufb00', 'ff').replace('\ufb01', 'fi').replace('\ufb02', 'fl')
+def text_of(x): return re.sub('<[^>]+>', '', re.sub(r'<w:drawing>.*?</w:drawing>', '', re.sub(r'<w:instrText.*?</w:instrText>', '', x, flags=re.S), flags=re.S))
 
 # ---------------------------------------------------------------- LI style knowledge
 NUMBERED = {'NumberedParagraph','NumberedParagraphL1','NumberedParagraphL2','NumberedParagraphL3','NumberedParagraphL4'}
@@ -132,9 +156,13 @@ class Conformer:
         self.head, body, self.tail = re.search(r'(.*<w:body>)(.*)(</w:body>.*)', self.doc, re.S).groups()
         self.items = split_body(body)
         self.b0 = next(i for i, it in enumerate(self.items) if 'w:val="Heading1"' in it)
-        self.log = []; self.judgment = []
+        self.log = []; self.judgment = []; self.audit = []
         self.pending_judgments = []
         self.decisions = None
+        from conformer import revisions as _rev
+        self.revision_ledger = _rev.Ledger.build(self.parts)
+        self.disposition = None      # None/clean → legacy pipeline; 'preserve' → review-preserving
+        self.exceptions = []         # (pass_name, reason) for passes rolled back in preserve mode
         self._jcall_counter = 0
         self.stname = dict(re.findall(r'<w:style [^>]*w:styleId="([^"]+)"[^>]*><w:name w:val="([^"]+)"', self.styles))
         self.numfmt = {}
@@ -224,14 +252,40 @@ class Conformer:
                 del self.items[self.b0 + i]; self.say('M', i, 'deleted empty numbered/Normal paragraph'); continue
             i += 1
 
+    _REV_RE = re.compile(r'<w:(ins|del|moveFrom|moveTo|pPrChange|rPrChange)\b'
+                         r'|<w:commentRangeStart\b|<w:commentReference\b')
+    def _para_has_revision(self, i):
+        return bool(self._REV_RE.search(self.item(i)))
+
     def classify(self):
-        """Map non-LI paragraph styles to LI styles using numbering, context and text."""
+        """Map non-LI paragraph styles to LI styles using numbering, context and text. Changing a
+        paragraph's style is orthogonal to the tracked content inside it, so this runs on revised
+        paragraphs too; the preservation gate verifies nothing was disturbed."""
         for i in range(self.n()):
             if not self.is_par(i): continue
             st = self.style(i); x = self.item(i); t = self.text(i).strip()
+            if not t and '<w:drawing>' in x and st in (NUMBERED | LISTS):
+                self.set_style(i, 'SpacebehindafteraGraphic')
+                self.say('M', i, f'{st} figure container -> SpacebehindafteraGraphic (image should not be numbered)')
+                continue
             if st in RECOMMENDED: continue
             if '<w:sectPr' in x: continue
-            if not t and '<w:drawing>' not in x: continue
+            if not t and '<w:drawing>' not in x:
+                if st not in self.template_style_ids:
+                    self.set_style(i, 'SpacebehindafteraGraphic')
+                    self.say('M', i, f'empty {st} paragraph -> SpacebehindafteraGraphic (foreign style)')
+                continue
+            has_drawing = '<w:drawing>' in x
+            if has_drawing and not t:
+                new = 'SpacebehindafteraGraphic'; msg = f'{st} figure/graphic container -> Space behind after a Graphic'
+                jc = self._jcall('style', i, msg, new, alternatives=STYLE_ALTERNATIVES)
+                self.say('J', i, msg)
+                decision = self._decision_for(jc)
+                if decision == 'accept':
+                    self.set_style(i, new)
+                elif decision.startswith('change:'):
+                    self.set_style(i, decision.split(':', 1)[1])
+                continue
             np_ = self.numpr(i); fmt = self.numfmt.get(np_[0], {}).get(np_[1]) if np_ else None
             prev = self.prev_par(i); pst = self.style(prev) if prev >= 0 else ''; ptxt = self.text(prev).strip() if prev >= 0 else ''
             runs_i = all('<w:i/>' in r for r in re.findall(r'<w:r\b.*?</w:r>', x, re.S) if '<w:t' in r) and '<w:i/>' in x
@@ -328,8 +382,12 @@ class Conformer:
         while i < self.n():
             x = self.item(i)
             if not self.is_par(i): i += 1; continue
+            # Preserve mode: skip revised paragraphs (stripping their rPr/pPr would drop a mark or
+            # snapshot) and never delete paragraphs here (that is the AUTO structural prune pass).
+            preserve = self.disposition == 'preserve'
+            if preserve and self._para_has_revision(i): i += 1; continue
             st = self.style(i)
-            if '<w:sectPr' not in x and st in NUMBERED and not self.text(i).strip() and '<w:drawing>' not in x:
+            if not preserve and '<w:sectPr' not in x and st in NUMBERED and not self.text(i).strip() and '<w:drawing>' not in x:
                 del self.items[self.b0 + i]; self.say('M', i, 'deleted empty numbered paragraph'); continue
             m = re.search(r'<w:pPr>(.*?)</w:pPr>', x, re.S)
             if m:
@@ -351,9 +409,9 @@ class Conformer:
                     elif tag == 'color' and st == 'TableData': kept.append(cx)
                 return r.replace(rp.group(0), '<w:rPr>' + ''.join(kept) + '</w:rPr>' if kept else '', 1)
             x = re.sub(r'<w:r\b[^>]*>.*?</w:r>', fixrun, x, flags=re.S)
-            # leading tabs / nbsp / empty runs
-            x = re.sub(r'(</w:pPr>)(?:<w:r>(?:<w:rPr>.*?</w:rPr>)?<w:tab/></w:r>)+', r'\1', x, flags=re.S)
-            x = x.replace('\u00a0', ' ')
+            if not preserve:   # these change the content stream (tab tokens / nbsp text)
+                x = re.sub(r'(</w:pPr>)(?:<w:r>(?:<w:rPr>.*?</w:rPr>)?<w:tab/></w:r>)+', r'\1', x, flags=re.S)
+                x = x.replace('\u00a0', ' ')
             self.set(i, x); i += 1
 
     def fix_tables(self):
@@ -397,16 +455,160 @@ class Conformer:
             self.set(i, x)
         # header-row run colour is provided by the table style; ensure explicit white bold header runs are allowed (kept by strip_direct for TableData)
 
+    @staticmethod
+    def _anchor_to_inline(xml):
+        xml = re.sub(r'<wp:anchor[^>]*>', '<wp:inline distT="0" distB="0" distL="0" distR="0">', xml)
+        xml = xml.replace('</wp:anchor>', '</wp:inline>')
+        xml = re.sub(r'<wp:simplePos[^/]*/>', '', xml)
+        xml = re.sub(r'<wp:positionH\b.*?</wp:positionH>', '', xml, flags=re.S)
+        xml = re.sub(r'<wp:positionV\b.*?</wp:positionV>', '', xml, flags=re.S)
+        xml = re.sub(r'<wp:wrap\w+[^/]*/>', '', xml)
+        xml = re.sub(r'<wp14:sizeRel\w+\b.*?</wp14:sizeRel\w+>', '', xml, flags=re.S)
+        return xml
+
+    @staticmethod
+    def _run_bounds(xml, start, end):
+        """Return (open, close) offsets of the <w:r>...</w:r> directly enclosing xml[start:end],
+        or None if start/end are not cleanly inside a single run."""
+        ro = max(xml.rfind('<w:r>', 0, start), xml.rfind('<w:r ', 0, start))
+        if ro < 0 or '</w:r>' in xml[ro:start]:
+            return None
+        rc = xml.find('</w:r>', end)
+        if rc < 0 or re.search(r'<w:r\b', xml[end:rc]):
+            return None
+        return ro, rc + len('</w:r>')
+
+    @staticmethod
+    def _textbox_caption_runs(xml):
+        """If xml holds a floating text box, return the inline caption content (runs, fields,
+        bookmarks) from its first txbxContent paragraph(s), lifted out of the box. Else None."""
+        m = re.search(r'<w:txbxContent>(.*?)</w:txbxContent>', xml, re.S)
+        if not m:
+            return None
+        parts = [pm.group(1) for pm in re.finditer(
+            r'<w:p\b[^>]*>(?:<w:pPr>.*?</w:pPr>)?(.*?)</w:p>', m.group(1), re.S)]
+        return ''.join(parts)
+
     def fix_figures(self):
+        i = 0
+        while i < self.n():
+            x = self.item(i)
+            if '<wp:anchor' not in x:
+                i += 1; continue
+            has_text = bool(text_of(x).strip())
+            if not has_text:
+                x = self._anchor_to_inline(x)
+                self.set(i, x); self.say('M', i, 'floating picture converted to inline')
+            else:
+                drawings = list(re.finditer(r'<w:drawing><wp:anchor[^>]*>.*?</wp:anchor></w:drawing>', x, flags=re.S))
+                pic_drawings = [dm for dm in drawings if '<a:blip' in dm.group(0)]
+                if pic_drawings:
+                    extracted = []
+                    clean = x
+                    first_bounds = self._run_bounds(x, pic_drawings[0].start(), pic_drawings[0].end())
+                    split_pos = first_bounds[0] if first_bounds else pic_drawings[0].start()
+                    for dm in reversed(pic_drawings):
+                        inline_xml = self._anchor_to_inline(dm.group(0))
+                        new_p = f'<w:p><w:pPr><w:pStyle w:val="SpacebehindafteraGraphic"/><w:keepNext/></w:pPr><w:r>{inline_xml}</w:r></w:p>'
+                        extracted.insert(0, new_p)
+                        bounds = self._run_bounds(clean, dm.start(), dm.end())
+                        if bounds:
+                            clean = clean[:bounds[0]] + clean[bounds[1]:]
+                        else:
+                            clean = clean[:dm.start()] + clean[dm.end():]
+                    before = clean[:split_pos]
+                    after = clean[split_pos:]
+                    before_txt = text_of(before).strip()
+                    after_txt = text_of(after).strip()
+                    if before_txt and after_txt and re.match(r'Figure \d', before_txt):
+                        ppr_m = re.match(r'(<w:p\b[^>]*>(?:<w:pPr>.*?</w:pPr>)?)', clean, re.S)
+                        orig_ppr = ppr_m.group(1) if ppr_m else '<w:p>'
+                        cap_runs = before[ppr_m.end():]
+                        tb_runs = self._textbox_caption_runs(cap_runs)
+                        if tb_runs is not None:
+                            cap_runs = tb_runs
+                        else:
+                            cap_runs = re.sub(r'<w:r\b[^>]*><w:drawing>.*?</w:drawing></w:r>', '', cap_runs, flags=re.S)
+                            cap_runs = re.sub(r'<w:r\b[^>]*>\s*</w:r>', '', cap_runs)
+                        caption_p = f'<w:p><w:pPr><w:pStyle w:val="Caption"/><w:jc w:val="center"/></w:pPr>{cap_runs.strip()}</w:p>'
+                        body_runs = re.sub(r'<w:r\b[^>]*>\s*</w:r>', '', after).strip()
+                        if body_runs.endswith('</w:p>'):
+                            body_runs = body_runs[:-6].strip()
+                        body_p = f'{orig_ppr}{body_runs}</w:p>'
+                        self.set(i, body_p)
+                        self.items.insert(self.b0 + i, caption_p)
+                        for ep in reversed(extracted):
+                            self.items.insert(self.b0 + i, ep)
+                        self.say('M', i + len(extracted) + 1, f'split caption + body text and extracted {len(pic_drawings)} floating picture(s)')
+                    else:
+                        self.set(i, clean)
+                        for ep in reversed(extracted):
+                            self.items.insert(self.b0 + i, ep)
+                        self.say('M', i + len(extracted), f'extracted {len(pic_drawings)} floating picture(s) from text paragraph into dedicated paragraphs')
+            i += 1
+        self._normalize_figure_image_style()
+        self._keep_figures_with_captions()
+        self._space_after_figure_captions()
+
+    def _normalize_figure_image_style(self):
+        """Standard figure style: every picture-only paragraph uses 'Space behind/after a
+        Graphic' (centered), so all figure blocks look identical regardless of the source style."""
         for i in range(self.n()):
             x = self.item(i)
-            if '<wp:anchor' not in x: continue
-            x = re.sub(r'<wp:anchor[^>]*>.*?(<wp:extent[^>]*/>)(?:.*?)(<wp:docPr[^>]*/>)(?:.*?)(<a:graphic .*?</a:graphic>)</wp:anchor>', r'<wp:inline distT="0" distB="0" distL="0" distR="0">\1\2\3</wp:inline>', x, flags=re.S)
-            self.set(i, x); self.say('M', i, 'floating picture converted to inline')
+            if not self.is_par(i) or '<a:blip' not in x or self.text(i).strip():
+                continue
+            if self.style(i) != 'SpacebehindafteraGraphic':
+                self.set_style(i, 'SpacebehindafteraGraphic')
+                self.say('M', i, 'figure image paragraph -> SpacebehindafteraGraphic (standard figure style)')
+
+    def _space_after_figure_captions(self):
+        """Template clear-space rule: a figure block (image followed by its caption) is
+        separated from the next figure or block of text by one empty 'Space behind/after a
+        Graphic' paragraph. Insert it where the source lacked it."""
+        SPACER = ('<w:p><w:pPr><w:pStyle w:val="SpacebehindafteraGraphic"/></w:pPr>'
+                  '<w:r><w:t xml:space="preserve"></w:t></w:r></w:p>')
+        i = 0
+        while i < self.n():
+            if (self.is_par(i) and self.style(i) == 'Caption' and '<w:drawing>' not in self.item(i)
+                    and i > 0 and '<w:drawing>' in self.item(i - 1)):
+                nxt = i + 1
+                if nxt < self.n():
+                    nst = self.style(nxt)
+                    nempty = not self.text(nxt).strip() and '<w:drawing>' not in self.item(nxt)
+                    if not (nst == 'SpacebehindafteraGraphic' and nempty):
+                        self.items.insert(self.b0 + nxt, SPACER)
+                        i = nxt + 1
+                        continue
+            i += 1
+
+    def _keep_figures_with_captions(self):
+        for i in range(self.n() - 1):
+            x = self.item(i)
+            if '<w:drawing>' not in x or '<w:keepNext/>' in x:
+                continue
+            st = self.style(i)
+            if st not in ('SpacebehindafteraGraphic', 'Caption'):
+                continue
+            for j in range(i + 1, min(i + 3, self.n())):
+                nst = self.style(j)
+                if nst == 'Caption':
+                    ppr = re.search(r'<w:pPr>(.*?)</w:pPr>', x, re.S)
+                    if ppr:
+                        x = x.replace(ppr.group(0), ppr.group(0).replace('</w:pPr>', '<w:keepNext/></w:pPr>'), 1)
+                    self.set(i, x)
+                    break
+                ntxt = text_of(self.item(j)).strip()
+                if ntxt:
+                    break
 
     def fix_footnotes(self):
+        preserve = self.disposition == 'preserve'
         def fix(m):
             f = m.group(0)
+            # Skip footnotes carrying tracked changes in preserve mode: normalising their rPr/pPr
+            # would drop a revision marker or snapshot (and the children() rebuild crashes on them).
+            if preserve and (self._REV_CONTENT_RE.search(f) or self._CHANGE_RE.search(f)):
+                return f
             f = re.sub(r'<w:p\b[^>]*>(<w:pPr>.*?</w:pPr>)?', '<w:p><w:pPr><w:pStyle w:val="FootnoteText"/></w:pPr>', f, count=1, flags=re.S)
             f = re.sub(r'(<w:footnoteRef/></w:r>)<w:r>(?:<w:rPr>.*?</w:rPr>)?<w:t xml:space="preserve"> +</w:t></w:r>', r'\1<w:r><w:tab/></w:r>', f, flags=re.S)
             if '<w:footnoteRef/></w:r><w:r><w:tab/>' not in f: f = f.replace('<w:footnoteRef/></w:r>', '<w:footnoteRef/></w:r><w:r><w:tab/></w:r>', 1)
@@ -499,21 +701,16 @@ class Conformer:
                         self.set(j, y); names.add(name); self.say('M', j, f'restored missing bookmark {name}'); break
 
     def typography(self):
-        MONTHS = 'January|February|March|April|May|June|July|August|September|October|November|December'
         for i in range(self.n()):
             if not self.is_par(i): continue
             x = self.item(i)
             def fix(m):
-                t = m.group(2)
-                t = re.sub(r'(\d)"', r'\1-inch', t)
-                t = re.sub(r'(^|[\s(\[])"', '\\1\u201c', t); t = t.replace('"', '\u201d')
-                t = re.sub(r"(^|[\s(\[])'", '\\1\u2018', t); t = t.replace("'", '\u2019')
-                t = re.sub(r'(\w)--(\w)', '\\1\u2013\\2', t)
-                t = re.sub(r'([a-z\)])\. ([A-Z])', r'\1.  \2', t)
-                t = re.sub(r'\b0(\d) (%s)' % MONTHS, r'\1 \2', t)
-                t = t.replace('\ufb00', 'ff').replace('\ufb01', 'fi').replace('\ufb02', 'fl')
-                return m.group(1) + t + m.group(3)
-            nx = re.sub(r'(<w:t(?: xml:space="preserve")?>)([^<]*)(</w:t>)', fix, x)
+                return m.group(1) + typo_text(m.group(2)) + m.group(3)
+            # In preserve mode, mask revision content so typography never rewrites the characters of
+            # an inserted/deleted payload (which must stay byte-exact); it still fixes settled text.
+            masked, masks = self._mask_revisions(x) if self.disposition == 'preserve' else (x, {})
+            nx = re.sub(r'(<w:t(?: xml:space="preserve")?>)([^<]*)(</w:t>)', fix, masked)
+            nx = self._unmask(nx, masks)
             if nx != x: self.set(i, nx)
         self.say('M', -1, 'typography normalised (smart quotes, en dashes, sentence spacing, dates, ligatures)')
 
@@ -539,19 +736,325 @@ class Conformer:
         self.styles = self.t_styles; self.num = self.t_num
         self.say('M', -1, 'styles and numbering parts replaced from the template (foreign styles and extra list instances removed)')
 
+    def force_field_update(self):
+        """Arm Word's on-open field refresh ONLY when the figure audit found numbering/TOC drift.
+        A clean report opens with no prompt (nothing needs updating); a drifted one prompts the user
+        to update so the numbering and Table of Figures self-correct. Runs after audit_figures()."""
+        if not self.audit:
+            return
+        if '<w:updateFields' in self.settings:
+            self.settings = re.sub(r'<w:updateFields[^>]*/>', '<w:updateFields w:val="true"/>', self.settings, count=1)
+        else:
+            self.settings = re.sub(r'(<w:settings\b[^>]*>)', r'\1<w:updateFields w:val="true"/>', self.settings, count=1)
+        self.say('M', -1, f'updateFields=true (audit found {len(self.audit)} issue(s)): Word will refresh numbering and the Table of Figures on open')
+
+    # ---------------------------------------------------------------- figure integrity audit
+    @staticmethod
+    def _field_results(x):
+        """Cached results of each field in x, in order (STYLEREF then SEQ for a caption)."""
+        out = []
+        for m in re.finditer(r'<w:fldChar w:fldCharType="separate"/>(.*?)<w:fldChar w:fldCharType="end"/>', x, re.S):
+            out.append(''.join(re.findall(r'<w:t[^>]*>([^<]*)</w:t>', m.group(1))).strip())
+        return out
+
+    @staticmethod
+    def _fig_title(text):
+        m = re.match(r'(?:Figure|Table)\b.*?:\s*(.*)', text.strip(), re.S)
+        return re.sub(r'\s+', ' ', (m.group(1) if m else text)).strip()
+
+    def _toc_figure_entries(self):
+        """Table-of-Figures entries keyed by bookmark anchor -> displayed title (page ref stripped).
+        Scans ALL items because the Table of Figures lives in the front matter, before b0."""
+        entries = {}
+        for it in self.items:
+            if not it.startswith('<w:p') or '<w:pStyle w:val="TableofFigures"' not in it:
+                continue
+            for hm in re.finditer(r'<w:hyperlink w:anchor="([^"]+)"[^>]*>(.*?)</w:hyperlink>', it, re.S):
+                before_tab = re.split(r'<w:tab/>', hm.group(2))[0]
+                txt = ''.join(re.findall(r'<w:t[^>]*>([^<]*)</w:t>', before_tab)).strip()
+                if txt.startswith('Figure'):
+                    entries[hm.group(1)] = self._fig_title(txt)
+        return entries
+
+    def audit_figures(self):
+        """Verify figure numbering is sequential + section-matched and that body captions match the
+        Table of Figures. Findings are advisory (do not alter output); stored on self.audit."""
+        findings = []
+        sec = 0; seqmap = {}; caps = []
+        for i in range(self.n()):
+            if not self.is_par(i):
+                continue
+            st = self.style(i); x = self.item(i)
+            if st == 'Heading1':
+                sec += 1
+            if st != 'Caption':
+                continue
+            t = self.text(i).strip()
+            if not re.match(r'Figure\b', t):
+                continue
+            if 'SEQ Figure' not in x:
+                findings.append(('not-fielded', f'Figure caption is not an auto-number field (will not renumber): {t[:45]!r}'))
+                continue
+            seqmap[sec] = seqmap.get(sec, 0) + 1
+            res = self._field_results(x)
+            caps.append({'sec': sec, 'seq': seqmap[sec],
+                         'csec': res[0] if len(res) > 0 else '', 'cseq': res[1] if len(res) > 1 else '',
+                         'bms': re.findall(r'<w:bookmarkStart w:id="\d+" w:name="([^"]+)"', x),
+                         'title': self._fig_title(t)})
+        for c in caps:
+            want = f"{c['sec']}-{c['seq']}"
+            if c['csec'] and f"{c['csec']}-{c['cseq']}" != want:
+                findings.append(('numbering', f"caption reads {c['csec']}-{c['cseq']} but is figure #{c['seq']} of section {c['sec']} (should be {want}): {c['title'][:35]!r}"))
+        toc = self._toc_figure_entries()
+        if toc:
+            body_anchors = {b for c in caps for b in c['bms']}
+            for c in caps:
+                match = next((b for b in c['bms'] if b in toc), None)
+                if not c['bms'] or match is None:
+                    findings.append(('toc-missing', f"Figure {c['sec']}-{c['seq']} has no Table-of-Figures entry: {c['title'][:35]!r}"))
+                elif re.sub(r'\s+', ' ', toc[match]).strip().lower() != c['title'].lower():
+                    findings.append(('toc-title', f"Figure {c['sec']}-{c['seq']} caption {c['title'][:28]!r} != Table of Figures {toc[match][:28]!r}"))
+            for anchor, title in toc.items():
+                if anchor not in body_anchors:
+                    findings.append(('toc-orphan', f'Table of Figures lists {title[:35]!r} but no matching caption is in the body'))
+        self.audit = findings
+        if findings:
+            for lvl, msg in findings:
+                self.say('J', -1, f'FIGURE AUDIT [{lvl}]: {msg}')
+        else:
+            tof = 'captions match the Table of Figures' if toc else 'no Table of Figures present'
+            self.say('M', -1, f'figure audit OK: {len(caps)} figures numbered sequentially per section; {tof}')
+        return findings
+
     def save(self, path):
-        doc = normalize(self.head + ''.join(self.items) + self.tail)
-        self.parts['word/document.xml'] = doc.encode('utf8'); self.parts['word/styles.xml'] = self.styles.encode('utf8')
-        self.parts['word/numbering.xml'] = self.num.encode('utf8'); self.parts['word/footnotes.xml'] = normalize(self.fn).encode('utf8')
-        self.parts['word/settings.xml'] = self.settings.encode('utf8')
+        parts = self._output_parts()
         if os.path.exists(path): os.remove(path)
         with zipfile.ZipFile(path, 'w', zipfile.ZIP_DEFLATED) as z:
-            for n_, b in self.parts.items(): z.writestr(n_, b)
+            for n_, b in parts.items(): z.writestr(n_, b)
 
     def _run_passes(self):
+        if self.revision_ledger.has_content_revisions() and self.disposition in (None, 'preserve'):
+            self.disposition = 'preserve'
+            self._run_passes_preserving()
+        else:
+            self._run_passes_clean()
+
+    def _run_passes_clean(self):
         self.revert_tracked_formatting(); self.unwrap_and_prune(); self.classify(); self.merge_pdf_lines()
         self.fix_headings(); self.fix_levels(); self.strip_direct(); self.fix_tables(); self.fix_figures()
         self.fix_footnotes(); self.rebuild_fields(); self.typography(); self.fix_sections(); self.replace_parts()
+        self.audit_figures(); self.force_field_update()
+
+    # ---------------------------------------------------------------- review-preserving pipeline
+    def _snapshot(self):
+        return (list(self.items), self.styles, self.num, self.fn, self.settings,
+                self.head, self.tail, self.b0)
+
+    def _restore(self, s):
+        self.items, self.styles, self.num, self.fn, self.settings, self.head, self.tail, self.b0 = \
+            list(s[0]), s[1], s[2], s[3], s[4], s[5], s[6], s[7]
+
+    @staticmethod
+    def _summarize_disc(d):
+        bits = []
+        for k in ('lost', 'payload_altered', 'placement_altered', 'metadata_altered',
+                  'lost_comments', 'comment_body_altered', 'comment_anchor_altered',
+                  'binary_altered', 'relationship_altered', 'introduced'):
+            n = len(d.get(k, []))
+            if n: bits.append(f'{k}={n}')
+        return 'would disturb ' + ', '.join(bits) if bits else 'unknown discrepancy'
+
+    def _run_passes_preserving(self):
+        """Each pass runs in a transaction: snapshot the package, apply, verify preservation, and
+        roll the WHOLE pass back if it would disturb any tracked change / comment / dependency
+        (GPT-6: whole-pass rollback, not per-paragraph). Conservative style/level changes skip
+        revised paragraphs and survive; conflicting passes that touch a revision are rolled back
+        and recorded as exceptions. Correctness is guaranteed by the gate, not by pass ordering."""
+        self.exceptions = []
+        from conformer import revisions as _rev
+        typo_ok = lambda old, new: typo_text(old) == new
+        # (pass, gate): 'stream' = strict content stream (formatting only); 'text' = typography's
+        # authorized text edit; 'struct' = AUTO structural change (paragraph structure may change,
+        # every text token / object / revision-comment-bookmark boundary must still line up).
+        # Deferred (need per-instance JudgmentCalls or authorized text edits): unwrap wrapper tables,
+        # figure extraction / caption split, drop empty columns, cross-ref rebuild, PDF-line merge,
+        # tracked-formatting resolution.
+        ordered = [
+            (self._repair_styles, 'stream'), (self._conform_tables_preserving, 'stream'),
+            (self.classify, 'stream'), (self.fix_levels, 'stream'),
+            (self._caps_headings_preserving, 'stream'), (self.strip_direct, 'stream'),
+            (self.fix_footnotes, 'stream'), (self.fix_sections, 'stream'),
+            (self.typography, 'text'),
+            (self._prune_preserving, 'struct'),
+        ]
+        prev_stream = _rev.content_stream(self._output_parts())
+        for fn, gate in ordered:
+            snap = self._snapshot()
+            try:
+                fn()
+            except Exception as e:
+                self._restore(snap)
+                self.exceptions.append((fn.__name__, f'pass error: {str(e)[:100]}'))
+                continue
+            clean, disc = self.verify_preservation()
+            after_stream = _rev.content_stream(self._output_parts())
+            sviol = _rev.stream_violations(prev_stream, after_stream,
+                                           text_ok=typo_ok if gate == 'text' else None,
+                                           ignore_structure=(gate == 'struct'))
+            if not clean or sviol:
+                self._restore(snap)
+                reason = self._summarize_disc(disc) if not clean else f'unauthorized content change ({len(sviol)})'
+                self.exceptions.append((fn.__name__, reason))
+                continue
+            prev_stream = after_stream
+        self.audit_figures()
+
+    def _prune_preserving(self):
+        """AUTO structural: remove manual page-break paragraphs (#4) and empty numbered/Normal
+        paragraphs (#2). Skips any paragraph carrying a tracked change so review content is untouched;
+        the structure-tolerant gate verifies no text/boundary was lost."""
+        i = 0
+        while i < self.n():
+            x = self.item(i)
+            if self.is_par(i) and not self._para_has_revision(i) and '<w:sectPr' not in x:
+                if re.fullmatch(r'<w:p\b[^>]*>(<w:pPr>.*?</w:pPr>)?<w:r>(<w:rPr>.*?</w:rPr>)?'
+                                r'<w:br w:type="page"/></w:r></w:p>', x, re.S):
+                    del self.items[self.b0 + i]; self.say('M', i, 'removed manual page break'); continue
+                if (self.style(i) in (NUMBERED | {'Normal', 'ListParagraph'})
+                        and not self.text(i).strip() and '<w:drawing>' not in x):
+                    del self.items[self.b0 + i]; self.say('M', i, 'deleted empty paragraph'); continue
+            i += 1
+
+    def _caps_headings_preserving(self):
+        """#9 as FORMATTING: display Heading1/2 uppercase via <w:caps/> on their runs, leaving the
+        letters exactly as typed (content-safe)."""
+        for i in range(self.n()):
+            if not self.is_par(i) or self.style(i) not in ('Heading1', 'Heading2'):
+                continue
+            x = self.item(i)
+            if '<w:caps/>' in x:
+                continue
+            def add_caps(rm):
+                r = rm.group(0)
+                if '<w:t' not in r:
+                    return r
+                if '<w:rPr>' in r:
+                    return r.replace('<w:rPr>', '<w:rPr><w:caps/>', 1)
+                return re.sub(r'(<w:r\b[^>]*>)', lambda m: m.group(1) + '<w:rPr><w:caps/></w:rPr>', r, count=1)
+            nx = re.sub(r'<w:r\b[^>]*>.*?</w:r>', add_caps, x, flags=re.S)
+            if nx != x:
+                self.set(i, nx)
+
+    def _repair_styles(self):
+        """Fix corrupt LI style definitions (Claire's 'List Bullet dysfunctional' / 'table style
+        corrupted'): overwrite the document's definition of any style the template defines with the
+        template's correct definition, and add template styles the document lacks. Keep doc-only
+        styles so revised paragraphs still resolve, and never touch docDefaults/theme. This is
+        styles.xml only — orthogonal to every tracked change in the body."""
+        tmpl = {m.group(1): m.group(0) for m in
+                re.finditer(r'<w:style\b[^>]*w:styleId="([^"]+)".*?</w:style>', self.t_styles, re.S)}
+        fixed = [0]
+        def repl(m):
+            sid = re.search(r'w:styleId="([^"]+)"', m.group(0)).group(1)
+            if sid in tmpl and tmpl[sid] != m.group(0):
+                fixed[0] += 1; return tmpl[sid]
+            return m.group(0)
+        self.styles = re.sub(r'<w:style\b[^>]*w:styleId="([^"]+)".*?</w:style>', repl,
+                             self.styles, flags=re.S)
+        existing = set(re.findall(r'<w:style [^>]*w:styleId="([^"]+)"', self.styles))
+        add = [d for sid, d in tmpl.items() if sid not in existing]
+        if add:
+            self.styles = self.styles.replace('</w:styles>', ''.join(add) + '</w:styles>', 1)
+        # add numbering definitions the doc lacks so repaired list styles resolve
+        have_abs = set(re.findall(r'<w:abstractNum w:abstractNumId="(\d+)"', self.num))
+        have_num = set(re.findall(r'<w:num w:numId="(\d+)"', self.num))
+        addnum = [m.group(0) for m in re.finditer(r'<w:abstractNum w:abstractNumId="(\d+)".*?</w:abstractNum>',
+                                                  self.t_num, re.S) if m.group(1) not in have_abs]
+        addnum += [m.group(0) for m in re.finditer(r'<w:num w:numId="(\d+)"[^>]*>.*?</w:num>',
+                                                   self.t_num, re.S) if m.group(1) not in have_num]
+        if addnum:
+            self.num = self.num.replace('</w:numbering>', ''.join(addnum) + '</w:numbering>', 1)
+        self.say('M', -1, f'preserve mode: repaired {fixed[0]} corrupt style definitions + added '
+                          f'{len(add)} missing styles / {len(addnum)} numbering defs (docDefaults untouched)')
+
+    _CHANGE_RE = re.compile(
+        r'<w:(tblPrChange|trPrChange|tcPrChange|pPrChange|rPrChange|sectPrChange|tblPrExChange'
+        r'|tblGridChange|numberingChange)\b[^>]*>.*?</w:\1>', re.S)
+    # wrapping (non-self-closing) content revisions — the inserted/deleted payload to protect
+    _REV_CONTENT_RE = re.compile(r'<w:(ins|del|moveFrom|moveTo)\b[^>]*?(?<!/)>.*?</w:\1>', re.S)
+
+    @classmethod
+    def _mask_revisions(cls, xml, content=True):
+        """Replace tracked-formatting snapshot blocks (always) and, when content=True, the
+        inserted/deleted CONTENT of wrapping revisions, with sentinels — so a regex pass edits only
+        non-revision material and can never touch a reject target or a tracked payload. Returns
+        (masked_xml, restore_map)."""
+        masks = {}
+        def sub(m):
+            tok = f'\x00R{len(masks)}\x00'; masks[tok] = m.group(0); return tok
+        xml = cls._CHANGE_RE.sub(sub, xml)
+        if content:
+            xml = cls._REV_CONTENT_RE.sub(sub, xml)
+        return xml, masks
+
+    # kept for callers that only need snapshot protection
+    @classmethod
+    def _mask_changes(cls, xml):
+        return cls._mask_revisions(xml, content=False)
+
+    @staticmethod
+    def _unmask(xml, masks):
+        for tok in reversed(list(masks)):   # reverse so nested sentinels restore correctly
+            xml = xml.replace(tok, masks[tok])
+        return xml
+
+    def _conform_tables_preserving(self):
+        """Make every table USE the (now-repaired) LI table style so its built-in settings apply
+        (Claire's 'tables not using the table style' / 'settings not used'). Table-level properties
+        only, and tracked-formatting snapshots are masked out first, so no cell content and no reject
+        target is touched."""
+        cnt = 0
+        for i in range(self.n()):
+            x = self.item(i)
+            if not x.startswith('<w:tbl'):
+                continue
+            masked, masks = self._mask_revisions(x)   # protect snapshots AND cell revision content
+            nx = re.sub(r'<w:tblBorders>.*?</w:tblBorders>', '', masked, flags=re.S)
+            if '<w:tblStyle' in nx:
+                nx = re.sub(r'<w:tblStyle w:val="[^"]+"/>', '<w:tblStyle w:val="LITable"/>', nx, count=1)
+            else:
+                nx = nx.replace('<w:tblPr>', '<w:tblPr><w:tblStyle w:val="LITable"/>', 1)
+            nx = re.sub(r'<w:tblLook [^>]*/>',
+                        '<w:tblLook w:val="04A0" w:firstRow="1" w:lastRow="0" w:firstColumn="0" '
+                        'w:lastColumn="0" w:noHBand="0" w:noVBand="1"/>', nx)
+            # cell paragraphs -> TableData (keep alignment); skip any paragraph holding a masked
+            # revision (sentinel) so revised cells are left exactly as authored.
+            def cell_para(pm):
+                p = pm.group(0)
+                if '\x00' in p:                       # masked content revision -> leave the cell
+                    return p
+                # set ONLY pStyle=TableData; keep the rest of pPr (jc, and any paragraph-mark
+                # revision markers in the mark's rPr) so nothing tracked is dropped.
+                if '<w:pStyle' in p:
+                    return re.sub(r'<w:pStyle w:val="[^"]+"/>', '<w:pStyle w:val="TableData"/>', p, count=1)
+                if '<w:pPr>' in p:
+                    return p.replace('<w:pPr>', '<w:pPr><w:pStyle w:val="TableData"/>', 1)
+                return re.sub(r'(<w:p\b[^>]*>)',
+                              lambda mm: mm.group(1) + '<w:pPr><w:pStyle w:val="TableData"/></w:pPr>',
+                              p, count=1)
+            nx = re.sub(r'<w:p\b.*?</w:p>', cell_para, nx, flags=re.S)
+            # first row repeats as a header
+            fr = re.search(r'<w:tr\b.*?</w:tr>', nx, re.S)
+            if fr and '<w:tblHeader' not in fr.group(0):
+                hdr = (fr.group(0).replace('<w:tr>', '<w:tr><w:trPr><w:cantSplit/><w:tblHeader/></w:trPr>', 1)
+                       if '<w:trPr>' not in fr.group(0)
+                       else fr.group(0).replace('<w:trPr>', '<w:trPr><w:tblHeader/>', 1))
+                nx = nx.replace(fr.group(0), hdr, 1)
+            nx = self._unmask(nx, masks)
+            if nx != x:
+                self.set(i, nx); cnt += 1
+        if cnt:
+            self.say('M', -1, f'preserve mode: {cnt} tables set to the LI table style')
 
     def run(self):
         self._run_passes()
@@ -567,26 +1070,54 @@ class Conformer:
         fresh._run_passes()
         return fresh
 
-    def validate_output(self):
-        doc = normalize(self.head + ''.join(self.items) + self.tail)
+    def _output_parts(self):
+        """The package parts as they would be written by save(), for validation/verification.
+        In preserve mode we DO NOT run normalize(): reordering rPr/pPr children is benign for a
+        clean doc but rewrites the canonical form of revision snapshots, so untouched revision
+        content must stay byte-identical for the preservation gate to mean anything."""
+        body = self.head + ''.join(self.items) + self.tail
+        preserve = self.disposition == 'preserve'
+        doc = body if preserve else normalize(body)
+        fn = self.fn if preserve else normalize(self.fn)
         parts = dict(self.parts)
         parts['word/document.xml'] = doc.encode('utf8')
         parts['word/styles.xml'] = self.styles.encode('utf8')
         parts['word/numbering.xml'] = self.num.encode('utf8')
-        parts['word/footnotes.xml'] = normalize(self.fn).encode('utf8')
+        parts['word/footnotes.xml'] = fn.encode('utf8')
         parts['word/settings.xml'] = self.settings.encode('utf8')
+        return parts
+
+    def verify_preservation(self, allow_introduced=False):
+        """Rebuild the revision ledger from the conformed output and diff it against the original.
+        Returns (clean: bool, discrepancies: dict). A preservation gate for review-preserving
+        conformance: refuse delivery when a tracked change was silently lost, altered, or
+        re-attributed. NOTE: for ACCEPT/REJECT dispositions revisions are intentionally resolved,
+        so this gate applies to preservation modes, not to accept/reject projections."""
+        from conformer import revisions as _rev
+        after = _rev.Ledger.build(self._output_parts())
+        d = _rev.diff(self.revision_ledger, after)
+        return _rev.is_clean(d, allow_introduced=allow_introduced), d
+
+    def validate_output(self):
+        parts = self._output_parts()
         import io
         buf = io.BytesIO()
         with zipfile.ZipFile(buf, 'w', zipfile.ZIP_DEFLATED) as z:
             for n_, b in parts.items(): z.writestr(n_, b)
         buf.seek(0)
+        import xml.etree.ElementTree as ET
         try:
             with zipfile.ZipFile(buf) as z:
-                for name in z.namelist():
-                    if name.endswith('.xml'):
-                        data = z.read(name).decode('utf8')
-                        if '<w:' in data and not re.search(r'<w:\w+', data):
-                            return False, f'Malformed XML in {name}'
+                names = z.namelist()
+                for required in ('[Content_Types].xml', 'word/document.xml'):
+                    if required not in names:
+                        return False, f'Missing required part {required}'
+                for name in names:
+                    if name.endswith('.xml') or name.endswith('.rels'):
+                        try:
+                            ET.fromstring(z.read(name))
+                        except ET.ParseError as e:
+                            return False, f'Malformed XML in {name}: {e}'
             return True, 'Output validated'
         except Exception as e:
             return False, str(e)

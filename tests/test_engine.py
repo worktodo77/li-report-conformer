@@ -1,5 +1,5 @@
 """Engine tests: original flow + two-pass analyze/apply."""
-import os, tempfile, zipfile
+import os, re, tempfile, zipfile
 
 from conformer.engine import Conformer, JudgmentCall
 from conformer.scorer import score
@@ -96,6 +96,50 @@ def test_change_decision_applies_alternative_style():
         fresh.save(out)
         valid, msg = fresh.validate_output()
         assert valid, f"Change-decision output should be valid: {msg}"
+
+
+def test_updateFields_armed_only_when_audit_finds_drift():
+    c = Conformer(TEMPLATE, KITCHEN_SINK)
+    c.run()
+    # KITCHEN_SINK ships a stale placeholder Table of Figures, so the audit finds drift ...
+    assert c.audit, 'precondition: KITCHEN_SINK should trip the figure audit'
+    assert '<w:updateFields w:val="true"/>' in c.settings, (
+        'a drifted report must arm Word\'s on-open field refresh'
+    )
+
+
+def test_updateFields_not_armed_when_audit_clean():
+    c = Conformer(TEMPLATE, KITCHEN_SINK)
+    c.run()
+    c.settings = re.sub(r'<w:updateFields[^>]*/>', '', c.settings)
+    c.audit = []
+    c.force_field_update()
+    assert '<w:updateFields' not in c.settings, (
+        'a clean report must NOT arm the field-refresh prompt (no needless Word dialog)'
+    )
+
+
+def test_figure_audit_detects_numbering_drift():
+    c = Conformer(TEMPLATE, KITCHEN_SINK)
+    c.run()
+    target = next(i for i in range(c.n()) if c.style(i) == 'Caption' and 'SEQ Figure' in c.item(i))
+    head, sep, tail = c.item(target).partition('SEQ Figure')
+    tail = re.sub(r'(<w:t[^>]*>)\d(</w:t>)', r'\g<1>9\g<2>', tail, count=1)  # cached SEQ result -> wrong digit
+    c.set(target, head + sep + tail)
+    findings = c.audit_figures()
+    assert any(lvl == 'numbering' for lvl, _ in findings), (
+        f'audit should flag numbering drift after corrupting a caption number, got {findings}'
+    )
+
+
+def test_figure_audit_flags_stale_table_of_figures():
+    # KITCHEN_SINK ships with placeholder TOC entries ("Xxxxx Xxxx") that do not match the real
+    # captions — exactly the body<->Table-of-Figures drift the audit must surface.
+    c = Conformer(TEMPLATE, KITCHEN_SINK)
+    c.run()
+    assert any(lvl.startswith('toc') for lvl, _ in c.audit), (
+        f'audit should flag caption/Table-of-Figures mismatch, got {c.audit}'
+    )
 
 
 def test_corrupt_input_raises():
