@@ -1,27 +1,37 @@
-"""Generate synthetic fictitious forensic expert reports at three quality tiers, exercising every
-conformance class the LI conformer checks — in both non-tracked and tracked-change form — plus full
-front matter (TOC, lists of figures/tables/exhibits/attachments), images, tables, footnotes, and a
-landscape section. Each report is emitted with a ground-truth manifest of every injected defect,
-which is the expected-results baseline for the testing plan.
+"""Generate synthetic fictitious forensic expert reports at four defect-density tiers (a clean
+control plus low/medium/high), exercising every conformance class the LI conformer checks — in both
+non-tracked and tracked-change form — with full front matter, images, tables, footnotes, comments,
+tracked changes by five authors, and a landscape section.
 
-    python synthetic/generate.py            # builds all three tiers into synthetic/out/
+Ground truth is authoritative and per-instance:
+  * every defect carries a stable locator bookmark, a revision_relation (unrelated / inside_revision
+    / adjacent_to_revision) and an explicit expected_disposition (what the engine should do to THIS
+    instance — including 'hold' for instances the preservation gate must not touch);
+  * every tracked change is recorded as an actual occurrence (kind, id, author, date, payload,
+    locator) — counts are DERIVED from that list, never hand-incremented;
+  * generation FAILS LOUD if a declared asset (image/comment) cannot be created.
 
-Nothing here is real: all names, projects, figures, and quotations are invented test data.
+    python synthetic/generate.py                 # builds clean + low + medium + high into out/
+
+Hard, difficult tracked constructs (paragraph-mark deletion, moves, cell revisions, corrupted style
+definitions, comment-inside-removed) live in the companion adversarial suite (adversarial.py), not
+forced into the long reports. Nothing here is real: all names/projects/figures/quotes are invented.
 """
 import os
 import sys
 import json
 import random
+import hashlib
 import zipfile
 import shutil
 
 import docx
 from docx import Document
-from docx.shared import Pt, Inches, RGBColor
-from docx.enum.text import WD_ALIGN_PARAGRAPH
-from docx.enum.section import WD_ORIENT
+from docx.shared import Inches
+from docx.enum.section import WD_ORIENT, WD_SECTION
+from docx.enum.text import WD_BREAK
 from docx.oxml.ns import qn, nsdecls
-from docx.oxml import parse_xml, OxmlElement
+from docx.oxml import parse_xml
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
@@ -31,17 +41,18 @@ import content as C
 
 ASSETS = os.path.join(HERE, 'assets')
 OUT = os.path.join(HERE, 'out')
+GENERATOR_VERSION = '2.0'
 
-# quality tiers: fraction of eligible bulk elements left CLEAN, plus damage knobs
+# defect-density tiers with FIXED seeds (reproducible regardless of PYTHONHASHSEED).
 TIERS = {
-    '90': dict(quality=0.90, extra_defects=0.06, spelling=0.01, grammar=0.004, tracked_density=0.9),
-    '70': dict(quality=0.70, extra_defects=0.28, spelling=0.05, grammar=0.02, tracked_density=1.0),
-    '25': dict(quality=0.25, extra_defects=0.78, spelling=0.16, grammar=0.08, tracked_density=1.2),
+    'clean':  dict(seed=101, bulk_defect=0.0,  spelling=0.0,  grammar=0.0),
+    'low':    dict(seed=202, bulk_defect=0.03, spelling=0.004, grammar=0.002),
+    'medium': dict(seed=303, bulk_defect=0.17, spelling=0.03,  grammar=0.015),
+    'high':   dict(seed=404, bulk_defect=0.72, spelling=0.14,  grammar=0.06),
 }
+# informal labels; the manifest's computed_quality (element pass-rate) is the authoritative figure.
+TIER_QUALITY = {'clean': '100% control', 'low': '~90%', 'medium': '~70%', 'high': '~25%'}
 
-DATE = "2026-04-1{d}T09:{mm}:00Z"
-
-# spelling/grammar corruptions (applied to plain, non-tracked, non-defect text only, per tier rate)
 MISSPELL = {'the': 'teh', 'analysis': 'analsyis', 'schedule': 'schedual', 'delay': 'dealy',
             'critical': 'critcal', 'completion': 'completition', 'contractor': 'contracter',
             'evidence': 'evidance', 'programme': 'programe', 'extension': 'extention'}
@@ -49,25 +60,44 @@ GRAMMAR = [(' is ', ' are '), (' was ', ' were '), (' has ', ' have '), (' its '
            (' affect ', ' effect '), (' their ', ' there ')]
 
 
+def _sha(path):
+    try:
+        with open(path, 'rb') as fh:
+            return hashlib.sha256(fh.read()).hexdigest()[:16]
+    except OSError:
+        return None
+
+
+def _shatext(t):
+    return hashlib.sha256(t.encode('utf8')).hexdigest()[:12]
+
+
 class Report:
     def __init__(self, tier):
         self.tier = tier
         self.cfg = TIERS[tier]
-        self.rng = random.Random(hash(tier) & 0xffff)
+        self.rng = random.Random(self.cfg['seed'])
         self.doc = Document(lib.li_base_docx())
         self.ids = lib.Ids()
         self.bid = 5000
         self.fnid = 1
-        self.footnotes = []              # (id, text, defect_style, tracked)
+        self.date_n = 0
+        self.footnotes = []              # (id, text, defect_style, author-or-None-for-tracked)
         self.section_no = 0
-        self.fig_seq = {}                # section -> count
+        self.fig_seq = {}
         self.tab_seq = {}
-        self.fig_bookmarks = []          # (name, caption_title, section, seq)  actual
-        self.tof_entries = []            # (anchor_name, displayed_title)  what List of Figures shows
-        self.manifest = {'tier': tier, 'quality_target': self.cfg['quality'], 'defects': [],
-                         'tracked': {'ins': 0, 'del': 0, 'ppr_change': 0, 'rpr_change': 0,
-                                     'para_inserted': 0}, 'comments': 0,
-                         'authors': sorted({a for a, _ in C.AUTHORS}), 'counts': {}}
+        self.tof_entries = []            # (anchor, displayed_title, real_bool)
+        self.lot_entries = []
+        self.lof_heading = None
+        self.lot_heading = None
+        self.defects = []
+        self.revisions = []
+        self.comments = []
+        self.elements = 0                # conformance-eligible elements (quality denominator)
+        self._cur_elem = 0
+        self._bad_elems = set()
+        self.spelling = 0
+        self.grammar = 0
         self._clear_body()
 
     # -- infra --------------------------------------------------------------
@@ -86,132 +116,263 @@ class Report:
         return a[0], a[1]
 
     def date(self):
-        return DATE.format(d=self.rng.randint(0, 9), mm=self.rng.randint(10, 59))
+        self.date_n += 1
+        return "2026-04-%02dT%02d:%02d:00Z" % (1 + self.date_n % 27, 8 + self.date_n % 10,
+                                               self.date_n % 60)
 
-    def record(self, cls, tracked, note, expect):
-        self.manifest['defects'].append(
-            {'id': f'D{len(self.manifest["defects"])+1:03d}', 'cls': cls,
-             'tracked': bool(tracked), 'section': self.section_no, 'note': note, 'expect': expect})
-        self.manifest['counts'][cls] = self.manifest['counts'].get(cls, 0) + 1
+    def loc(self, p, tag):
+        name = '_LOC_%s_%04d' % (tag, len(self.defects) + len(self.revisions) + 1)
+        lib.add_locator(p, name, self.new_bookmark())
+        return name
+
+    def _elem(self):
+        self.elements += 1
+        self._cur_elem = self.elements
+        return self._cur_elem
+
+    def record(self, cls, locator, relation, disposition, note='', data=None):
+        self._bad_elems.add(self._cur_elem)
+        self.defects.append({'id': 'D%03d' % (len(self.defects) + 1), 'cls': cls,
+                             'locator': locator, 'revision_relation': relation,
+                             'expected_disposition': disposition, 'note': note, 'data': data or {}})
+
+    def add_rev(self, rec, locator=None, part='document', relation='inside_revision'):
+        rec = dict(rec); rec['locator'] = locator; rec['part'] = part
+        self.revisions.append(rec)
+        return rec
+
+    # -- tracked-change wrappers (single source of truth) -------------------
+    def ins_run(self, run, p, locator=None):
+        a, _ = self.author()
+        rec = lib.wrap_run_ins(run, self.ids, a, self.date())
+        return self.add_rev(rec, locator)
+
+    def del_run(self, run, p, locator=None):
+        a, _ = self.author()
+        rec = lib.wrap_run_del(run, self.ids, a, self.date())
+        return self.add_rev(rec, locator)
+
+    def comment_on(self, p, run, locator=None):
+        a, ini = self.author()
+        text = self.rng.choice(["Please confirm the source for this figure.",
+                                "Consider tightening this opinion.",
+                                "Cross-check against the window analysis.",
+                                "Is this the correct data date?"])
+        lib.add_comment(self.doc, run, text, a, ini)
+        self.comments.append({'author': a, 'anchor_locator': locator, 'text_sha': _shatext(text)})
 
     # -- text helpers -------------------------------------------------------
     def fill(self, tmpl):
         return tmpl.format(a=self.rng.choice(C.ACTIVITIES), n=self.rng.randint(12, 240),
-                           m=f"{self.rng.choice(['March','April','May','June'])} update")
+                           m="%s update" % self.rng.choice(['March', 'April', 'May', 'June']))
 
     def corrupt_text(self, t):
-        """Inject tier-rate spelling/grammar errors into ordinary prose; records nothing (these are
-        quality errors the conformer does not claim to fix — they are measured separately)."""
         words = t.split(' ')
         for i, w in enumerate(words):
             lw = w.lower().strip('.,;:')
             if lw in MISSPELL and self.rng.random() < self.cfg['spelling']:
-                words[i] = w.replace(lw, MISSPELL[lw]); self.manifest.setdefault('spelling', 0)
-                self.manifest['spelling'] = self.manifest.get('spelling', 0) + 1
+                words[i] = w.replace(lw, MISSPELL[lw]); self.spelling += 1
         t = ' '.join(words)
         for a, b in GRAMMAR:
             if a in t and self.rng.random() < self.cfg['grammar']:
-                t = t.replace(a, b, 1); self.manifest['grammar'] = self.manifest.get('grammar', 0) + 1
+                t = t.replace(a, b, 1); self.grammar += 1
         return t
 
-    def roll_defect(self):
-        return self.rng.random() < self.cfg['extra_defects']
+    def bulk(self):
+        return self.rng.random() < self.cfg['bulk_defect']
 
-    # -- block emitters -----------------------------------------------------
+    # -- headings / paragraphs ---------------------------------------------
     def heading(self, text, level=1):
         if level == 1:
             self.section_no += 1
-        p = self.doc.add_paragraph(text, style=f'Heading{level}')
-        return p
+        return self.doc.add_paragraph(text, style='Heading%d' % level)
 
-    def para(self, text, style='NumberedParagraph', clean_style=None, allow_defect=True):
-        """A body paragraph. May be emitted with a foreign style (classify defect) and/or direct
-        formatting (strip_direct defect) depending on tier."""
+    def para(self, text, style='NumberedParagraph'):
+        """A body paragraph; bulk tier may make it a foreign-style and/or direct-formatted defect.
+        Returns (paragraph, recorded_a_defect) so the caller never adds a stray tracked change to a
+        paragraph already recorded as a non-tracked defect."""
+        self._elem()
         text = self.corrupt_text(text)
-        defect_style = allow_defect and self.roll_defect()
-        if defect_style:
+        p = self.doc.add_paragraph(text, style=style)
+        defect = False
+        if self.tier != 'clean' and self.bulk():
             lib.ensure_foreign_style(self.doc, 'FirmBody', 'Firm Body')
-            p = self.doc.add_paragraph(text, style='Normal')
-            self.record('classify_body', False, text[:40], 'map foreign/Normal -> NumberedParagraph')
-        else:
-            p = self.doc.add_paragraph(text, style=style)
-        if allow_defect and self.roll_defect():
-            lib.add_direct_rpr(p.runs[0] if p.runs else p.add_run(''),
-                               '<w:rFonts w:ascii="Calibri"/><w:sz w:val="20"/><w:color w:val="FF0000"/>')
-            self.record('strip_direct', False, text[:40], 'remove direct run formatting')
+            p.style = self.doc.styles['Normal']
+            self.record('classify_body', self.loc(p, 'cb'), 'unrelated', 'restyle_to_LI', text[:40])
+            defect = True
+        if self.tier != 'clean' and self.bulk() and p.runs:
+            lib.add_direct_rpr(p.runs[0], '<w:rFonts w:ascii="Calibri"/><w:sz w:val="20"/>'
+                                          '<w:color w:val="FF0000"/>')
+            self.record('strip_direct', self.loc(p, 'sd'), 'unrelated', 'strip_direct_formatting',
+                        text[:40], data={'gone_marker': 'FF0000'})
+            defect = True
+        return p, defect
+
+    def maybe_track_clean(self, p):
+        """Randomly mark a CLEAN paragraph (no recorded defect) with a tracked insertion/comment.
+        Run references are captured up front: ins_run re-parents a run into <w:ins>, after which
+        python-docx's p.runs no longer lists it."""
+        if self.tier == 'clean':
+            return
+        runs = list(p.runs)
+        if not runs:
+            return
+        if self.rng.random() < 0.05:
+            self.comment_on(p, runs[0], self.loc(p, 'cm'))
+        if self.rng.random() < 0.12:
+            self.ins_run(runs[-1], p, self.loc(p, 'ins'))
+
+    # ================================================================ per-class emitters
+    # Each returns after recording the defect (and any tracked change) with a stable locator and an
+    # explicit expected_disposition. The tracked variant of a class specifies what SHOULD happen to
+    # that instance — often 'hold' (the preservation gate must leave it untouched), which is a
+    # correctness property, not a failure.
+
+    def _new_style_para(self, text, foreign):
+        p = self.doc.add_paragraph(text, style='Normal' if foreign else 'NumberedParagraph')
         return p
 
-    def maybe_track(self, p, force=False):
-        """With tier probability, mark the paragraph's last run a tracked insertion by an author."""
-        if not force and self.rng.random() > 0.12 * self.cfg['tracked_density']:
-            return
-        if not p.runs:
-            return
-        a, _ = self.author()
-        lib.wrap_run_ins(p.runs[-1], self.ids, a, self.date())
-        self.manifest['tracked']['ins'] += 1
-
-    def maybe_comment(self, p):
-        if self.rng.random() > 0.06 * self.cfg['tracked_density'] or not p.runs:
-            return
-        a, ini = self.author()
-        try:
-            lib.add_comment(self.doc, p.runs[0], self.rng.choice([
-                "Please confirm the source for this figure.",
-                "Consider tightening this opinion.",
-                "Cross-check against the window analysis.",
-                "Is this the correct data date?"]), a, ini)
-            self.manifest['comments'] += 1
-        except Exception:
-            pass
-
-    # -- lists ---------------------------------------------------------------
-    def bullet(self, text, sentence=False, defect=None):
-        text = self.corrupt_text(text)
-        if defect == 'foreign':
-            p = self.doc.add_paragraph(text, style='List Paragraph')
-            self._num(p, bullet=True)
-            self.record('classify_bullet', False, text[:40], 'map ListParagraph bullet -> ListBullet*')
-        elif defect == 'level':
-            p = self.doc.add_paragraph(text, style='NumberedParagraphL2')
-            self.record('level_fix', False, text[:40], 'promote L2 under numbered para -> L1')
-        else:
-            p = self.doc.add_paragraph(text, style='Listbulletasasentence' if sentence else 'ListBullet')
-        return p
-
-    def _num(self, p, bullet=False):
-        ppr = p._p.get_or_add_pPr()
-        ppr.append(parse_xml('<w:numPr %s><w:ilvl w:val="0"/><w:numId w:val="%d"/></w:numPr>'
-                             % (nsdecls("w"), 1 if bullet else 2)))
-
-    def quote(self, text, split=False):
-        if split and self.roll_defect():
-            words = text.split(' '); mid = len(words) // 2
-            a = ' '.join(words[:mid]).rstrip('.'); b = ' '.join(words[mid:])
-            self.doc.add_paragraph(a, style='ExcerptorQuote')
-            self.doc.add_paragraph(b, style='ExcerptorQuote')
-            self.record('pdf_linesplit', False, a[:40], 'merge PDF line-split excerpts (#1)')
-        else:
-            self.doc.add_paragraph(text, style='ExcerptorQuote')
-
-    def typo_para(self, tracked=False):
-        raw = ('The Engineer stated that the works were "substantially complete" -- a view I do not '
-               'share -- and fixed the milestone at 05 June with a 3" tolerance.')
-        p = self.doc.add_paragraph(raw, style='NumberedParagraph')
-        self.record('typography', tracked, raw[:40], 'smart quotes, en dash, date, inch mark')
+    def emit_classify_body(self, tracked):
+        self._elem()
+        lib.ensure_foreign_style(self.doc, 'FirmBody', 'Firm Body')
+        p = self.doc.add_paragraph(self.fill(self.rng.choice(C.FINDING)), style='FirmBody')
+        loc = self.loc(p, 'cb')
         if tracked and p.runs:
-            a, _ = self.author(); lib.wrap_run_ins(p.runs[-1], self.ids, a, self.date())
-            self.manifest['tracked']['ins'] += 1
-        return p
+            self.ins_run(p.runs[-1], p, loc)
+            self.record('classify_body', loc, 'inside_revision', 'restyle_to_LI',
+                        'foreign style, run inserted; restyle AND preserve edit')
+        else:
+            self.record('classify_body', loc, 'unrelated', 'restyle_to_LI', 'foreign style')
+
+    def emit_classify_bullet(self, tracked):
+        self._elem()
+        p = self.doc.add_paragraph(self.fill(self.rng.choice(C.FINDING)), style='List Paragraph')
+        p._p.get_or_add_pPr().append(parse_xml('<w:numPr %s><w:ilvl w:val="0"/><w:numId w:val="1"/>'
+                                               '</w:numPr>' % nsdecls('w')))
+        loc = self.loc(p, 'cbul')
+        if tracked and p.runs:
+            self.ins_run(p.runs[-1], p, loc)
+            self.record('classify_bullet', loc, 'inside_revision', 'restyle_to_LI', 'bullet, inserted')
+        else:
+            self.record('classify_bullet', loc, 'unrelated', 'restyle_to_LI', 'ListParagraph bullet')
+
+    def emit_strip_direct(self, tracked):
+        self._elem()
+        p = self.doc.add_paragraph(self.fill(self.rng.choice(C.FINDING)), style='NumberedParagraph')
+        lib.add_direct_ppr(p, '<w:spacing w:before="240" w:after="240"/><w:ind w:left="720"/>')
+        if p.runs:
+            lib.add_direct_rpr(p.runs[0], '<w:rFonts w:ascii="Calibri"/><w:sz w:val="28"/>')
+        loc = self.loc(p, 'sd')
+        if tracked and p.runs:
+            self.ins_run(p.runs[-1], p, loc)
+            # preserve mode SKIPS direct-formatting stripping on a revised paragraph -> HOLD
+            self.record('strip_direct', loc, 'inside_revision', 'hold',
+                        'direct formatting on a revised paragraph is left to protect the edit')
+        else:
+            self.record('strip_direct', loc, 'unrelated', 'strip_direct_formatting', 'direct fmt',
+                        data={'gone_marker': 'Calibri'})
+
+    def emit_typography(self, tracked):
+        self._elem()
+        raw = ('The Engineer stated the works were "substantially complete" -- a view I do not share '
+               '-- and fixed the milestone at 05 June with a 3" tolerance.')
+        p = self.doc.add_paragraph(raw, style='NumberedParagraph')
+        loc = self.loc(p, 'typo')
+        if tracked and p.runs:
+            self.ins_run(p.runs[0], p, loc)   # the straight-quote text IS the insertion
+            # typography masks revision content -> the inserted characters are PRESERVED, not changed
+            self.record('typography', loc, 'inside_revision', 'hold',
+                        'inserted text keeps its straight quotes (payload preserved)')
+        else:
+            self.record('typography', loc, 'unrelated', 'typography_applied', 'straight quotes/dashes',
+                        data={'no_straight_quote': True})
+
+    def emit_footnote(self, tracked, defect):
+        self._elem()
+        p = self.doc.add_paragraph(self.fill(self.rng.choice(C.FINDING)), style='NumberedParagraph')
+        loc = self.loc(p, 'fn')
+        fid = self.fnid; self.fnid += 1
+        text = self.fill(self.rng.choice(C.FOOTNOTES))
+        p._p.append(parse_xml('<w:r %s><w:rPr><w:rStyle w:val="FootnoteReference"/></w:rPr>'
+                              '<w:footnoteReference w:id="%d"/></w:r>' % (nsdecls('w'), fid)))
+        # tracked footnote: the footnote body carries an insertion -> fix_footnotes skips it -> HOLD
+        self.footnotes.append((fid, text, defect, tracked, loc))
+        if defect:
+            disp = 'hold' if tracked else 'footnote_restyled'
+            rel = 'inside_revision' if tracked else 'unrelated'
+            self.record('footnote_style', loc, rel, disp, 'footnote %d style' % fid,
+                        data={'fid': fid})
+
+    def emit_pdf_linesplit(self, tracked):
+        # No locator BOOKMARK here: the merge pass skips any paragraph carrying a bookmark, so a
+        # bookmark would itself prevent the merge. Locate by content instead, and let the merge (or
+        # the hold) be driven only by the revision.
+        self._elem()
+        # a UNIQUE sentence (so the content locator cannot collide with a clean quote elsewhere)
+        uid = len(self.defects) + 1
+        a = ("In respect of matter number %d the tribunal held that the extension of time had been "
+             "validly claimed and was supported by the contemporaneous" % uid)
+        b = "record, and that the relevant notice provisions had been substantially complied with."
+        self.doc.add_paragraph(a, style='ExcerptorQuote')
+        p2 = self.doc.add_paragraph(b, style='ExcerptorQuote')
+        snippet = 'text:In respect of matter number %d ' % uid
+        if tracked and p2.runs:
+            self.ins_run(p2.runs[-1], p2, snippet)   # a revision in an excerpt -> merge skips it
+            self.record('pdf_linesplit', snippet, 'adjacent_to_revision', 'hold',
+                        'a split excerpt carries a revision -> not merged',
+                        data={'first_half_len': len(a)})
+        else:
+            self.record('pdf_linesplit', snippet, 'unrelated', 'merged', 'PDF line-split excerpt',
+                        data={'min_len': len(a) + 3, 'first_half_len': len(a)})
+
+    def emit_empty_para(self, tracked):
+        self._elem()
+        p = self.doc.add_paragraph('', style='NumberedParagraph')
+        loc = self.loc(p, 'empty')
+        if tracked:
+            r = p.add_run(' ')
+            self.ins_run(r, p, loc)   # the empty paragraph is itself a tracked insertion
+            self.record('empty_para', loc, 'inside_revision', 'hold',
+                        'a tracked empty paragraph must not be pruned')
+        else:
+            self.record('empty_para', loc, 'unrelated', 'removed', 'stray empty numbered paragraph')
+
+    def emit_page_break(self, tracked):
+        self._elem()
+        p = self.doc.add_paragraph(style='NumberedParagraph')
+        loc = self.loc(p, 'pb')
+        r = p.add_run(); r.add_break(WD_BREAK.PAGE)
+        if tracked:
+            self.ins_run(r, p, loc)
+            self.record('page_break', loc, 'inside_revision', 'hold',
+                        'a tracked manual page break must not be pruned')
+        else:
+            self.record('page_break', loc, 'unrelated', 'removed', 'manual page-break paragraph')
+
+    def emit_heading_body_merge(self, tracked):
+        self._elem()
+        p = self.doc.add_paragraph(style='Heading2')
+        p.add_run("Basis of the Delay Assessment")
+        p.add_run("  ")
+        body_run = p.add_run("This body sentence was merged into the heading and must be split out.")
+        loc = self.loc(p, 'hbm')
+        if tracked:
+            self.ins_run(body_run, p, loc)
+            self.record('heading_body_merge', loc, 'inside_revision', 'hold',
+                        'merged heading whose body text is a tracked insertion -> not split')
+        else:
+            self.record('heading_body_merge', loc, 'unrelated', 'split', 'heading+body merged',
+                        data={'body_marker': 'must be split out'})
 
     # -- tables -------------------------------------------------------------
     def _ensure_litable(self):
         if not lib.has_style(self.doc, 'LITable'):
             from conformer.engine import LITABLE
             self.doc.styles.element.append(
-                parse_xml(LITABLE.replace('<w:style ', '<w:style %s ' % nsdecls("w"), 1)))
+                parse_xml(LITABLE.replace('<w:style ', '<w:style %s ' % nsdecls('w'), 1)))
 
-    def data_table(self, clean=True, empty_col=False):
+    def table_with_caption(self, clean, empty_col=False, tracked=False):
+        self._elem()
         header = ["Window", "Data date", "Forecast finish", "Slippage (days)"]
         t = self.doc.add_table(rows=6, cols=4 + (1 if empty_col else 0))
         for ci, h in enumerate(header):
@@ -220,70 +381,120 @@ class Report:
             vals = ["W-%d" % ri, "%02d/26" % ri, "Q%d-27" % (ri % 4 + 1), str(self.rng.randint(0, 40))]
             for ci, v in enumerate(vals):
                 t.cell(ri, ci).paragraphs[0].add_run(v)
-        if clean and not empty_col:
+        # caption (fielded when clean) with a real bookmark target
+        self.tab_seq[self.section_no] = self.tab_seq.get(self.section_no, 0) + 1
+        seq = self.tab_seq[self.section_no]
+        name = "_Ref_T%d%d%d" % (self.section_no, seq, self.rng.randint(100, 999))
+        cap = self.doc.add_paragraph(style='Caption')
+        b0, b1 = lib.bookmark(name, self.new_bookmark())
+        title = "Window analysis of the %s works" % self.rng.choice(C.ACTIVITIES)
+        if clean:
             self._ensure_litable(); t.style = 'LITable'
+            inner = (b0 + '<w:r><w:t xml:space="preserve">Table </w:t></w:r>'
+                     + lib.field_runs('STYLEREF 1 \\s', str(self.section_no))
+                     + '<w:r><w:t xml:space="preserve">-</w:t></w:r>'
+                     + lib.field_runs('SEQ Table \\* ARABIC \\s 1', str(seq))
+                     + '<w:r><w:t xml:space="preserve">: %s</w:t></w:r>' % title + b1)
+            lib.set_para_xml(cap, inner)
         else:
             t._tbl.tblPr.append(parse_xml(
                 '<w:tblBorders %s><w:top w:val="single" w:sz="12" w:space="0" w:color="FF0000"/>'
                 '<w:bottom w:val="single" w:sz="12" w:space="0" w:color="FF0000"/></w:tblBorders>'
-                % nsdecls("w")))
-            self.record('table_style', False, 'window table', 'set table to LITable style')
+                % nsdecls('w')))
+            lib.set_para_xml(cap, b0 + '<w:r><w:t xml:space="preserve">Table %d-%d: %s</w:t></w:r>'
+                             % (self.section_no, seq, title) + b1)
+        self.lot_entries.append((name, "Table %d-%d: %s" % (self.section_no, seq, title), True))
+        loc = self.loc(t.cell(0, 0).paragraphs[0], 'tbl')
+        if tracked:
+            rec_run = t.cell(1, 0).paragraphs[0].runs[0]
+            self.ins_run(rec_run, None, loc)
             if empty_col:
-                self.record('table_empty_col', False, 'window table', 'drop empty column (#7)')
-        return t
+                self.record('table_empty_col', loc, 'adjacent_to_revision', 'columns_dropped',
+                            'the empty column has no tracked content; dropping it does not touch the '
+                            'cell revision. Flagged for individual review.')
+            else:
+                self.record('table_style', loc, 'adjacent_to_revision', 'set_LITable',
+                            'unstyled table with a cell revision -> styled, edit preserved')
+        else:
+            if empty_col:
+                self.record('table_empty_col', loc, 'unrelated', 'columns_dropped', 'empty column')
+            elif not clean:
+                self.record('table_style', loc, 'unrelated', 'set_LITable', 'unstyled table')
 
-    def wrapper_table(self):
+    def wrapper_table(self, tracked):
+        self._elem()
         t = self.doc.add_table(rows=1, cols=1)
         c = t.cell(0, 0)
-        c.paragraphs[0].add_run("This paragraph was wrapped inside a single-cell layout table by a "
-                                "prior word processor and should be unwrapped.")
-        c.add_paragraph("A second wrapped paragraph continues the same passage.")
-        self.record('wrapper_table', False, 'single-cell wrapper', 'unwrap wrapper table (#3)')
-        return t
+        c.paragraphs[0].add_run("This paragraph was wrapped inside a single-cell layout table and "
+                                "should be unwrapped into ordinary body text.")
+        p2 = c.add_paragraph("A second wrapped paragraph continues the passage.")
+        loc = self.loc(c.paragraphs[0], 'wrap')
+        if tracked and p2.runs:
+            self.ins_run(p2.runs[-1], p2, loc)
+            self.record('wrapper_table', loc, 'inside_revision', 'unwrapped',
+                        'unwrapping moves the wrapped content (including the edit) to body text; '
+                        'words, tracked status and author are preserved. Flagged for review.')
+        else:
+            self.record('wrapper_table', loc, 'unrelated', 'unwrapped', 'single-cell wrapper')
 
     # -- figures ------------------------------------------------------------
     def figure(self, image, title, floating=False, wrong_number=False, tof_mismatch=False,
-               caption_literal=False, tracked=False):
+               caption_literal=False, tracked=False, structural_defect=None):
+        self._elem()
+        img_path = os.path.join(ASSETS, image)
+        if not os.path.exists(img_path):
+            raise lib.AssetError('missing figure asset: %s' % img_path)
         self.fig_seq[self.section_no] = self.fig_seq.get(self.section_no, 0) + 1
         seq = self.fig_seq[self.section_no]
         disp_sec = self.section_no + (1 if wrong_number else 0)
-        if wrong_number:
-            self.record('figure_numbering', False, title[:30], 'audit flags caption numbering drift')
-        label = "Figure %d-%d" % (disp_sec, seq)
         name = "_Ref_F%d%d%d" % (disp_sec, seq, self.rng.randint(100, 999))
         ip = self.doc.add_paragraph(style='SpacebehindafteraGraphic')
         run = ip.add_run()
-        try:
-            run.add_picture(os.path.join(ASSETS, image), width=Inches(5.5))
-        except Exception:
-            run.add_text('[image]')
+        run.add_picture(img_path, width=Inches(5.5))
+        img_loc = self.loc(ip, 'fig')
         if floating:
             self._make_floating(ip)
-            self.record('floating_image', tracked, title[:30], 'convert floating image to inline (#5)')
-        caption_text = "%s: %s" % (label, title)
+            if tracked and ip.runs:
+                self.ins_run(ip.runs[-1], ip, img_loc)
+                self.record('floating_image', img_loc, 'inside_revision', 'inline',
+                            'floating image is inlined (a layout change); the inserted object is '
+                            'preserved. Flagged for individual review.')
+            else:
+                self.record('floating_image', img_loc, 'unrelated', 'inline', 'floating picture')
+        # caption
+        cap = self.doc.add_paragraph(style='Caption')
+        b0, b1 = lib.bookmark(name, self.new_bookmark())
         if caption_literal:
-            cp = self.doc.add_paragraph(caption_text, style='Caption')
-            self.record('caption_literal', tracked, caption_text[:40], 'rebuild caption as fields (#8a)')
+            lib.set_para_xml(cap, b0 + '<w:r><w:t xml:space="preserve">Figure %d-%d: %s</w:t></w:r>'
+                             % (disp_sec, seq, title) + b1)
+            # locate the caption by its OWN _Ref bookmark (preserved by #8a), not a separate _LOC
+            # whose loss would trip the caption rebuild's bookmark guard.
+            self._elem()
+            if tracked and cap.runs:
+                self.ins_run(cap.runs[0], cap, name)
+                self.record('caption_literal', name, 'inside_revision', 'hold',
+                            'literal caption whose text is a revision -> fielding would drop the '
+                            'insertion, so it is held for individual review')
+            else:
+                self.record('caption_literal', name, 'unrelated', 'fielded', 'literal caption')
         else:
-            cp = self.doc.add_paragraph(style='Caption')
-            b0, b1 = lib.bookmark(name, self.new_bookmark())
             inner = (b0 + '<w:r><w:t xml:space="preserve">Figure </w:t></w:r>'
                      + lib.field_runs('STYLEREF 1 \\s', str(disp_sec))
                      + '<w:r><w:t xml:space="preserve">-</w:t></w:r>'
                      + lib.field_runs('SEQ Figure \\* ARABIC \\s 1', str(seq))
                      + '<w:r><w:t xml:space="preserve">: %s</w:t></w:r>' % title + b1)
-            lib.set_para_xml(cp, inner)
-        if tracked and cp.runs:
-            a, _ = self.author(); lib.wrap_run_ins(cp.runs[-1], self.ids, a, self.date())
-            self.manifest['tracked']['ins'] += 1
-        self.fig_bookmarks.append((name, title, disp_sec, seq))
+            lib.set_para_xml(cap, inner)
+        if wrong_number:
+            self.record('figure_numbering', self.loc(cap, 'fnum'), 'unrelated', 'audit_flag',
+                        'caption section number does not match its section')
         shown = title + (" (revised)" if tof_mismatch else "")
         if tof_mismatch:
-            self.record('tof_mismatch', False, title[:30], 'audit flags ToF title mismatch')
-        self.tof_entries.append((name, "Figure %d-%d: %s" % (disp_sec, seq, shown)))
-        return ip, cp
+            self.record('tof_mismatch', self.loc(cap, 'tof'), 'unrelated', 'audit_flag',
+                        'List-of-Figures title differs from the caption')
+        self.tof_entries.append((name, "Figure %d-%d: %s" % (disp_sec, seq, shown), True))
 
     def _make_floating(self, p):
+        """Inline drawing -> floating anchor with schema-correct child order (wrap BEFORE docPr)."""
         for inline in list(p._p.iter(qn('wp:inline'))):
             anchor = parse_xml(
                 '<wp:anchor %s distT="0" distB="0" distL="114300" distR="114300" simplePos="0" '
@@ -291,290 +502,221 @@ class Report:
                 '<wp:simplePos x="0" y="0"/>'
                 '<wp:positionH relativeFrom="column"><wp:posOffset>0</wp:posOffset></wp:positionH>'
                 '<wp:positionV relativeFrom="paragraph"><wp:posOffset>0</wp:posOffset></wp:positionV>'
-                '</wp:anchor>' % nsdecls("wp"))
-            for ch in list(inline):
+                '</wp:anchor>' % nsdecls('wp'))
+            docpr = None
+            children = list(inline)
+            for ch in children:
+                if ch.tag == qn('wp:docPr'):
+                    docpr = ch
+            wrap = parse_xml('<wp:wrapNone %s/>' % nsdecls('wp'))
+            for ch in children:
+                if ch is docpr:
+                    anchor.append(wrap)        # wrapNone immediately before docPr
                 anchor.append(ch)
-            anchor.append(parse_xml('<wp:wrapNone %s/>' % nsdecls("wp")))
+            if docpr is None:
+                anchor.append(wrap)
             inline.getparent().replace(inline, anchor)
             break
 
-    def heading_body_merge(self):
-        p = self.doc.add_paragraph(style='Heading2')
-        p.add_run("Basis of the Delay Assessment")
-        p.add_run("  ")
-        p.add_run("This body sentence was mistakenly merged into the heading paragraph and must be "
-                  "split back into ordinary numbered text.")
-        self.record('heading_body_merge', False, 'Basis of the Delay', 'split heading from body (#6)')
-        return p
+    def emit_section_landscape(self):
+        self._elem()
+        sec = self.doc.add_section(WD_SECTION.NEW_PAGE)
+        sec.orientation = WD_ORIENT.LANDSCAPE
+        sec.page_width, sec.page_height = sec.page_height, sec.page_width
+        h = self.doc.add_paragraph("Appendix A — Delay Ledger", style='Heading1')
+        loc = self.loc(h, 'land')
+        t = self.doc.add_table(rows=6, cols=7)
+        hdr = ["Event", "Start", "Finish", "Owner", "Excusable", "Compensable", "Net days"]
+        for ci, hh in enumerate(hdr):
+            t.cell(0, ci).paragraphs[0].add_run(hh)
+        for ri in range(1, 6):
+            for ci in range(7):
+                t.cell(ri, ci).paragraphs[0].add_run(
+                    str(self.rng.randint(0, 30)) if ci >= 4 else "E%d" % ri)
+        self.record('section_landscape', loc, 'unrelated', 'portrait_restored',
+                    'landscape block needs the portrait section restored')
 
-    def footnote(self, p, defect=False, tracked=False):
-        fid = self.fnid; self.fnid += 1
-        text = self.fill(self.rng.choice(C.FOOTNOTES))
-        p._p.append(parse_xml(
-            '<w:r %s><w:rPr><w:rStyle w:val="FootnoteReference"/></w:rPr>'
-            '<w:footnoteReference w:id="%d"/></w:r>' % (nsdecls("w"), fid)))
-        self.footnotes.append((fid, text, defect, tracked))
-        if defect:
-            self.record('footnote_style', tracked, text[:30], 'set footnote to FootnoteText style')
+    # ================================================================ body assembly
+    def _guaranteed_queue(self):
+        if self.tier == 'clean':
+            return []
+        pairs = []
+        trackable = ['classify_body', 'classify_bullet', 'strip_direct', 'typography',
+                     'pdf_linesplit', 'empty_para', 'page_break', 'heading_body_merge',
+                     'wrapper_table', 'floating_image', 'caption_literal', 'footnote_style',
+                     'table_style', 'table_empty_col']
+        untracked_only = ['section_landscape', 'figure_numbering', 'tof_mismatch']
+        for cls in trackable:
+            pairs.append((cls, False)); pairs.append((cls, True))
+        for cls in untracked_only:
+            pairs.append((cls, False))
+        self.rng.shuffle(pairs)
+        return pairs
 
-    def stray_empty(self):
-        self.doc.add_paragraph('', style='NumberedParagraph')
-        self.record('empty_para', False, '(empty)', 'delete empty numbered paragraph (#2)')
+    def _emit_guaranteed(self, cls, tracked):
+        if cls == 'classify_body': self.emit_classify_body(tracked)
+        elif cls == 'classify_bullet': self.emit_classify_bullet(tracked)
+        elif cls == 'strip_direct': self.emit_strip_direct(tracked)
+        elif cls == 'typography': self.emit_typography(tracked)
+        elif cls == 'pdf_linesplit': self.emit_pdf_linesplit(tracked)
+        elif cls == 'empty_para': self.emit_empty_para(tracked)
+        elif cls == 'page_break': self.emit_page_break(tracked)
+        elif cls == 'heading_body_merge': self.emit_heading_body_merge(tracked)
+        elif cls == 'wrapper_table': self.wrapper_table(tracked)
+        elif cls == 'floating_image':
+            self.figure('gantt.png', 'As-planned versus as-built schedule', floating=True,
+                        tracked=tracked)
+        elif cls == 'caption_literal':
+            self.figure('scurve.png', 'Planned versus actual cumulative progress',
+                        caption_literal=True, tracked=tracked)
+        elif cls == 'footnote_style': self.emit_footnote(tracked, defect=True)
+        elif cls == 'table_style': self.table_with_caption(clean=False, tracked=tracked)
+        elif cls == 'table_empty_col':
+            self.table_with_caption(clean=False, empty_col=True, tracked=tracked)
+        elif cls == 'section_landscape': pass   # emitted once at the end
+        elif cls == 'figure_numbering':
+            self.figure('bar_delay.png', 'Delay days by causal category', wrong_number=True)
+        elif cls == 'tof_mismatch':
+            self.figure('float_hist.png', 'Distribution of total float', tof_mismatch=True)
 
-    def page_break_para(self):
-        p = self.doc.add_paragraph(style='NumberedParagraph')
-        p.add_run().add_break(docx.enum.text.WD_BREAK.PAGE)
-        self.record('page_break', False, '(page break)', 'remove manual page-break paragraph (#4)')
+    _BODY_IMAGES = ['gantt.png', 'scurve.png', 'bar_delay.png', 'float_hist.png', 'window_table.png']
 
-    # -- front matter -------------------------------------------------------
+    def body(self):
+        queue = self._guaranteed_queue()
+        landscape_pending = any(c == 'section_landscape' for c, _ in queue)
+        queue = [(c, t) for c, t in queue if c != 'section_landscape']
+        per_section = max(1, (len(queue) // max(1, len(C.SECTIONS) - 1)) + 1)
+        for si, (title, key) in enumerate(C.SECTIONS):
+            self.heading(title, 1)
+            pools = {'method': C.METHOD, 'background': C.BACKGROUND, 'opinions': C.OPINION,
+                     'conclusions': C.OPINION}.get(key, C.FINDING)
+            for sub in range(self.rng.randint(3, 4)):
+                self.doc.add_paragraph(self.fill(self.rng.choice(
+                    ["Analysis of the {a} Works", "The {a} Window", "Findings on {a}",
+                     "Assessment of the {a} Delay"])), style='Heading2')
+                for i in range(self.rng.randint(7, 10)):
+                    p, dfct = self.para(self.fill(self.rng.choice(pools)) + " "
+                                        + self.fill(self.rng.choice(C.FINDING)))
+                    if not dfct:
+                        self.maybe_track_clean(p)
+                # emit a couple of guaranteed defects, interspersed
+                for _ in range(per_section):
+                    if queue:
+                        cls, tracked = queue.pop()
+                        self._emit_guaranteed(cls, tracked)
+                # a clean figure or table in the flow
+                if self.rng.random() < 0.5:
+                    self.figure(self.rng.choice(self._BODY_IMAGES),
+                                self.fill(self.rng.choice(["Progress on the {a} works",
+                                                           "Float erosion across the {a} window"])))
+                if self.rng.random() < 0.35:
+                    self.table_with_caption(clean=True)
+                # a clean block quote (or a clean footnote)
+                self.doc.add_paragraph(self.rng.choice(C.QUOTE), style='ExcerptorQuote')
+                self.emit_footnote(tracked=False, defect=False)
+        # drain any leftover guaranteed defects in a final matters section
+        if queue:
+            self.heading("Further Matters Arising", 1)
+            self.doc.add_paragraph("The following additional matters are addressed for completeness.",
+                                   style='NumberedParagraph')
+            while queue:
+                cls, tracked = queue.pop()
+                self.doc.add_paragraph(self.fill(self.rng.choice(C.FINDING)),
+                                       style='NumberedParagraph')
+                self._emit_guaranteed(cls, tracked)
+        self._landscape_pending = landscape_pending
+
+    # ================================================================ front & back matter
     def front_matter(self):
         d = self.doc
         d.add_paragraph("PRIVILEGED AND CONFIDENTIAL", style='PRIVCONFSTATEMENT')
         d.add_paragraph("EXPERT REPORT ON DELAY", style='Title')
         d.add_paragraph("In the matter of %s" % C.CASE, style='Subtitle')
-        for line in ["%s" % C.PROJECT.title(), "Prepared for %s" % C.COUNSEL,
+        for line in [C.PROJECT.title(), "Prepared for %s" % C.COUNSEL,
                      "On behalf of %s" % C.CONTRACTOR, "By %s, %s" % (C.EXPERT, C.FIRM),
-                     "This report is a DRAFT prepared for review and is subject to revision."]:
+                     "DRAFT for review — subject to revision."]:
             d.add_paragraph(line, style='BodyText')
-        p = d.add_paragraph(style='NumberedParagraph'); p.add_run().add_break(docx.enum.text.WD_BREAK.PAGE)
-
-        # Table of Contents (field with cached entries)
+        d.add_paragraph(style='NumberedParagraph').add_run().add_break(WD_BREAK.PAGE)
         d.add_paragraph("TABLE OF CONTENTS", style='TOCListTitle')
         toc = d.add_paragraph(style='TOC1')
-        lib.set_para_xml(toc, lib.field_runs('TOC \\o "1-3" \\h \\z \\u', "Right-click to update field"))
+        lib.set_para_xml(toc, lib.field_runs('TOC \\o "1-3" \\h \\z \\u', "Update this field in Word"))
+        # list headings kept as anchors; their entries are inserted after the body is built
+        self.lof_heading = d.add_paragraph("LIST OF FIGURES", style='TOCListTitle')
+        self.lot_heading = d.add_paragraph("LIST OF TABLES", style='TOCListTitle')
+        self._list_block("LIST OF EXHIBITS", C.EXHIBITS)
+        self._list_block("LIST OF ATTACHMENTS", C.ATTACHMENTS)
+        self._glossary()
 
-        # List of Figures / Tables / Exhibits / Attachments and acronyms are filled after the body,
-        # once figures/tables exist; we insert placeholders and patch later. For simplicity we build
-        # them here from what will be generated (front matter is emitted last in build()).
-
-    def list_of_figures(self):
-        self.doc.add_paragraph("LIST OF FIGURES", style='TOCListTitle')
-        for anchor, disp in self.tof_entries:
-            p = self.doc.add_paragraph(style='TableofFigures')
-            lib.set_para_xml(p, '<w:hyperlink %s w:anchor="%s"><w:r><w:t xml:space="preserve">%s</w:t>'
-                             '</w:r><w:r><w:tab/></w:r><w:r><w:t>%d</w:t></w:r></w:hyperlink>'
-                             % (nsdecls("w"), anchor, disp, self.rng.randint(3, 60)))
-
-    def list_block(self, title, items, sentence=False):
+    def _list_block(self, title, items):
         self.doc.add_paragraph(title, style='TOCListTitle')
         for i, it in enumerate(items, 1):
-            p = self.doc.add_paragraph(style='ListBullet')
-            p.add_run("%d.  %s" % (i, it))
+            self.doc.add_paragraph("%d.  %s" % (i, it), style='ListBullet')
 
-    def acronyms(self):
+    def _glossary(self):
         self.doc.add_paragraph("GLOSSARY OF ABBREVIATIONS", style='TOCListTitle')
+        self._ensure_litable()
         t = self.doc.add_table(rows=len(C.ACRONYMS), cols=2)
-        self._ensure_litable(); t.style = 'LITable'
+        t.style = 'LITable'
         for ri, (ab, full) in enumerate(C.ACRONYMS):
             t.cell(ri, 0).paragraphs[0].add_run(ab)
             t.cell(ri, 1).paragraphs[0].add_run(full)
 
-    # -- landscape section --------------------------------------------------
-    def landscape_wide_table(self):
-        sec = self.doc.add_section(docx.enum.section.WD_SECTION.NEW_PAGE)
-        sec.orientation = WD_ORIENT.LANDSCAPE
-        sec.page_width, sec.page_height = sec.page_height, sec.page_width
-        self.doc.add_paragraph("Appendix A — Delay Ledger (landscape)", style='Heading1')
-        t = self.doc.add_table(rows=6, cols=7)
-        hdr = ["Event", "Start", "Finish", "Owner", "Excusable", "Compensable", "Net days"]
-        for ci, h in enumerate(hdr):
-            t.cell(0, ci).paragraphs[0].add_run(h)
-        for ri in range(1, 6):
-            for ci in range(7):
-                t.cell(ri, ci).paragraphs[0].add_run(str(self.rng.randint(0, 30)) if ci >= 4 else "E%d" % ri)
-        self.record('section_landscape', False, 'Appendix A', 'restore portrait section after landscape')
-        # a following portrait section so fix_sections has a landscape-then-portrait boundary
-        self.doc.add_section(docx.enum.section.WD_SECTION.NEW_PAGE)
-
-    # -- body ---------------------------------------------------------------
-    def body(self):
-        for title, key in C.SECTIONS:
-            h = self.heading(title, 1)
-            lib.wrap_run_ins(h.runs[-1], self.ids, *self._track()) if self.rng.random() < 0.1 else None
-            self._section_body(key)
-
-    def _track(self):
-        a, _ = self.author(); self.manifest['tracked']['ins'] += 1
-        return a, self.date()
-
-    _BODY_IMAGES = ['gantt.png', 'scurve.png', 'bar_delay.png', 'float_hist.png', 'window_table.png']
-
-    def _section_body(self, key):
-        pools = {'method': C.METHOD, 'background': C.BACKGROUND, 'opinions': C.OPINION,
-                 'conclusions': C.OPINION}.get(key, C.FINDING)
-        n_sub = self.rng.randint(2, 3)
-        for sub in range(n_sub):
-            self.doc.add_paragraph(self.fill(self.rng.choice(
-                ["Analysis of the {a} Works", "The {a} Window", "Findings on {a}",
-                 "Assessment of the {a} Delay", "The Record Concerning {a}"])), style='Heading2')
-            for i in range(self.rng.randint(5, 9)):
-                txt = (self.fill(self.rng.choice(pools)) + " " + self.fill(self.rng.choice(C.FINDING))
-                       + " " + self.fill(self.rng.choice(C.FINDING)))
-                p = self.para(txt)
-                if self.rng.random() < 0.35:
-                    self.footnote(p, defect=self.roll_defect(), tracked=self.rng.random() < 0.2)
-                self.maybe_track(p); self.maybe_comment(p)
-            # a bullet list
-            for b in range(self.rng.randint(2, 4)):
-                self.bullet(self.fill(self.rng.choice(C.FINDING)), sentence=self.rng.random() < 0.5,
-                            defect='foreign' if self.roll_defect() else None)
-            # a block quote (occasionally a PDF line split)
-            self.quote(self.rng.choice(C.QUOTE), split=True)
-            # a clean figure or table in the flow
-            if self.rng.random() < 0.6:
-                self.figure(self.rng.choice(self._BODY_IMAGES),
-                            self.fill(self.rng.choice(["As-planned versus as-built {a} schedule",
-                                                       "Cumulative progress on {a}",
-                                                       "Float erosion across the {a} window"])))
-            if self.rng.random() < 0.4:
-                self.data_table(clean=not self.roll_defect())
-
-    # -- guaranteed coverage: force one of every class, tracked + non-tracked
-    def guaranteed_coverage(self):
-        self.heading("Comprehensive Element Coverage", 1)
-        # classify + strip_direct (non-tracked already appear in body; force tracked ones)
-        lib.ensure_foreign_style(self.doc, 'FirmBody', 'Firm Body')
-        p = self.doc.add_paragraph("This body paragraph uses a foreign firm style and carries a "
-                                   "tracked insertion, so its style is conformed while the edit is "
-                                   "preserved.", style='Normal')
-        self.record('classify_body', True, 'foreign+tracked', 'map to NumberedParagraph, preserve edit')
-        lib.wrap_run_ins(p.runs[-1], self.ids, *self._track())
-        p2 = self.doc.add_paragraph("Direct-formatted paragraph with a tracked deletion.",
-                                    style='NumberedParagraph')
-        lib.add_direct_ppr(p2, '<w:spacing w:before="240" w:after="240"/><w:ind w:left="720"/>')
-        self.record('strip_direct', True, 'direct+tracked', 'strip direct formatting, preserve edit')
-        if p2.runs:
-            lib.wrap_run_del(p2.runs[0], self.ids, *self._track()[:1] + (self.date(),))
-            self.manifest['tracked']['del'] += 1
-        # bullets: foreign (non-tracked) + level fix
-        self.bullet("A bulleted item on a foreign list style.", defect='foreign')
-        self.doc.add_paragraph("A numbered lead-in paragraph introducing sub-items:",
-                               style='NumberedParagraph')
-        self.bullet("A sub-item that started at level two under a numbered paragraph.", defect='level')
-        # typography, tracked + non-tracked
-        self.typo_para(tracked=False)
-        self.typo_para(tracked=True)
-        # pdf line split
-        old = self.cfg['extra_defects']; self.cfg['extra_defects'] = 1.0
-        self.quote("The tribunal held that the extension of time was validly claimed and that the "
-                   "notice provisions had been substantially complied with by the contractor.", split=True)
-        self.cfg['extra_defects'] = old
-        # empty para + page break + heading/body merge
-        self.stray_empty(); self.page_break_para(); self.heading_body_merge()
-        # tables: style defect + empty column + wrapper
-        self.data_table(clean=False)
-        self.data_table(clean=False, empty_col=True)
-        self.wrapper_table()
-        # figures: floating (tracked), literal caption (tracked), numbering drift, ToF mismatch, clean
-        self.figure('gantt.png', 'As-planned versus as-built schedule', floating=True, tracked=True)
-        self.figure('scurve.png', 'Planned versus actual cumulative progress', caption_literal=True,
-                    tracked=True)
-        self.figure('bar_delay.png', 'Delay days by causal category', wrong_number=True)
-        self.figure('float_hist.png', 'Distribution of total float', tof_mismatch=True)
-        self.figure('window_table.png', 'Forecast completion slippage by update')   # clean
-        self.figure('site_photo.png', 'General view of the works')                  # clean
-        # cross-references (literal, one tracked-adjacent) targeting the clean figures
-        target = self.fig_bookmarks[-2][0]
-        p = self.doc.add_paragraph("As shown in Figure %d-%d and discussed in Section 7, the slippage "
-                                   "accumulated across the windows." % (self.fig_bookmarks[-2][2],
-                                   self.fig_bookmarks[-2][3]), style='NumberedParagraph')
-        self.record('xref_literal', False, 'literal xref', 'rebuild literal cross-reference as REF (#8b)')
-        pt = self.doc.add_paragraph("Refer also to Figure %d-%d for the causal breakdown." %
-                                    (self.fig_bookmarks[-4][2], self.fig_bookmarks[-4][3]),
-                                    style='NumberedParagraph')
-        self.record('xref_literal', True, 'literal xref tracked-adjacent', 'rebuild REF (#8b), flag review')
-        if pt.runs:
-            lib.wrap_run_ins(pt.runs[-1], self.ids, *self._track())
-        # a pPrChange + rPrChange formatting revision (must be preserved)
-        pc = self.doc.add_paragraph("This paragraph carries a formatting revision snapshot.",
-                                    style='NumberedParagraph')
-        lib.add_ppr_change(pc, self.ids, self.author()[0], self.date(),
-                           '<w:pStyle w:val="BodyText"/><w:jc w:val="both"/>')
-        self.manifest['tracked']['ppr_change'] += 1
-        if pc.runs:
-            lib.add_rpr_change(pc.runs[0], self.ids, self.author()[0], self.date(), '<w:i/>')
-            self.manifest['tracked']['rpr_change'] += 1
-        # a wholly-inserted paragraph (paragraph-mark insertion)
-        ip = self.doc.add_paragraph("This entire paragraph was inserted as a tracked change by a "
-                                    "reviewer and must survive conforming.", style='NumberedParagraph')
-        lib.mark_paragraph_inserted(ip, self.ids, *self._track())
-        self.manifest['tracked']['para_inserted'] += 1
-        # footnote with foreign style, tracked
-        fp = self.doc.add_paragraph("A paragraph bearing a footnote whose style must be conformed.",
-                                    style='NumberedParagraph')
-        self.footnote(fp, defect=True, tracked=True)
+    def _fill_lists(self):
+        """Insert List-of-Figures / List-of-Tables entries directly after their headings (no bulk
+        move of the body, so the final sectPr stays at the end of the document)."""
+        for heading, entries in ((self.lof_heading, self.tof_entries),
+                                 (self.lot_heading, self.lot_entries)):
+            anchor = heading._p
+            for name, disp, _real in entries:
+                p = self.doc.add_paragraph(style='TableofFigures')
+                self.doc.element.body.remove(p._p)
+                lib.set_para_xml(p, '<w:hyperlink %s w:anchor="%s"><w:r><w:t xml:space="preserve">%s'
+                                 '</w:t></w:r><w:r><w:tab/></w:r><w:r><w:t>%d</w:t></w:r></w:hyperlink>'
+                                 % (nsdecls('w'), name, disp, self.rng.randint(3, 90)))
+                anchor.addnext(p._p)
+                anchor = p._p
 
     def signature(self):
         self.doc.add_paragraph("DECLARATION", style='Heading1')
-        self.doc.add_paragraph("I confirm that this report sets out my independent opinion and that I "
+        self.doc.add_paragraph("I confirm this report sets out my independent opinion and that I "
                                "understand my duty to the Tribunal.", style='NumberedParagraph')
-        for line in ["", "", "Signed:", C.EXPERT, C.FIRM, "Date:  ___________"]:
+        for line in ["Signed:", C.EXPERT, C.FIRM, "Date:  ___________"]:
             self.doc.add_paragraph(line, style='BodyText')
 
-    # -- assembly + save ----------------------------------------------------
+    # ================================================================ build / save / manifest
     def build(self):
         self.front_matter()
         self.body()
-        self.guaranteed_coverage()
-        self.landscape_wide_table()
         self.signature()
-        # front-matter lists that depend on generated content: append at end, then reorder to front
-        pre = len(self.doc.element.body)
-        self.list_of_figures()
-        self.list_block("LIST OF EXHIBITS", C.EXHIBITS)
-        self.list_block("LIST OF ATTACHMENTS", C.ATTACHMENTS)
-        self.acronyms()
-        self._move_to_front(pre)
+        if getattr(self, '_landscape_pending', False):
+            self.emit_section_landscape()
+        self._fill_lists()
         return self
-
-    def _move_to_front(self, from_index):
-        """Move the trailing list blocks to just after the TOC (front matter)."""
-        body = self.doc.element.body
-        children = list(body)
-        tail = children[from_index:]
-        # find insertion point: after the TOC1 paragraph
-        anchor = None
-        for ch in children:
-            if ch.tag == qn('w:p'):
-                ppr = ch.find(qn('w:pPr'))
-                if ppr is not None:
-                    st = ppr.find(qn('w:pStyle'))
-                    if st is not None and st.get(qn('w:val')) == 'TOC1':
-                        anchor = ch; break
-        if anchor is None:
-            return
-        for el in tail:
-            body.remove(el)
-        for el in reversed(tail):
-            anchor.addnext(el)
 
     def save(self, path):
         self.doc.save(path)
         self._inject_footnotes(path)
-        self._finalize_manifest()
 
     def _inject_footnotes(self, path):
         if not self.footnotes:
             return
         tmp = path + '.tmp'
         zin = zipfile.ZipFile(path)
-        fn_xml = None
-        for n in zin.namelist():
-            if n == 'word/footnotes.xml':
-                fn_xml = zin.read(n).decode('utf8')
+        fn_xml = zin.read('word/footnotes.xml').decode('utf8') if 'word/footnotes.xml' in zin.namelist() else None
         defs = ''
-        for fid, text, defect, tracked in self.footnotes:
+        for fid, text, defect, tracked, loc in self.footnotes:
             style = 'CommentText' if defect else 'FootnoteText'
-            run = '<w:r><w:rPr><w:rStyle w:val="FootnoteReference"/></w:rPr><w:footnoteRef/></w:r>' \
-                  '<w:r><w:t xml:space="preserve"> %s</w:t></w:r>' % text
+            body = '<w:r><w:rPr><w:rStyle w:val="FootnoteReference"/></w:rPr><w:footnoteRef/></w:r>'
             if tracked:
-                run = ('<w:ins w:id="%d" w:author="%s" w:date="%s">%s</w:ins>'
-                       % (self.ids.next(), self.author()[0], self.date(),
-                          '<w:r><w:t xml:space="preserve"> %s</w:t></w:r>' % text))
-                run = ('<w:r><w:rPr><w:rStyle w:val="FootnoteReference"/></w:rPr><w:footnoteRef/></w:r>'
-                       + run)
+                a, _ = self.author(); rid = self.ids.next(); dt = self.date()
+                body += ('<w:ins w:id="%d" w:author="%s" w:date="%s">'
+                         '<w:r><w:t xml:space="preserve"> %s</w:t></w:r></w:ins>' % (rid, a, dt, text))
+                self.revisions.append({'kind': 'ins', 'id': rid, 'author': a, 'date': dt,
+                                       'payload_text': ' ' + text, 'locator': loc, 'part': 'footnotes'})
+            else:
+                body += '<w:r><w:t xml:space="preserve"> %s</w:t></w:r>' % text
             defs += ('<w:footnote w:id="%d"><w:p><w:pPr><w:pStyle w:val="%s"/></w:pPr>%s</w:p>'
-                     '</w:footnote>' % (fid, style, run))
+                     '</w:footnote>' % (fid, style, body))
         if fn_xml is not None:
             fn_xml = fn_xml.replace('</w:footnotes>', defs + '</w:footnotes>')
         with zipfile.ZipFile(tmp, 'w', zipfile.ZIP_DEFLATED) as zout:
@@ -586,31 +728,53 @@ class Report:
         zin.close()
         shutil.move(tmp, path)
 
-    def _finalize_manifest(self):
-        m = self.manifest
-        m['total_defects'] = len(m['defects'])
-        m['tracked_total'] = sum(m['tracked'].values())
-        m['spelling_errors'] = m.get('spelling', 0)
-        m['grammar_errors'] = m.get('grammar', 0)
-        m['figures'] = len(self.fig_bookmarks)
-        m['expected_preservation'] = 'clean'
+    def manifest(self, docx_path):
+        from collections import Counter
+        tracked_by_kind = Counter(r['kind'] for r in self.revisions)
+        counts = Counter(d['cls'] for d in self.defects)
+        holds = [d for d in self.defects if d['expected_disposition'] == 'hold']
+        return {
+            'generator_version': GENERATOR_VERSION,
+            'tier': self.tier, 'quality_label': TIER_QUALITY[self.tier], 'seed': self.cfg['seed'],
+            'provenance': {'template_sha': _sha(lib.TEMPLATE),
+                           'assets': {a: _sha(os.path.join(ASSETS, a))
+                                      for a in sorted(os.listdir(ASSETS)) if a.endswith('.png')},
+                           'deps': {'python_docx': docx.__version__}},
+            'elements': self.elements,
+            'non_conforming_elements': len(self._bad_elems),
+            'total_defects': len(self.defects),
+            'computed_quality': round(1 - len(self._bad_elems) / max(1, self.elements), 3),
+            'expected_holds': len(holds),
+            'counts': dict(counts),
+            'revisions': self.revisions,
+            'tracked_by_kind': dict(tracked_by_kind),
+            'tracked_total': len(self.revisions),
+            'comments': self.comments,
+            'comment_count': len(self.comments),
+            'authors': sorted({r['author'] for r in self.revisions}),
+            'spelling_errors': self.spelling, 'grammar_errors': self.grammar,
+            'figures': len(self.tof_entries), 'tables': len(self.lot_entries),
+            'expected_preservation': 'clean',
+            'defects': self.defects,
+        }
 
 
 def build_tier(tier):
     os.makedirs(OUT, exist_ok=True)
     r = Report(tier).build()
-    docx_path = os.path.join(OUT, 'synthetic_report_%spct.docx' % tier)
+    docx_path = os.path.join(OUT, 'synthetic_report_%s.docx' % tier)
     r.save(docx_path)
-    man_path = os.path.join(OUT, 'synthetic_report_%spct_manifest.json' % tier)
-    with open(man_path, 'w', encoding='utf8') as fh:
-        json.dump(r.manifest, fh, indent=2)
-    return docx_path, man_path, r.manifest
+    man = r.manifest(docx_path)
+    with open(os.path.join(OUT, 'synthetic_report_%s_manifest.json' % tier), 'w', encoding='utf8') as fh:
+        json.dump(man, fh, indent=2)
+    return docx_path, man
 
 
 if __name__ == '__main__':
-    tiers = sys.argv[1:] or ['90', '70', '25']
+    tiers = sys.argv[1:] or ['clean', 'low', 'medium', 'high']
     for t in tiers:
-        dp, mp, man = build_tier(t)
-        print('%s%% -> %s  (%d defects, %d tracked, %d comments, %d figures, %d spelling)'
-              % (t, os.path.basename(dp), man['total_defects'], man['tracked_total'],
-                 man['comments'], man['figures'], man.get('spelling_errors', 0)))
+        dp, man = build_tier(t)
+        print('%-7s q=%s defects=%d (holds=%d) revs=%d comments=%d figs=%d tabs=%d spell=%d -> %s'
+              % (t, man['computed_quality'], man['total_defects'], man['expected_holds'],
+                 man['tracked_total'], man['comment_count'], man['figures'], man['tables'],
+                 man['spelling_errors'], os.path.basename(dp)))

@@ -1,0 +1,2266 @@
+{
+  "generator_version": "2.0",
+  "tier": "medium",
+  "quality_label": "~70%",
+  "seed": 303,
+  "provenance": {
+    "template_sha": "106fa5175bff8d33",
+    "assets": {
+      "bar_delay.png": "125cf39825e5d7dd",
+      "float_hist.png": "d7946bbd66e88e72",
+      "gantt.png": "d275c60829ea6191",
+      "scurve.png": "bd16500d33635b95",
+      "site_photo.png": "a526f0cabfb71c6d",
+      "window_table.png": "cf7fdc584458588b"
+    },
+    "deps": {
+      "python_docx": "1.2.0"
+    }
+  },
+  "elements": 470,
+  "non_conforming_elements": 157,
+  "total_defects": 174,
+  "computed_quality": 0.666,
+  "expected_holds": 8,
+  "counts": {
+    "strip_direct": 72,
+    "classify_body": 75,
+    "typography": 2,
+    "footnote_style": 2,
+    "classify_bullet": 2,
+    "floating_image": 2,
+    "pdf_linesplit": 2,
+    "table_style": 2,
+    "wrapper_table": 2,
+    "page_break": 2,
+    "heading_body_merge": 2,
+    "table_empty_col": 2,
+    "caption_literal": 2,
+    "empty_para": 2,
+    "tof_mismatch": 1,
+    "figure_numbering": 1,
+    "section_landscape": 1
+  },
+  "revisions": [
+    {
+      "kind": "ins",
+      "id": 1001,
+      "author": "James Okonkwo",
+      "date": "2026-04-02T09:01:00Z",
+      "payload_text": "The contemporaneous schedule updates demonstrate that the critical path ran through the compressor foundation works from data date May update. The evidence establishes that the LNG tank interface was not released for construction until well after the planned start.",
+      "locator": "_LOC_ins_0004",
+      "part": "document"
+    },
+    {
+      "kind": "ins",
+      "id": 1002,
+      "author": "Dr. Evelyn Marchetti",
+      "date": "2026-04-03T10:02:00Z",
+      "payload_text": "Progress on substructure stalled during the window, and the as-built records show no compensating acceleration.",
+      "locator": "_LOC_cb_0005",
+      "part": "document"
+    },
+    {
+      "kind": "ins",
+      "id": 1003,
+      "author": "Dr. Evelyn Marchetti",
+      "date": "2026-04-04T11:03:00Z",
+      "payload_text": "The Engineer stated the works were \"substantially complete\" -- a view I do not share -- and fixed the milestone at 05 June with a 3\" tolerance.",
+      "locator": "_LOC_typo_0007",
+      "part": "document"
+    },
+    {
+      "kind": "ins",
+      "id": 1004,
+      "author": "Priya Raman",
+      "date": "2026-04-05T12:04:00Z",
+      "payload_text": "The contemporaneous schedule updates demonstrate that the critical path ran through the flare package works from data date May update. The contemporaneous schedule updates demonstrate that the critical path ran through the substructure works from data date March update.",
+      "locator": "_LOC_ins_0011",
+      "part": "document"
+    },
+    {
+      "kind": "ins",
+      "id": 1005,
+      "author": "James Okonkwo",
+      "date": "2026-04-06T13:05:00Z",
+      "payload_text": "Progress on LNG tank stalled during the window, and the as-built records show no compensating acceleration. As shown in the record, the substructure activity absorbed its available float by the May update update and thereafter drove the forecast completion date.",
+      "locator": "_LOC_ins_0021",
+      "part": "document"
+    },
+    {
+      "kind": "ins",
+      "id": 1006,
+      "author": "Counsel review",
+      "date": "2026-04-07T14:06:00Z",
+      "payload_text": "",
+      "locator": "_LOC_fig_0023",
+      "part": "document"
+    },
+    {
+      "kind": "ins",
+      "id": 1007,
+      "author": "Dr. Evelyn Marchetti",
+      "date": "2026-04-08T15:07:00Z",
+      "payload_text": "W-1",
+      "locator": "_LOC_tbl_0026",
+      "part": "document"
+    },
+    {
+      "kind": "ins",
+      "id": 1008,
+      "author": "T. Nakamura",
+      "date": "2026-04-09T16:08:00Z",
+      "payload_text": "Progress on compressor foundation stalled during the window, and the as-built records show no compensating acceleration.",
+      "locator": "_LOC_sd_0033",
+      "part": "document"
+    },
+    {
+      "kind": "ins",
+      "id": 1009,
+      "author": "Priya Raman",
+      "date": "2026-04-10T17:09:00Z",
+      "payload_text": "",
+      "locator": "_LOC_pb_0040",
+      "part": "document"
+    },
+    {
+      "kind": "ins",
+      "id": 1010,
+      "author": "Priya Raman",
+      "date": "2026-04-11T08:10:00Z",
+      "payload_text": "This body sentence was merged into the heading and must be split out.",
+      "locator": "_LOC_hbm_0042",
+      "part": "document"
+    },
+    {
+      "kind": "ins",
+      "id": 1011,
+      "author": "Counsel review",
+      "date": "2026-04-12T09:11:00Z",
+      "payload_text": "The evidence establishes that the commissioning interface was not released for construction until well after the planned start. As shown in the record, the electrical building activity absorbed its available float by the May update update and thereafter drove the forecast completion date.",
+      "locator": "_LOC_ins_0045",
+      "part": "document"
+    },
+    {
+      "kind": "ins",
+      "id": 1012,
+      "author": "Counsel review",
+      "date": "2026-04-13T10:12:00Z",
+      "payload_text": "Progress on flare package stalled during the window, and the as-built records show no compensating acceleration. The contemporaneous schedule updates demonstrate that the critical path ran through the substructure works from data date May update.",
+      "locator": "_LOC_ins_0046",
+      "part": "document"
+    },
+    {
+      "kind": "ins",
+      "id": 1013,
+      "author": "Priya Raman",
+      "date": "2026-04-14T11:13:00Z",
+      "payload_text": "A second wrapped paragraph continues the passage.",
+      "locator": "_LOC_wrap_0047",
+      "part": "document"
+    },
+    {
+      "kind": "ins",
+      "id": 1014,
+      "author": "T. Nakamura",
+      "date": "2026-04-15T12:14:00Z",
+      "payload_text": "My analysis indicates a net slippage of 181 working days to teh Contract Completion Date attributable to the flare package events. Progress on LNG tank stalled during teh window, and the as-built records show no compensating acceleration.",
+      "locator": "_LOC_ins_0051",
+      "part": "document"
+    },
+    {
+      "kind": "ins",
+      "id": 1015,
+      "author": "Priya Raman",
+      "date": "2026-04-16T13:15:00Z",
+      "payload_text": "record, and that the relevant notice provisions had been substantially complied with.",
+      "locator": "text:In respect of matter number 40 ",
+      "part": "document"
+    },
+    {
+      "kind": "ins",
+      "id": 1016,
+      "author": "Priya Raman",
+      "date": "2026-04-17T14:16:00Z",
+      "payload_text": "I hold the opinion that the concurrent-delay assertion advanced in the Rebuttal is not supported by the contemporaneous record. My analysis indicates a net slippage of 111 working days to the Contract Completion Date attributable to the piling events.",
+      "locator": "_LOC_ins_0060",
+      "part": "document"
+    },
+    {
+      "kind": "ins",
+      "id": 1017,
+      "author": "Counsel review",
+      "date": "2026-04-18T15:17:00Z",
+      "payload_text": "I hold the opinion that the concurrent-delay assertion advanced in the Rebuttal is not supported by the contemporaneous record. The evidence establishes that the control building interface was not released for construction until well after the planned start.",
+      "locator": "_LOC_ins_0062",
+      "part": "document"
+    },
+    {
+      "kind": "ins",
+      "id": 1018,
+      "author": "Dr. Evelyn Marchetti",
+      "date": "2026-04-19T16:18:00Z",
+      "payload_text": "W-1",
+      "locator": "_LOC_tbl_0065",
+      "part": "document"
+    },
+    {
+      "kind": "ins",
+      "id": 1019,
+      "author": "Priya Raman",
+      "date": "2026-04-20T17:19:00Z",
+      "payload_text": "In my opinion, and to a reasonable degree of professional certainty, the jetty topsides delay is excusable and compensable. The delay to LNG tank was neither foreseeable at tender nor within the Contractor's control, based on the documents reviewed.",
+      "locator": "_LOC_ins_0068",
+      "part": "document"
+    },
+    {
+      "kind": "ins",
+      "id": 1020,
+      "author": "James Okonkwo",
+      "date": "2026-04-21T08:20:00Z",
+      "payload_text": "As shown in the record, the substructure activity absorbed its available float by the May update update and thereafter drove the forecast completion date.",
+      "locator": "_LOC_cbul_0069",
+      "part": "document"
+    },
+    {
+      "kind": "ins",
+      "id": 1021,
+      "author": "Dr. Evelyn Marchetti",
+      "date": "2026-04-22T09:21:00Z",
+      "payload_text": "Figure 3-3: Planned versus actual cumulative progress",
+      "locator": "_Ref_F33541",
+      "part": "document"
+    },
+    {
+      "kind": "ins",
+      "id": 1022,
+      "author": "Counsel review",
+      "date": "2026-04-23T10:22:00Z",
+      "payload_text": " ",
+      "locator": "_LOC_empty_0073",
+      "part": "document"
+    },
+    {
+      "kind": "ins",
+      "id": 1023,
+      "author": "T. Nakamura",
+      "date": "2026-04-24T11:23:00Z",
+      "payload_text": "The Contract incorporated a lump-sum price with liquidated damages of USD 238,000 per day for late completion. The contemporaneous schedule updates demonstrate that the critical path ran through the compressor foundation works from data date March update.",
+      "locator": "_LOC_ins_0088",
+      "part": "document"
+    },
+    {
+      "kind": "ins",
+      "id": 1024,
+      "author": "Dr. Evelyn Marchetti",
+      "date": "2026-04-25T12:24:00Z",
+      "payload_text": "The Contract incorporated a lump-sum price with liquidated damages of USD 76,000 per day for late completion. My analysis indicates a net slippage of 157 working days to the Contract Completion Date attributable to the flare package events.",
+      "locator": "_LOC_ins_0090",
+      "part": "document"
+    },
+    {
+      "kind": "ins",
+      "id": 1025,
+      "author": "James Okonkwo",
+      "date": "2026-04-26T13:25:00Z",
+      "payload_text": "Notice to Proceed was issued and the planned duration was 43 calendar months to mechanical completion. As shown in the record, the substructure activity absorbed its available float by the June update update and thereafter drove the forecast completion date.",
+      "locator": "_LOC_ins_0093",
+      "part": "document"
+    },
+    {
+      "kind": "ins",
+      "id": 1026,
+      "author": "James Okonkwo",
+      "date": "2026-04-27T14:26:00Z",
+      "payload_text": "Notice to Proceed was issued and the planned duration was 148 calendar months to mechanical completion. The evidence establishes that the pipe-rack interface was not released for construction until well after the planned start.",
+      "locator": "_LOC_ins_0097",
+      "part": "document"
+    },
+    {
+      "kind": "ins",
+      "id": 1027,
+      "author": "Counsel review",
+      "date": "2026-04-01T15:27:00Z",
+      "payload_text": "The evidence establishes that the flare package interface was not released for construction until well after the planned start. Progress on substructure stalled during the window, and the as-built records show no compensating acceleration.",
+      "locator": "_LOC_ins_0101",
+      "part": "document"
+    },
+    {
+      "kind": "ins",
+      "id": 1028,
+      "author": "T. Nakamura",
+      "date": "2026-04-02T16:28:00Z",
+      "payload_text": "The contemporaneous schedule updates demonstrate that the critical path ran through the flare package works from data date March update. My analysis indicates a net slippage of 135 working days to the Contract Completion Date attributable to the pipe-rack events.",
+      "locator": "_LOC_ins_0104",
+      "part": "document"
+    },
+    {
+      "kind": "ins",
+      "id": 1029,
+      "author": "T. Nakamura",
+      "date": "2026-04-03T17:29:00Z",
+      "payload_text": "As shown in the record, the piling activity absorbed its available float by the April update update and thereafter drove the forecast completion date. The evidence establishes that the piling interface was not released for construction until well after the planned start.",
+      "locator": "_LOC_ins_0106",
+      "part": "document"
+    },
+    {
+      "kind": "ins",
+      "id": 1030,
+      "author": "Priya Raman",
+      "date": "2026-04-04T08:30:00Z",
+      "payload_text": "The evidance establishes that the compressor foundation interface was not released for construction until well after the planned start. As shown in teh record, the control building activity absorbed its available float by the March update update and thereafter drove the forecast completion date.",
+      "locator": "_LOC_ins_0108",
+      "part": "document"
+    },
+    {
+      "kind": "ins",
+      "id": 1031,
+      "author": "James Okonkwo",
+      "date": "2026-04-05T09:31:00Z",
+      "payload_text": "Float ownership was assessed in accordance with the governing Subcontract and the Society of Construction Law Delay and Disruption Protocol. My analysis indicates a net slippage of 228 working days to the Contract Completion Date attributable to the pipe-rack events.",
+      "locator": "_LOC_ins_0115",
+      "part": "document"
+    },
+    {
+      "kind": "ins",
+      "id": 1032,
+      "author": "Counsel review",
+      "date": "2026-04-06T10:32:00Z",
+      "payload_text": "Where the contemporaneous updates were unreliable, I reconstructed the as-built critical path from the daily records. My analysis indicates a net slippage of 232 working days to the Contract Completion Date attributable to the commissioning events.",
+      "locator": "_LOC_ins_0125",
+      "part": "document"
+    },
+    {
+      "kind": "ins",
+      "id": 1033,
+      "author": "Dr. Evelyn Marchetti",
+      "date": "2026-04-07T11:33:00Z",
+      "payload_text": "Where teh contemporaneous updates were unreliable, I reconstructed the as-built critical path from the daily records. My analysis indicates a net slippage of 165 working days to the Contract Completion Date attributable to the flare package events.",
+      "locator": "_LOC_ins_0129",
+      "part": "document"
+    },
+    {
+      "kind": "ins",
+      "id": 1034,
+      "author": "Counsel review",
+      "date": "2026-04-08T12:34:00Z",
+      "payload_text": "The contemporaneous schedule updates demonstrate that the critical path ran through the LNG tank works from data date April update. My analysis indicates a net slippage of 195 working days to the Contract Completion Date attributable to teh piling events.",
+      "locator": "_LOC_ins_0133",
+      "part": "document"
+    },
+    {
+      "kind": "ins",
+      "id": 1035,
+      "author": "James Okonkwo",
+      "date": "2026-04-09T13:35:00Z",
+      "payload_text": "The delay to electrical building was neither foreseeable at tender nor within the Contractor's control, based on the documents reviewed. The contemporaneous schedule updates demonstrate that the critical path ran through the pipe-rack works from data date May update.",
+      "locator": "_LOC_ins_0165",
+      "part": "document"
+    },
+    {
+      "kind": "ins",
+      "id": 1036,
+      "author": "Dr. Evelyn Marchetti",
+      "date": "2026-04-10T14:36:00Z",
+      "payload_text": "Progress on pipe-rack stalled during the window, and the as-built records show no compensating acceleration. The evidence establishes that the electrical building interface was not released for construction until well after the planned start.",
+      "locator": "_LOC_ins_0173",
+      "part": "document"
+    },
+    {
+      "kind": "ins",
+      "id": 1037,
+      "author": "Priya Raman",
+      "date": "2026-04-11T15:37:00Z",
+      "payload_text": "The delay to electrical building was neither foreseeable at tender nor within the Contractor's control, based on the documents reviewed. The delay to flare package was neither foreseeable at tender nor within the Contractor's control, based on the documents reviewed.",
+      "locator": "_LOC_ins_0184",
+      "part": "document"
+    },
+    {
+      "kind": "ins",
+      "id": 1038,
+      "author": "Dr. Evelyn Marchetti",
+      "date": "2026-04-12T16:38:00Z",
+      "payload_text": "My analysis indicates a net slippage of 114 working days to the Contract Completion Date attributable to the piling events. The contemporaneous schedule updates demonstrate that the critical path ran through the commissioning works from data date June update.",
+      "locator": "_LOC_ins_0186",
+      "part": "document"
+    },
+    {
+      "kind": "ins",
+      "id": 1039,
+      "author": "James Okonkwo",
+      "date": "2026-04-13T17:39:00Z",
+      "payload_text": "It is my opinion that the Contractor is entitled to an extension of time of 196 working days for the LNG tank events. The contemporaneous schedule updates demonstrate that the critical path ran through the jetty topsides works from data date May update.",
+      "locator": "_LOC_ins_0201",
+      "part": "document"
+    },
+    {
+      "kind": "ins",
+      "id": 1040,
+      "author": "James Okonkwo",
+      "date": "2026-04-14T08:40:00Z",
+      "payload_text": "I hold the opinion that the concurrent-delay assertion advanced in the Rebuttal is not supported by the contemporaneous record. The delay to piling was neither foreseeable at tender nor within the Contractor's control, based on the documents reviewed.",
+      "locator": "_LOC_ins_0206",
+      "part": "document"
+    },
+    {
+      "kind": "ins",
+      "id": 1041,
+      "author": "Counsel review",
+      "date": "2026-04-15T09:41:00Z",
+      "payload_text": "In my opinion, and to a reasonable degree of professional certainty, the piling delay is excusable and compensable. The contemporaneous schedule updates demonstrate that the critical path ran through the commissioning works from data date April update.",
+      "locator": "_LOC_ins_0207",
+      "part": "document"
+    },
+    {
+      "kind": "ins",
+      "id": 1042,
+      "author": "James Okonkwo",
+      "date": "2026-04-16T10:42:00Z",
+      "payload_text": " Baseline Programme Rev. 0, activity piling, total float as reported at data date.",
+      "locator": "_LOC_fn_0009",
+      "part": "footnotes"
+    }
+  ],
+  "tracked_by_kind": {
+    "ins": 42
+  },
+  "tracked_total": 42,
+  "comments": [
+    {
+      "author": "Priya Raman",
+      "anchor_locator": "_LOC_cm_0004",
+      "text_sha": "15768ac18550"
+    },
+    {
+      "author": "James Okonkwo",
+      "anchor_locator": "_LOC_cm_0029",
+      "text_sha": "52174fec75b9"
+    },
+    {
+      "author": "Dr. Evelyn Marchetti",
+      "anchor_locator": "_LOC_cm_0031",
+      "text_sha": "15768ac18550"
+    },
+    {
+      "author": "James Okonkwo",
+      "anchor_locator": "_LOC_cm_0037",
+      "text_sha": "15768ac18550"
+    },
+    {
+      "author": "James Okonkwo",
+      "anchor_locator": "_LOC_cm_0045",
+      "text_sha": "15768ac18550"
+    },
+    {
+      "author": "Dr. Evelyn Marchetti",
+      "anchor_locator": "_LOC_cm_0045",
+      "text_sha": "52174fec75b9"
+    },
+    {
+      "author": "Dr. Evelyn Marchetti",
+      "anchor_locator": "_LOC_cm_0047",
+      "text_sha": "52174fec75b9"
+    },
+    {
+      "author": "Priya Raman",
+      "anchor_locator": "_LOC_cm_0051",
+      "text_sha": "b95c2335d207"
+    },
+    {
+      "author": "T. Nakamura",
+      "anchor_locator": "_LOC_cm_0088",
+      "text_sha": "d2d81a8c2643"
+    },
+    {
+      "author": "Priya Raman",
+      "anchor_locator": "_LOC_cm_0091",
+      "text_sha": "15768ac18550"
+    },
+    {
+      "author": "Counsel review",
+      "anchor_locator": "_LOC_cm_0091",
+      "text_sha": "b95c2335d207"
+    },
+    {
+      "author": "T. Nakamura",
+      "anchor_locator": "_LOC_cm_0099",
+      "text_sha": "52174fec75b9"
+    },
+    {
+      "author": "James Okonkwo",
+      "anchor_locator": "_LOC_cm_0105",
+      "text_sha": "b95c2335d207"
+    },
+    {
+      "author": "Dr. Evelyn Marchetti",
+      "anchor_locator": "_LOC_cm_0133",
+      "text_sha": "d2d81a8c2643"
+    },
+    {
+      "author": "Priya Raman",
+      "anchor_locator": "_LOC_cm_0134",
+      "text_sha": "b95c2335d207"
+    },
+    {
+      "author": "James Okonkwo",
+      "anchor_locator": "_LOC_cm_0135",
+      "text_sha": "b95c2335d207"
+    },
+    {
+      "author": "Dr. Evelyn Marchetti",
+      "anchor_locator": "_LOC_cm_0146",
+      "text_sha": "d2d81a8c2643"
+    },
+    {
+      "author": "Counsel review",
+      "anchor_locator": "_LOC_cm_0152",
+      "text_sha": "b95c2335d207"
+    },
+    {
+      "author": "Priya Raman",
+      "anchor_locator": "_LOC_cm_0200",
+      "text_sha": "52174fec75b9"
+    },
+    {
+      "author": "James Okonkwo",
+      "anchor_locator": "_LOC_cm_0207",
+      "text_sha": "d2d81a8c2643"
+    }
+  ],
+  "comment_count": 20,
+  "authors": [
+    "Counsel review",
+    "Dr. Evelyn Marchetti",
+    "James Okonkwo",
+    "Priya Raman",
+    "T. Nakamura"
+  ],
+  "spelling_errors": 102,
+  "grammar_errors": 3,
+  "figures": 25,
+  "tables": 22,
+  "expected_preservation": "clean",
+  "defects": [
+    {
+      "id": "D001",
+      "cls": "strip_direct",
+      "locator": "_LOC_sd_0001",
+      "revision_relation": "unrelated",
+      "expected_disposition": "strip_direct_formatting",
+      "note": "As shown in the record, the pipe-rack ac",
+      "data": {
+        "gone_marker": "FF0000"
+      }
+    },
+    {
+      "id": "D002",
+      "cls": "strip_direct",
+      "locator": "_LOC_sd_0002",
+      "revision_relation": "unrelated",
+      "expected_disposition": "strip_direct_formatting",
+      "note": "My analysis indicates a net slippage of ",
+      "data": {
+        "gone_marker": "FF0000"
+      }
+    },
+    {
+      "id": "D003",
+      "cls": "strip_direct",
+      "locator": "_LOC_sd_0003",
+      "revision_relation": "unrelated",
+      "expected_disposition": "strip_direct_formatting",
+      "note": "As shown in the record, the LNG tank act",
+      "data": {
+        "gone_marker": "FF0000"
+      }
+    },
+    {
+      "id": "D004",
+      "cls": "classify_body",
+      "locator": "_LOC_cb_0005",
+      "revision_relation": "inside_revision",
+      "expected_disposition": "restyle_to_LI",
+      "note": "foreign style, run inserted; restyle AND preserve edit",
+      "data": {}
+    },
+    {
+      "id": "D005",
+      "cls": "typography",
+      "locator": "_LOC_typo_0007",
+      "revision_relation": "inside_revision",
+      "expected_disposition": "hold",
+      "note": "inserted text keeps its straight quotes (payload preserved)",
+      "data": {}
+    },
+    {
+      "id": "D006",
+      "cls": "footnote_style",
+      "locator": "_LOC_fn_0009",
+      "revision_relation": "inside_revision",
+      "expected_disposition": "hold",
+      "note": "footnote 1 style",
+      "data": {
+        "fid": 1
+      }
+    },
+    {
+      "id": "D007",
+      "cls": "classify_body",
+      "locator": "_LOC_cb_0010",
+      "revision_relation": "unrelated",
+      "expected_disposition": "restyle_to_LI",
+      "note": "The delay to compressor foundation was n",
+      "data": {}
+    },
+    {
+      "id": "D008",
+      "cls": "classify_body",
+      "locator": "_LOC_cb_0012",
+      "revision_relation": "unrelated",
+      "expected_disposition": "restyle_to_LI",
+      "note": "My analysis indicates a net slippage of ",
+      "data": {}
+    },
+    {
+      "id": "D009",
+      "cls": "strip_direct",
+      "locator": "_LOC_sd_0013",
+      "revision_relation": "unrelated",
+      "expected_disposition": "strip_direct_formatting",
+      "note": "My analysis indicates a net slippage of ",
+      "data": {
+        "gone_marker": "FF0000"
+      }
+    },
+    {
+      "id": "D010",
+      "cls": "typography",
+      "locator": "_LOC_typo_0014",
+      "revision_relation": "unrelated",
+      "expected_disposition": "typography_applied",
+      "note": "straight quotes/dashes",
+      "data": {
+        "no_straight_quote": true
+      }
+    },
+    {
+      "id": "D011",
+      "cls": "classify_bullet",
+      "locator": "_LOC_cbul_0015",
+      "revision_relation": "unrelated",
+      "expected_disposition": "restyle_to_LI",
+      "note": "ListParagraph bullet",
+      "data": {}
+    },
+    {
+      "id": "D012",
+      "cls": "floating_image",
+      "locator": "_LOC_fig_0016",
+      "revision_relation": "unrelated",
+      "expected_disposition": "inline",
+      "note": "floating picture",
+      "data": {}
+    },
+    {
+      "id": "D013",
+      "cls": "strip_direct",
+      "locator": "_LOC_sd_0017",
+      "revision_relation": "unrelated",
+      "expected_disposition": "strip_direct_formatting",
+      "note": "As shown in the record, the compressor f",
+      "data": {
+        "gone_marker": "FF0000"
+      }
+    },
+    {
+      "id": "D014",
+      "cls": "strip_direct",
+      "locator": "_LOC_sd_0018",
+      "revision_relation": "unrelated",
+      "expected_disposition": "strip_direct_formatting",
+      "note": "The contemporaneous schedule updates dem",
+      "data": {
+        "gone_marker": "FF0000"
+      }
+    },
+    {
+      "id": "D015",
+      "cls": "strip_direct",
+      "locator": "_LOC_sd_0019",
+      "revision_relation": "unrelated",
+      "expected_disposition": "strip_direct_formatting",
+      "note": "As shown in the record, the jetty topsid",
+      "data": {
+        "gone_marker": "FF0000"
+      }
+    },
+    {
+      "id": "D016",
+      "cls": "strip_direct",
+      "locator": "_LOC_sd_0020",
+      "revision_relation": "unrelated",
+      "expected_disposition": "strip_direct_formatting",
+      "note": "The dealy to control building was neithe",
+      "data": {
+        "gone_marker": "FF0000"
+      }
+    },
+    {
+      "id": "D017",
+      "cls": "classify_body",
+      "locator": "_LOC_cb_0022",
+      "revision_relation": "unrelated",
+      "expected_disposition": "restyle_to_LI",
+      "note": "My analysis indicates a net slippage of ",
+      "data": {}
+    },
+    {
+      "id": "D018",
+      "cls": "floating_image",
+      "locator": "_LOC_fig_0023",
+      "revision_relation": "inside_revision",
+      "expected_disposition": "inline",
+      "note": "floating image is inlined (a layout change); the inserted object is preserved. Flagged for individual review.",
+      "data": {}
+    },
+    {
+      "id": "D019",
+      "cls": "pdf_linesplit",
+      "locator": "text:In respect of matter number 19 ",
+      "revision_relation": "unrelated",
+      "expected_disposition": "merged",
+      "note": "PDF line-split excerpt",
+      "data": {
+        "min_len": 144,
+        "first_half_len": 141
+      }
+    },
+    {
+      "id": "D020",
+      "cls": "table_style",
+      "locator": "_LOC_tbl_0026",
+      "revision_relation": "adjacent_to_revision",
+      "expected_disposition": "set_LITable",
+      "note": "unstyled table with a cell revision -> styled, edit preserved",
+      "data": {}
+    },
+    {
+      "id": "D021",
+      "cls": "classify_body",
+      "locator": "_LOC_cb_0028",
+      "revision_relation": "unrelated",
+      "expected_disposition": "restyle_to_LI",
+      "note": "The delay to flare package was neither f",
+      "data": {}
+    },
+    {
+      "id": "D022",
+      "cls": "strip_direct",
+      "locator": "_LOC_sd_0029",
+      "revision_relation": "unrelated",
+      "expected_disposition": "strip_direct_formatting",
+      "note": "Progress on piling stalled during the wi",
+      "data": {
+        "gone_marker": "FF0000"
+      }
+    },
+    {
+      "id": "D023",
+      "cls": "classify_body",
+      "locator": "_LOC_cb_0030",
+      "revision_relation": "unrelated",
+      "expected_disposition": "restyle_to_LI",
+      "note": "My analysis indicates a net slippage of ",
+      "data": {}
+    },
+    {
+      "id": "D024",
+      "cls": "wrapper_table",
+      "locator": "_LOC_wrap_0031",
+      "revision_relation": "unrelated",
+      "expected_disposition": "unwrapped",
+      "note": "single-cell wrapper",
+      "data": {}
+    },
+    {
+      "id": "D025",
+      "cls": "page_break",
+      "locator": "_LOC_pb_0032",
+      "revision_relation": "unrelated",
+      "expected_disposition": "removed",
+      "note": "manual page-break paragraph",
+      "data": {}
+    },
+    {
+      "id": "D026",
+      "cls": "strip_direct",
+      "locator": "_LOC_sd_0033",
+      "revision_relation": "inside_revision",
+      "expected_disposition": "hold",
+      "note": "direct formatting on a revised paragraph is left to protect the edit",
+      "data": {}
+    },
+    {
+      "id": "D027",
+      "cls": "strip_direct",
+      "locator": "_LOC_sd_0035",
+      "revision_relation": "unrelated",
+      "expected_disposition": "strip_direct_formatting",
+      "note": "As shown in the record, the piling activ",
+      "data": {
+        "gone_marker": "FF0000"
+      }
+    },
+    {
+      "id": "D028",
+      "cls": "strip_direct",
+      "locator": "_LOC_sd_0036",
+      "revision_relation": "unrelated",
+      "expected_disposition": "strip_direct_formatting",
+      "note": "The delay to substructure was neither fo",
+      "data": {
+        "gone_marker": "FF0000"
+      }
+    },
+    {
+      "id": "D029",
+      "cls": "strip_direct",
+      "locator": "_LOC_sd_0037",
+      "revision_relation": "unrelated",
+      "expected_disposition": "strip_direct_formatting",
+      "note": "My analysis indicates a net slippage of ",
+      "data": {
+        "gone_marker": "FF0000"
+      }
+    },
+    {
+      "id": "D030",
+      "cls": "classify_body",
+      "locator": "_LOC_cb_0038",
+      "revision_relation": "unrelated",
+      "expected_disposition": "restyle_to_LI",
+      "note": "The contemporaneous schedule updates dem",
+      "data": {}
+    },
+    {
+      "id": "D031",
+      "cls": "classify_body",
+      "locator": "_LOC_cb_0039",
+      "revision_relation": "unrelated",
+      "expected_disposition": "restyle_to_LI",
+      "note": "The delay to pipe-rack was neither fores",
+      "data": {}
+    },
+    {
+      "id": "D032",
+      "cls": "page_break",
+      "locator": "_LOC_pb_0040",
+      "revision_relation": "inside_revision",
+      "expected_disposition": "hold",
+      "note": "a tracked manual page break must not be pruned",
+      "data": {}
+    },
+    {
+      "id": "D033",
+      "cls": "heading_body_merge",
+      "locator": "_LOC_hbm_0042",
+      "revision_relation": "inside_revision",
+      "expected_disposition": "hold",
+      "note": "merged heading whose body text is a tracked insertion -> not split",
+      "data": {}
+    },
+    {
+      "id": "D034",
+      "cls": "table_empty_col",
+      "locator": "_LOC_tbl_0044",
+      "revision_relation": "unrelated",
+      "expected_disposition": "columns_dropped",
+      "note": "empty column",
+      "data": {}
+    },
+    {
+      "id": "D035",
+      "cls": "wrapper_table",
+      "locator": "_LOC_wrap_0047",
+      "revision_relation": "inside_revision",
+      "expected_disposition": "unwrapped",
+      "note": "unwrapping moves the wrapped content (including the edit) to body text; words, tracked status and author are preserved. Flagged for review.",
+      "data": {}
+    },
+    {
+      "id": "D036",
+      "cls": "heading_body_merge",
+      "locator": "_LOC_hbm_0049",
+      "revision_relation": "unrelated",
+      "expected_disposition": "split",
+      "note": "heading+body merged",
+      "data": {
+        "body_marker": "must be split out"
+      }
+    },
+    {
+      "id": "D037",
+      "cls": "caption_literal",
+      "locator": "_Ref_F21396",
+      "revision_relation": "unrelated",
+      "expected_disposition": "fielded",
+      "note": "literal caption",
+      "data": {}
+    },
+    {
+      "id": "D038",
+      "cls": "empty_para",
+      "locator": "_LOC_empty_0052",
+      "revision_relation": "unrelated",
+      "expected_disposition": "removed",
+      "note": "stray empty numbered paragraph",
+      "data": {}
+    },
+    {
+      "id": "D039",
+      "cls": "classify_body",
+      "locator": "_LOC_cb_0053",
+      "revision_relation": "unrelated",
+      "expected_disposition": "restyle_to_LI",
+      "note": "foreign style",
+      "data": {}
+    },
+    {
+      "id": "D040",
+      "cls": "pdf_linesplit",
+      "locator": "text:In respect of matter number 40 ",
+      "revision_relation": "adjacent_to_revision",
+      "expected_disposition": "hold",
+      "note": "a split excerpt carries a revision -> not merged",
+      "data": {
+        "first_half_len": 141
+      }
+    },
+    {
+      "id": "D041",
+      "cls": "classify_body",
+      "locator": "_LOC_cb_0056",
+      "revision_relation": "unrelated",
+      "expected_disposition": "restyle_to_LI",
+      "note": "In my opinion, and to a reasonable degre",
+      "data": {}
+    },
+    {
+      "id": "D042",
+      "cls": "strip_direct",
+      "locator": "_LOC_sd_0057",
+      "revision_relation": "unrelated",
+      "expected_disposition": "strip_direct_formatting",
+      "note": "In my opinion, and to a reasonable degre",
+      "data": {
+        "gone_marker": "FF0000"
+      }
+    },
+    {
+      "id": "D043",
+      "cls": "strip_direct",
+      "locator": "_LOC_sd_0058",
+      "revision_relation": "unrelated",
+      "expected_disposition": "strip_direct_formatting",
+      "note": "I hold the opinion that the concurrent-d",
+      "data": {
+        "gone_marker": "FF0000"
+      }
+    },
+    {
+      "id": "D044",
+      "cls": "strip_direct",
+      "locator": "_LOC_sd_0059",
+      "revision_relation": "unrelated",
+      "expected_disposition": "strip_direct_formatting",
+      "note": "In my opinion, and to a reasonable degre",
+      "data": {
+        "gone_marker": "FF0000"
+      }
+    },
+    {
+      "id": "D045",
+      "cls": "classify_body",
+      "locator": "_LOC_cb_0061",
+      "revision_relation": "unrelated",
+      "expected_disposition": "restyle_to_LI",
+      "note": "It is my opinion that the Contractor is ",
+      "data": {}
+    },
+    {
+      "id": "D046",
+      "cls": "strip_direct",
+      "locator": "_LOC_sd_0063",
+      "revision_relation": "unrelated",
+      "expected_disposition": "strip_direct_formatting",
+      "note": "It is my opinion that the Contractor is ",
+      "data": {
+        "gone_marker": "FF0000"
+      }
+    },
+    {
+      "id": "D047",
+      "cls": "tof_mismatch",
+      "locator": "_LOC_tof_0064",
+      "revision_relation": "unrelated",
+      "expected_disposition": "audit_flag",
+      "note": "List-of-Figures title differs from the caption",
+      "data": {}
+    },
+    {
+      "id": "D048",
+      "cls": "table_empty_col",
+      "locator": "_LOC_tbl_0065",
+      "revision_relation": "adjacent_to_revision",
+      "expected_disposition": "columns_dropped",
+      "note": "the empty column has no tracked content; dropping it does not touch the cell revision. Flagged for individual review.",
+      "data": {}
+    },
+    {
+      "id": "D049",
+      "cls": "footnote_style",
+      "locator": "_LOC_fn_0067",
+      "revision_relation": "unrelated",
+      "expected_disposition": "footnote_restyled",
+      "note": "footnote 9 style",
+      "data": {
+        "fid": 9
+      }
+    },
+    {
+      "id": "D050",
+      "cls": "classify_bullet",
+      "locator": "_LOC_cbul_0069",
+      "revision_relation": "inside_revision",
+      "expected_disposition": "restyle_to_LI",
+      "note": "bullet, inserted",
+      "data": {}
+    },
+    {
+      "id": "D051",
+      "cls": "caption_literal",
+      "locator": "_Ref_F33541",
+      "revision_relation": "inside_revision",
+      "expected_disposition": "hold",
+      "note": "literal caption whose text is a revision -> fielding would drop the insertion, so it is held for individual review",
+      "data": {}
+    },
+    {
+      "id": "D052",
+      "cls": "empty_para",
+      "locator": "_LOC_empty_0073",
+      "revision_relation": "inside_revision",
+      "expected_disposition": "hold",
+      "note": "a tracked empty paragraph must not be pruned",
+      "data": {}
+    },
+    {
+      "id": "D053",
+      "cls": "strip_direct",
+      "locator": "_LOC_sd_0075",
+      "revision_relation": "unrelated",
+      "expected_disposition": "strip_direct_formatting",
+      "note": "In my opinion, and to a reasonable degre",
+      "data": {
+        "gone_marker": "FF0000"
+      }
+    },
+    {
+      "id": "D054",
+      "cls": "classify_body",
+      "locator": "_LOC_cb_0076",
+      "revision_relation": "unrelated",
+      "expected_disposition": "restyle_to_LI",
+      "note": "I hold the opinion that the concurrent-d",
+      "data": {}
+    },
+    {
+      "id": "D055",
+      "cls": "classify_body",
+      "locator": "_LOC_cb_0077",
+      "revision_relation": "unrelated",
+      "expected_disposition": "restyle_to_LI",
+      "note": "I hold the opinion that the concurrent-d",
+      "data": {}
+    },
+    {
+      "id": "D056",
+      "cls": "strip_direct",
+      "locator": "_LOC_sd_0078",
+      "revision_relation": "unrelated",
+      "expected_disposition": "strip_direct_formatting",
+      "note": "I hold the opinion that the concurrent-d",
+      "data": {
+        "gone_marker": "FF0000"
+      }
+    },
+    {
+      "id": "D057",
+      "cls": "classify_body",
+      "locator": "_LOC_cb_0079",
+      "revision_relation": "unrelated",
+      "expected_disposition": "restyle_to_LI",
+      "note": "It is my opinion that the Contractor is ",
+      "data": {}
+    },
+    {
+      "id": "D058",
+      "cls": "strip_direct",
+      "locator": "_LOC_sd_0080",
+      "revision_relation": "unrelated",
+      "expected_disposition": "strip_direct_formatting",
+      "note": "It is my opinion that the Contractor is ",
+      "data": {
+        "gone_marker": "FF0000"
+      }
+    },
+    {
+      "id": "D059",
+      "cls": "strip_direct",
+      "locator": "_LOC_sd_0081",
+      "revision_relation": "unrelated",
+      "expected_disposition": "strip_direct_formatting",
+      "note": "direct fmt",
+      "data": {
+        "gone_marker": "Calibri"
+      }
+    },
+    {
+      "id": "D060",
+      "cls": "figure_numbering",
+      "locator": "_LOC_fnum_0082",
+      "revision_relation": "unrelated",
+      "expected_disposition": "audit_flag",
+      "note": "caption section number does not match its section",
+      "data": {}
+    },
+    {
+      "id": "D061",
+      "cls": "table_style",
+      "locator": "_LOC_tbl_0083",
+      "revision_relation": "unrelated",
+      "expected_disposition": "set_LITable",
+      "note": "unstyled table",
+      "data": {}
+    },
+    {
+      "id": "D062",
+      "cls": "classify_body",
+      "locator": "_LOC_cb_0084",
+      "revision_relation": "unrelated",
+      "expected_disposition": "restyle_to_LI",
+      "note": "I hold the opinion that the concurrent-d",
+      "data": {}
+    },
+    {
+      "id": "D063",
+      "cls": "strip_direct",
+      "locator": "_LOC_sd_0085",
+      "revision_relation": "unrelated",
+      "expected_disposition": "strip_direct_formatting",
+      "note": "I hold the opinion that the concurrent-d",
+      "data": {
+        "gone_marker": "FF0000"
+      }
+    },
+    {
+      "id": "D064",
+      "cls": "classify_body",
+      "locator": "_LOC_cb_0086",
+      "revision_relation": "unrelated",
+      "expected_disposition": "restyle_to_LI",
+      "note": "In my opinion, and to a reasonable degre",
+      "data": {}
+    },
+    {
+      "id": "D065",
+      "cls": "strip_direct",
+      "locator": "_LOC_sd_0087",
+      "revision_relation": "unrelated",
+      "expected_disposition": "strip_direct_formatting",
+      "note": "The Contract incorporated a lump-sum pri",
+      "data": {
+        "gone_marker": "FF0000"
+      }
+    },
+    {
+      "id": "D066",
+      "cls": "strip_direct",
+      "locator": "_LOC_sd_0089",
+      "revision_relation": "unrelated",
+      "expected_disposition": "strip_direct_formatting",
+      "note": "The Contract incorporated a lump-sum pri",
+      "data": {
+        "gone_marker": "FF0000"
+      }
+    },
+    {
+      "id": "D067",
+      "cls": "classify_body",
+      "locator": "_LOC_cb_0091",
+      "revision_relation": "unrelated",
+      "expected_disposition": "restyle_to_LI",
+      "note": "Notice to Proceed was issued and the pla",
+      "data": {}
+    },
+    {
+      "id": "D068",
+      "cls": "classify_body",
+      "locator": "_LOC_cb_0092",
+      "revision_relation": "unrelated",
+      "expected_disposition": "restyle_to_LI",
+      "note": "Notice to Proceed was issued and the pla",
+      "data": {}
+    },
+    {
+      "id": "D069",
+      "cls": "strip_direct",
+      "locator": "_LOC_sd_0094",
+      "revision_relation": "unrelated",
+      "expected_disposition": "strip_direct_formatting",
+      "note": "The parties are in dispute over responsi",
+      "data": {
+        "gone_marker": "FF0000"
+      }
+    },
+    {
+      "id": "D070",
+      "cls": "classify_body",
+      "locator": "_LOC_cb_0095",
+      "revision_relation": "unrelated",
+      "expected_disposition": "restyle_to_LI",
+      "note": "The Project comprised the engineering, p",
+      "data": {}
+    },
+    {
+      "id": "D071",
+      "cls": "strip_direct",
+      "locator": "_LOC_sd_0096",
+      "revision_relation": "unrelated",
+      "expected_disposition": "strip_direct_formatting",
+      "note": "The Project comprised the engineering, p",
+      "data": {
+        "gone_marker": "FF0000"
+      }
+    },
+    {
+      "id": "D072",
+      "cls": "strip_direct",
+      "locator": "_LOC_sd_0098",
+      "revision_relation": "unrelated",
+      "expected_disposition": "strip_direct_formatting",
+      "note": "Notice to Proceed was issued and the pla",
+      "data": {
+        "gone_marker": "FF0000"
+      }
+    },
+    {
+      "id": "D073",
+      "cls": "strip_direct",
+      "locator": "_LOC_sd_0099",
+      "revision_relation": "unrelated",
+      "expected_disposition": "strip_direct_formatting",
+      "note": "Notice to Proceed was issued and the pla",
+      "data": {
+        "gone_marker": "FF0000"
+      }
+    },
+    {
+      "id": "D074",
+      "cls": "strip_direct",
+      "locator": "_LOC_sd_0100",
+      "revision_relation": "unrelated",
+      "expected_disposition": "strip_direct_formatting",
+      "note": "The contemporaneous schedule updates dem",
+      "data": {
+        "gone_marker": "FF0000"
+      }
+    },
+    {
+      "id": "D075",
+      "cls": "strip_direct",
+      "locator": "_LOC_sd_0102",
+      "revision_relation": "unrelated",
+      "expected_disposition": "strip_direct_formatting",
+      "note": "The contemporaneous schedule updates dem",
+      "data": {
+        "gone_marker": "FF0000"
+      }
+    },
+    {
+      "id": "D076",
+      "cls": "classify_body",
+      "locator": "_LOC_cb_0103",
+      "revision_relation": "unrelated",
+      "expected_disposition": "restyle_to_LI",
+      "note": "The delay to LNG tank was neither forese",
+      "data": {}
+    },
+    {
+      "id": "D077",
+      "cls": "strip_direct",
+      "locator": "_LOC_sd_0105",
+      "revision_relation": "unrelated",
+      "expected_disposition": "strip_direct_formatting",
+      "note": "The contemporaneous schedule updates dem",
+      "data": {
+        "gone_marker": "FF0000"
+      }
+    },
+    {
+      "id": "D078",
+      "cls": "strip_direct",
+      "locator": "_LOC_sd_0107",
+      "revision_relation": "unrelated",
+      "expected_disposition": "strip_direct_formatting",
+      "note": "The delay to control building was neithe",
+      "data": {
+        "gone_marker": "FF0000"
+      }
+    },
+    {
+      "id": "D079",
+      "cls": "classify_body",
+      "locator": "_LOC_cb_0109",
+      "revision_relation": "unrelated",
+      "expected_disposition": "restyle_to_LI",
+      "note": "The contemporaneous schedule updates dem",
+      "data": {}
+    },
+    {
+      "id": "D080",
+      "cls": "classify_body",
+      "locator": "_LOC_cb_0110",
+      "revision_relation": "unrelated",
+      "expected_disposition": "restyle_to_LI",
+      "note": "My analysis indicates a net slippage of ",
+      "data": {}
+    },
+    {
+      "id": "D081",
+      "cls": "classify_body",
+      "locator": "_LOC_cb_0111",
+      "revision_relation": "unrelated",
+      "expected_disposition": "restyle_to_LI",
+      "note": "The contemporaneous schedule updates dem",
+      "data": {}
+    },
+    {
+      "id": "D082",
+      "cls": "classify_body",
+      "locator": "_LOC_cb_0112",
+      "revision_relation": "unrelated",
+      "expected_disposition": "restyle_to_LI",
+      "note": "Progress on pipe-rack stalled during the",
+      "data": {}
+    },
+    {
+      "id": "D083",
+      "cls": "classify_body",
+      "locator": "_LOC_cb_0113",
+      "revision_relation": "unrelated",
+      "expected_disposition": "restyle_to_LI",
+      "note": "Where the contemporaneous updates were u",
+      "data": {}
+    },
+    {
+      "id": "D084",
+      "cls": "strip_direct",
+      "locator": "_LOC_sd_0114",
+      "revision_relation": "unrelated",
+      "expected_disposition": "strip_direct_formatting",
+      "note": "Where the contemporaneous updates were u",
+      "data": {
+        "gone_marker": "FF0000"
+      }
+    },
+    {
+      "id": "D085",
+      "cls": "strip_direct",
+      "locator": "_LOC_sd_0116",
+      "revision_relation": "unrelated",
+      "expected_disposition": "strip_direct_formatting",
+      "note": "For each window I validated the schedule",
+      "data": {
+        "gone_marker": "FF0000"
+      }
+    },
+    {
+      "id": "D086",
+      "cls": "strip_direct",
+      "locator": "_LOC_sd_0117",
+      "revision_relation": "unrelated",
+      "expected_disposition": "strip_direct_formatting",
+      "note": "Where the contemporaneous updates were u",
+      "data": {
+        "gone_marker": "FF0000"
+      }
+    },
+    {
+      "id": "D087",
+      "cls": "strip_direct",
+      "locator": "_LOC_sd_0118",
+      "revision_relation": "unrelated",
+      "expected_disposition": "strip_direct_formatting",
+      "note": "I applied a windows-based analysis consi",
+      "data": {
+        "gone_marker": "FF0000"
+      }
+    },
+    {
+      "id": "D088",
+      "cls": "strip_direct",
+      "locator": "_LOC_sd_0119",
+      "revision_relation": "unrelated",
+      "expected_disposition": "strip_direct_formatting",
+      "note": "Concurrency was tested against the four ",
+      "data": {
+        "gone_marker": "FF0000"
+      }
+    },
+    {
+      "id": "D089",
+      "cls": "classify_body",
+      "locator": "_LOC_cb_0120",
+      "revision_relation": "unrelated",
+      "expected_disposition": "restyle_to_LI",
+      "note": "Concurrency was tested against the four ",
+      "data": {}
+    },
+    {
+      "id": "D090",
+      "cls": "strip_direct",
+      "locator": "_LOC_sd_0121",
+      "revision_relation": "unrelated",
+      "expected_disposition": "strip_direct_formatting",
+      "note": "Concurrency was tested against the four ",
+      "data": {
+        "gone_marker": "FF0000"
+      }
+    },
+    {
+      "id": "D091",
+      "cls": "classify_body",
+      "locator": "_LOC_cb_0122",
+      "revision_relation": "unrelated",
+      "expected_disposition": "restyle_to_LI",
+      "note": "Concurrency was tested against the four ",
+      "data": {}
+    },
+    {
+      "id": "D092",
+      "cls": "strip_direct",
+      "locator": "_LOC_sd_0123",
+      "revision_relation": "unrelated",
+      "expected_disposition": "strip_direct_formatting",
+      "note": "For each window I validated the schedule",
+      "data": {
+        "gone_marker": "FF0000"
+      }
+    },
+    {
+      "id": "D093",
+      "cls": "strip_direct",
+      "locator": "_LOC_sd_0124",
+      "revision_relation": "unrelated",
+      "expected_disposition": "strip_direct_formatting",
+      "note": "Float ownership was assessed in accordan",
+      "data": {
+        "gone_marker": "FF0000"
+      }
+    },
+    {
+      "id": "D094",
+      "cls": "classify_body",
+      "locator": "_LOC_cb_0126",
+      "revision_relation": "unrelated",
+      "expected_disposition": "restyle_to_LI",
+      "note": "I applied a windows-based analysis consi",
+      "data": {}
+    },
+    {
+      "id": "D095",
+      "cls": "classify_body",
+      "locator": "_LOC_cb_0127",
+      "revision_relation": "unrelated",
+      "expected_disposition": "restyle_to_LI",
+      "note": "I applied a windows-based analysis consi",
+      "data": {}
+    },
+    {
+      "id": "D096",
+      "cls": "strip_direct",
+      "locator": "_LOC_sd_0128",
+      "revision_relation": "unrelated",
+      "expected_disposition": "strip_direct_formatting",
+      "note": "For each window I validated the schedule",
+      "data": {
+        "gone_marker": "FF0000"
+      }
+    },
+    {
+      "id": "D097",
+      "cls": "classify_body",
+      "locator": "_LOC_cb_0130",
+      "revision_relation": "unrelated",
+      "expected_disposition": "restyle_to_LI",
+      "note": "The evidence establishes that the piling",
+      "data": {}
+    },
+    {
+      "id": "D098",
+      "cls": "classify_body",
+      "locator": "_LOC_cb_0131",
+      "revision_relation": "unrelated",
+      "expected_disposition": "restyle_to_LI",
+      "note": "The evidence establishes that the pipe-r",
+      "data": {}
+    },
+    {
+      "id": "D099",
+      "cls": "classify_body",
+      "locator": "_LOC_cb_0132",
+      "revision_relation": "unrelated",
+      "expected_disposition": "restyle_to_LI",
+      "note": "As shown in the record, the piling activ",
+      "data": {}
+    },
+    {
+      "id": "D100",
+      "cls": "strip_direct",
+      "locator": "_LOC_sd_0134",
+      "revision_relation": "unrelated",
+      "expected_disposition": "strip_direct_formatting",
+      "note": "The evidence establishes that the commis",
+      "data": {
+        "gone_marker": "FF0000"
+      }
+    },
+    {
+      "id": "D101",
+      "cls": "strip_direct",
+      "locator": "_LOC_sd_0135",
+      "revision_relation": "unrelated",
+      "expected_disposition": "strip_direct_formatting",
+      "note": "My analysis indicates a net slippage of ",
+      "data": {
+        "gone_marker": "FF0000"
+      }
+    },
+    {
+      "id": "D102",
+      "cls": "classify_body",
+      "locator": "_LOC_cb_0136",
+      "revision_relation": "unrelated",
+      "expected_disposition": "restyle_to_LI",
+      "note": "The contemporaneous schedule updates dem",
+      "data": {}
+    },
+    {
+      "id": "D103",
+      "cls": "strip_direct",
+      "locator": "_LOC_sd_0137",
+      "revision_relation": "unrelated",
+      "expected_disposition": "strip_direct_formatting",
+      "note": "My analysis indicates a net slippage of ",
+      "data": {
+        "gone_marker": "FF0000"
+      }
+    },
+    {
+      "id": "D104",
+      "cls": "strip_direct",
+      "locator": "_LOC_sd_0138",
+      "revision_relation": "unrelated",
+      "expected_disposition": "strip_direct_formatting",
+      "note": "My analysis indicates a net slippage of ",
+      "data": {
+        "gone_marker": "FF0000"
+      }
+    },
+    {
+      "id": "D105",
+      "cls": "classify_body",
+      "locator": "_LOC_cb_0139",
+      "revision_relation": "unrelated",
+      "expected_disposition": "restyle_to_LI",
+      "note": "My analysis indicates a net slippage of ",
+      "data": {}
+    },
+    {
+      "id": "D106",
+      "cls": "classify_body",
+      "locator": "_LOC_cb_0140",
+      "revision_relation": "unrelated",
+      "expected_disposition": "restyle_to_LI",
+      "note": "My analysis indicates a net slippage of ",
+      "data": {}
+    },
+    {
+      "id": "D107",
+      "cls": "classify_body",
+      "locator": "_LOC_cb_0141",
+      "revision_relation": "unrelated",
+      "expected_disposition": "restyle_to_LI",
+      "note": "Progress on compressor foundation stalle",
+      "data": {}
+    },
+    {
+      "id": "D108",
+      "cls": "classify_body",
+      "locator": "_LOC_cb_0142",
+      "revision_relation": "unrelated",
+      "expected_disposition": "restyle_to_LI",
+      "note": "As shown in the record, the compressor f",
+      "data": {}
+    },
+    {
+      "id": "D109",
+      "cls": "classify_body",
+      "locator": "_LOC_cb_0143",
+      "revision_relation": "unrelated",
+      "expected_disposition": "restyle_to_LI",
+      "note": "The evidence establishes that the pipe-r",
+      "data": {}
+    },
+    {
+      "id": "D110",
+      "cls": "classify_body",
+      "locator": "_LOC_cb_0144",
+      "revision_relation": "unrelated",
+      "expected_disposition": "restyle_to_LI",
+      "note": "As shown in the record, the commissionin",
+      "data": {}
+    },
+    {
+      "id": "D111",
+      "cls": "strip_direct",
+      "locator": "_LOC_sd_0145",
+      "revision_relation": "unrelated",
+      "expected_disposition": "strip_direct_formatting",
+      "note": "As shown in the record, the commissionin",
+      "data": {
+        "gone_marker": "FF0000"
+      }
+    },
+    {
+      "id": "D112",
+      "cls": "classify_body",
+      "locator": "_LOC_cb_0146",
+      "revision_relation": "unrelated",
+      "expected_disposition": "restyle_to_LI",
+      "note": "The delay to piling was neither foreseea",
+      "data": {}
+    },
+    {
+      "id": "D113",
+      "cls": "strip_direct",
+      "locator": "_LOC_sd_0147",
+      "revision_relation": "unrelated",
+      "expected_disposition": "strip_direct_formatting",
+      "note": "The delay to piling was neither foreseea",
+      "data": {
+        "gone_marker": "FF0000"
+      }
+    },
+    {
+      "id": "D114",
+      "cls": "strip_direct",
+      "locator": "_LOC_sd_0148",
+      "revision_relation": "unrelated",
+      "expected_disposition": "strip_direct_formatting",
+      "note": "The contemporaneous schedule updates dem",
+      "data": {
+        "gone_marker": "FF0000"
+      }
+    },
+    {
+      "id": "D115",
+      "cls": "classify_body",
+      "locator": "_LOC_cb_0149",
+      "revision_relation": "unrelated",
+      "expected_disposition": "restyle_to_LI",
+      "note": "The contemporaneous schedule updates dem",
+      "data": {}
+    },
+    {
+      "id": "D116",
+      "cls": "strip_direct",
+      "locator": "_LOC_sd_0150",
+      "revision_relation": "unrelated",
+      "expected_disposition": "strip_direct_formatting",
+      "note": "Progress on flare package stalled during",
+      "data": {
+        "gone_marker": "FF0000"
+      }
+    },
+    {
+      "id": "D117",
+      "cls": "strip_direct",
+      "locator": "_LOC_sd_0151",
+      "revision_relation": "unrelated",
+      "expected_disposition": "strip_direct_formatting",
+      "note": "As shown in the record, the control buil",
+      "data": {
+        "gone_marker": "FF0000"
+      }
+    },
+    {
+      "id": "D118",
+      "cls": "strip_direct",
+      "locator": "_LOC_sd_0152",
+      "revision_relation": "unrelated",
+      "expected_disposition": "strip_direct_formatting",
+      "note": "As shown in the record, the control buil",
+      "data": {
+        "gone_marker": "FF0000"
+      }
+    },
+    {
+      "id": "D119",
+      "cls": "classify_body",
+      "locator": "_LOC_cb_0153",
+      "revision_relation": "unrelated",
+      "expected_disposition": "restyle_to_LI",
+      "note": "As shown in the record, the commissionin",
+      "data": {}
+    },
+    {
+      "id": "D120",
+      "cls": "strip_direct",
+      "locator": "_LOC_sd_0154",
+      "revision_relation": "unrelated",
+      "expected_disposition": "strip_direct_formatting",
+      "note": "As shown in the record, the commissionin",
+      "data": {
+        "gone_marker": "FF0000"
+      }
+    },
+    {
+      "id": "D121",
+      "cls": "classify_body",
+      "locator": "_LOC_cb_0155",
+      "revision_relation": "unrelated",
+      "expected_disposition": "restyle_to_LI",
+      "note": "The evidence establishes that teh contro",
+      "data": {}
+    },
+    {
+      "id": "D122",
+      "cls": "strip_direct",
+      "locator": "_LOC_sd_0156",
+      "revision_relation": "unrelated",
+      "expected_disposition": "strip_direct_formatting",
+      "note": "The evidence establishes that teh contro",
+      "data": {
+        "gone_marker": "FF0000"
+      }
+    },
+    {
+      "id": "D123",
+      "cls": "classify_body",
+      "locator": "_LOC_cb_0157",
+      "revision_relation": "unrelated",
+      "expected_disposition": "restyle_to_LI",
+      "note": "As shown in the record, the piling activ",
+      "data": {}
+    },
+    {
+      "id": "D124",
+      "cls": "strip_direct",
+      "locator": "_LOC_sd_0158",
+      "revision_relation": "unrelated",
+      "expected_disposition": "strip_direct_formatting",
+      "note": "As shown in the record, the piling activ",
+      "data": {
+        "gone_marker": "FF0000"
+      }
+    },
+    {
+      "id": "D125",
+      "cls": "classify_body",
+      "locator": "_LOC_cb_0159",
+      "revision_relation": "unrelated",
+      "expected_disposition": "restyle_to_LI",
+      "note": "As shown in the record, the control buil",
+      "data": {}
+    },
+    {
+      "id": "D126",
+      "cls": "classify_body",
+      "locator": "_LOC_cb_0160",
+      "revision_relation": "unrelated",
+      "expected_disposition": "restyle_to_LI",
+      "note": "The delay to control building was neithe",
+      "data": {}
+    },
+    {
+      "id": "D127",
+      "cls": "strip_direct",
+      "locator": "_LOC_sd_0161",
+      "revision_relation": "unrelated",
+      "expected_disposition": "strip_direct_formatting",
+      "note": "The delay to control building was neithe",
+      "data": {
+        "gone_marker": "FF0000"
+      }
+    },
+    {
+      "id": "D128",
+      "cls": "classify_body",
+      "locator": "_LOC_cb_0162",
+      "revision_relation": "unrelated",
+      "expected_disposition": "restyle_to_LI",
+      "note": "Progress on piling stalled during the wi",
+      "data": {}
+    },
+    {
+      "id": "D129",
+      "cls": "strip_direct",
+      "locator": "_LOC_sd_0163",
+      "revision_relation": "unrelated",
+      "expected_disposition": "strip_direct_formatting",
+      "note": "The evidence establishes that the electr",
+      "data": {
+        "gone_marker": "FF0000"
+      }
+    },
+    {
+      "id": "D130",
+      "cls": "strip_direct",
+      "locator": "_LOC_sd_0164",
+      "revision_relation": "unrelated",
+      "expected_disposition": "strip_direct_formatting",
+      "note": "As shown in the record, the control buil",
+      "data": {
+        "gone_marker": "FF0000"
+      }
+    },
+    {
+      "id": "D131",
+      "cls": "classify_body",
+      "locator": "_LOC_cb_0166",
+      "revision_relation": "unrelated",
+      "expected_disposition": "restyle_to_LI",
+      "note": "The evidence establishes that the flare ",
+      "data": {}
+    },
+    {
+      "id": "D132",
+      "cls": "strip_direct",
+      "locator": "_LOC_sd_0167",
+      "revision_relation": "unrelated",
+      "expected_disposition": "strip_direct_formatting",
+      "note": "The contemporaneous schedule updates dem",
+      "data": {
+        "gone_marker": "FF0000"
+      }
+    },
+    {
+      "id": "D133",
+      "cls": "classify_body",
+      "locator": "_LOC_cb_0168",
+      "revision_relation": "unrelated",
+      "expected_disposition": "restyle_to_LI",
+      "note": "The evidence establishes that the piling",
+      "data": {}
+    },
+    {
+      "id": "D134",
+      "cls": "classify_body",
+      "locator": "_LOC_cb_0169",
+      "revision_relation": "unrelated",
+      "expected_disposition": "restyle_to_LI",
+      "note": "The evidence establishes that teh piling",
+      "data": {}
+    },
+    {
+      "id": "D135",
+      "cls": "strip_direct",
+      "locator": "_LOC_sd_0170",
+      "revision_relation": "unrelated",
+      "expected_disposition": "strip_direct_formatting",
+      "note": "The contemporaneous schedule updates dem",
+      "data": {
+        "gone_marker": "FF0000"
+      }
+    },
+    {
+      "id": "D136",
+      "cls": "classify_body",
+      "locator": "_LOC_cb_0171",
+      "revision_relation": "unrelated",
+      "expected_disposition": "restyle_to_LI",
+      "note": "Progress on LNG tank stalled during the ",
+      "data": {}
+    },
+    {
+      "id": "D137",
+      "cls": "classify_body",
+      "locator": "_LOC_cb_0172",
+      "revision_relation": "unrelated",
+      "expected_disposition": "restyle_to_LI",
+      "note": "As shown in the record, the control buil",
+      "data": {}
+    },
+    {
+      "id": "D138",
+      "cls": "strip_direct",
+      "locator": "_LOC_sd_0174",
+      "revision_relation": "unrelated",
+      "expected_disposition": "strip_direct_formatting",
+      "note": "The evidence establishes that the flare ",
+      "data": {
+        "gone_marker": "FF0000"
+      }
+    },
+    {
+      "id": "D139",
+      "cls": "classify_body",
+      "locator": "_LOC_cb_0175",
+      "revision_relation": "unrelated",
+      "expected_disposition": "restyle_to_LI",
+      "note": "The evidence establishes that the flare ",
+      "data": {}
+    },
+    {
+      "id": "D140",
+      "cls": "classify_body",
+      "locator": "_LOC_cb_0176",
+      "revision_relation": "unrelated",
+      "expected_disposition": "restyle_to_LI",
+      "note": "The evidence establishes that the pipe-r",
+      "data": {}
+    },
+    {
+      "id": "D141",
+      "cls": "classify_body",
+      "locator": "_LOC_cb_0177",
+      "revision_relation": "unrelated",
+      "expected_disposition": "restyle_to_LI",
+      "note": "The contemporaneous schedule updates dem",
+      "data": {}
+    },
+    {
+      "id": "D142",
+      "cls": "classify_body",
+      "locator": "_LOC_cb_0178",
+      "revision_relation": "unrelated",
+      "expected_disposition": "restyle_to_LI",
+      "note": "The contemporaneous schedule updates dem",
+      "data": {}
+    },
+    {
+      "id": "D143",
+      "cls": "classify_body",
+      "locator": "_LOC_cb_0179",
+      "revision_relation": "unrelated",
+      "expected_disposition": "restyle_to_LI",
+      "note": "The delay to pipe-rack was neither fores",
+      "data": {}
+    },
+    {
+      "id": "D144",
+      "cls": "strip_direct",
+      "locator": "_LOC_sd_0180",
+      "revision_relation": "unrelated",
+      "expected_disposition": "strip_direct_formatting",
+      "note": "The delay to pipe-rack was neither fores",
+      "data": {
+        "gone_marker": "FF0000"
+      }
+    },
+    {
+      "id": "D145",
+      "cls": "classify_body",
+      "locator": "_LOC_cb_0181",
+      "revision_relation": "unrelated",
+      "expected_disposition": "restyle_to_LI",
+      "note": "Progress on control building stalled dur",
+      "data": {}
+    },
+    {
+      "id": "D146",
+      "cls": "classify_body",
+      "locator": "_LOC_cb_0182",
+      "revision_relation": "unrelated",
+      "expected_disposition": "restyle_to_LI",
+      "note": "My analysis indicates a net slippage of ",
+      "data": {}
+    },
+    {
+      "id": "D147",
+      "cls": "classify_body",
+      "locator": "_LOC_cb_0183",
+      "revision_relation": "unrelated",
+      "expected_disposition": "restyle_to_LI",
+      "note": "As shown in the record, the compressor f",
+      "data": {}
+    },
+    {
+      "id": "D148",
+      "cls": "strip_direct",
+      "locator": "_LOC_sd_0185",
+      "revision_relation": "unrelated",
+      "expected_disposition": "strip_direct_formatting",
+      "note": "The contemporaneous schedule updates dem",
+      "data": {
+        "gone_marker": "FF0000"
+      }
+    },
+    {
+      "id": "D149",
+      "cls": "classify_body",
+      "locator": "_LOC_cb_0187",
+      "revision_relation": "unrelated",
+      "expected_disposition": "restyle_to_LI",
+      "note": "The contemporaneous schedule updates dem",
+      "data": {}
+    },
+    {
+      "id": "D150",
+      "cls": "classify_body",
+      "locator": "_LOC_cb_0188",
+      "revision_relation": "unrelated",
+      "expected_disposition": "restyle_to_LI",
+      "note": "Progress on piling stalled during the wi",
+      "data": {}
+    },
+    {
+      "id": "D151",
+      "cls": "strip_direct",
+      "locator": "_LOC_sd_0189",
+      "revision_relation": "unrelated",
+      "expected_disposition": "strip_direct_formatting",
+      "note": "My analysis indicates a net slippage of ",
+      "data": {
+        "gone_marker": "FF0000"
+      }
+    },
+    {
+      "id": "D152",
+      "cls": "classify_body",
+      "locator": "_LOC_cb_0190",
+      "revision_relation": "unrelated",
+      "expected_disposition": "restyle_to_LI",
+      "note": "The delay to pipe-rack was neither fores",
+      "data": {}
+    },
+    {
+      "id": "D153",
+      "cls": "classify_body",
+      "locator": "_LOC_cb_0191",
+      "revision_relation": "unrelated",
+      "expected_disposition": "restyle_to_LI",
+      "note": "As shown in the record, the substructure",
+      "data": {}
+    },
+    {
+      "id": "D154",
+      "cls": "classify_body",
+      "locator": "_LOC_cb_0192",
+      "revision_relation": "unrelated",
+      "expected_disposition": "restyle_to_LI",
+      "note": "The delay to jetty topsides was neither ",
+      "data": {}
+    },
+    {
+      "id": "D155",
+      "cls": "classify_body",
+      "locator": "_LOC_cb_0193",
+      "revision_relation": "unrelated",
+      "expected_disposition": "restyle_to_LI",
+      "note": "As shown in the record, the LNG tank act",
+      "data": {}
+    },
+    {
+      "id": "D156",
+      "cls": "strip_direct",
+      "locator": "_LOC_sd_0194",
+      "revision_relation": "unrelated",
+      "expected_disposition": "strip_direct_formatting",
+      "note": "As shown in the record, the LNG tank act",
+      "data": {
+        "gone_marker": "FF0000"
+      }
+    },
+    {
+      "id": "D157",
+      "cls": "strip_direct",
+      "locator": "_LOC_sd_0195",
+      "revision_relation": "unrelated",
+      "expected_disposition": "strip_direct_formatting",
+      "note": "As shown in the record, the flare packag",
+      "data": {
+        "gone_marker": "FF0000"
+      }
+    },
+    {
+      "id": "D158",
+      "cls": "classify_body",
+      "locator": "_LOC_cb_0196",
+      "revision_relation": "unrelated",
+      "expected_disposition": "restyle_to_LI",
+      "note": "It is my opinion that teh Contractor is ",
+      "data": {}
+    },
+    {
+      "id": "D159",
+      "cls": "classify_body",
+      "locator": "_LOC_cb_0197",
+      "revision_relation": "unrelated",
+      "expected_disposition": "restyle_to_LI",
+      "note": "It is my opinion that the Contractor is ",
+      "data": {}
+    },
+    {
+      "id": "D160",
+      "cls": "strip_direct",
+      "locator": "_LOC_sd_0198",
+      "revision_relation": "unrelated",
+      "expected_disposition": "strip_direct_formatting",
+      "note": "In my opinion, and to a reasonable degre",
+      "data": {
+        "gone_marker": "FF0000"
+      }
+    },
+    {
+      "id": "D161",
+      "cls": "strip_direct",
+      "locator": "_LOC_sd_0199",
+      "revision_relation": "unrelated",
+      "expected_disposition": "strip_direct_formatting",
+      "note": "In my opinion, and to a reasonable degre",
+      "data": {
+        "gone_marker": "FF0000"
+      }
+    },
+    {
+      "id": "D162",
+      "cls": "classify_body",
+      "locator": "_LOC_cb_0200",
+      "revision_relation": "unrelated",
+      "expected_disposition": "restyle_to_LI",
+      "note": "In my opinion, and to a reasonable degre",
+      "data": {}
+    },
+    {
+      "id": "D163",
+      "cls": "classify_body",
+      "locator": "_LOC_cb_0202",
+      "revision_relation": "unrelated",
+      "expected_disposition": "restyle_to_LI",
+      "note": "I hold the opinion that the concurrent-d",
+      "data": {}
+    },
+    {
+      "id": "D164",
+      "cls": "classify_body",
+      "locator": "_LOC_cb_0203",
+      "revision_relation": "unrelated",
+      "expected_disposition": "restyle_to_LI",
+      "note": "I hold the opinion that the concurrent-d",
+      "data": {}
+    },
+    {
+      "id": "D165",
+      "cls": "classify_body",
+      "locator": "_LOC_cb_0204",
+      "revision_relation": "unrelated",
+      "expected_disposition": "restyle_to_LI",
+      "note": "In my opinion, and to a reasonable degre",
+      "data": {}
+    },
+    {
+      "id": "D166",
+      "cls": "classify_body",
+      "locator": "_LOC_cb_0205",
+      "revision_relation": "unrelated",
+      "expected_disposition": "restyle_to_LI",
+      "note": "In my opinion, and to a reasonable degre",
+      "data": {}
+    },
+    {
+      "id": "D167",
+      "cls": "strip_direct",
+      "locator": "_LOC_sd_0208",
+      "revision_relation": "unrelated",
+      "expected_disposition": "strip_direct_formatting",
+      "note": "I hold the opinion that the concurrent-d",
+      "data": {
+        "gone_marker": "FF0000"
+      }
+    },
+    {
+      "id": "D168",
+      "cls": "strip_direct",
+      "locator": "_LOC_sd_0209",
+      "revision_relation": "unrelated",
+      "expected_disposition": "strip_direct_formatting",
+      "note": "In my opinion, and to a reasonable degre",
+      "data": {
+        "gone_marker": "FF0000"
+      }
+    },
+    {
+      "id": "D169",
+      "cls": "strip_direct",
+      "locator": "_LOC_sd_0210",
+      "revision_relation": "unrelated",
+      "expected_disposition": "strip_direct_formatting",
+      "note": "In my opinion, and to a reasonable degre",
+      "data": {
+        "gone_marker": "FF0000"
+      }
+    },
+    {
+      "id": "D170",
+      "cls": "classify_body",
+      "locator": "_LOC_cb_0211",
+      "revision_relation": "unrelated",
+      "expected_disposition": "restyle_to_LI",
+      "note": "I hold the opinion that the concurrent-d",
+      "data": {}
+    },
+    {
+      "id": "D171",
+      "cls": "strip_direct",
+      "locator": "_LOC_sd_0212",
+      "revision_relation": "unrelated",
+      "expected_disposition": "strip_direct_formatting",
+      "note": "I hold the opinion that the concurrent-d",
+      "data": {
+        "gone_marker": "FF0000"
+      }
+    },
+    {
+      "id": "D172",
+      "cls": "classify_body",
+      "locator": "_LOC_cb_0213",
+      "revision_relation": "unrelated",
+      "expected_disposition": "restyle_to_LI",
+      "note": "I hold the opinion that the concurrent-d",
+      "data": {}
+    },
+    {
+      "id": "D173",
+      "cls": "strip_direct",
+      "locator": "_LOC_sd_0214",
+      "revision_relation": "unrelated",
+      "expected_disposition": "strip_direct_formatting",
+      "note": "I hold the opinion that the concurrent-d",
+      "data": {
+        "gone_marker": "FF0000"
+      }
+    },
+    {
+      "id": "D174",
+      "cls": "section_landscape",
+      "locator": "_LOC_land_0215",
+      "revision_relation": "unrelated",
+      "expected_disposition": "portrait_restored",
+      "note": "landscape block needs the portrait section restored",
+      "data": {}
+    }
+  ]
+}

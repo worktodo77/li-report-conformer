@@ -1,0 +1,78 @@
+{
+  "tier": "clean",
+  "verdict": "PASS",
+  "quality": 1.0,
+  "guarantees": {
+    "preservation_clean": true,
+    "output_valid": true,
+    "independent_reconciliation_missing_revisions": [],
+    "preservation_discrepancies": {}
+  },
+  "analyze": {
+    "judgment_calls": {},
+    "mechanical_actions": 4,
+    "audit_findings": {}
+  },
+  "exceptions": {
+    "analyze_stage": [],
+    "apply_stage": [],
+    "unexplained": []
+  },
+  "per_instance_verdicts": {},
+  "per_class": {},
+  "incorrectly_changed": [],
+  "criteria": {
+    "P1_guarantees": true,
+    "P2_detection": true,
+    "P3_no_missed": true,
+    "P4_exceptions_explained": true,
+    "P5_audit": true
+  },
+  "detection": {
+    "classify_body": {
+      "injected": 0,
+      "detected": 0,
+      "ok": true
+    },
+    "classify_bullet": {
+      "injected": 0,
+      "detected": 0,
+      "ok": true
+    },
+    "level_fix": {
+      "injected": 0,
+      "detected": 0,
+      "ok": true
+    },
+    "caption_literal": {
+      "injected": 0,
+      "detected": 0,
+      "ok": true
+    },
+    "xref_literal": {
+      "injected": 0,
+      "detected": 0,
+      "ok": true
+    },
+    "wrapper_table": {
+      "injected": 0,
+      "detected": 0,
+      "ok": true
+    },
+    "table_empty_col": {
+      "injected": 0,
+      "detected": 0,
+      "ok": true
+    },
+    "floating_image": {
+      "injected": 0,
+      "detected": 0,
+      "ok": true
+    },
+    "heading_body_merge": {
+      "injected": 0,
+      "detected": 0,
+      "ok": true
+    }
+  }
+}

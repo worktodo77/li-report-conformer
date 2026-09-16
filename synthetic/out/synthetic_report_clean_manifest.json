@@ -1,0 +1,38 @@
+{
+  "generator_version": "2.0",
+  "tier": "clean",
+  "quality_label": "100% control",
+  "seed": 101,
+  "provenance": {
+    "template_sha": "106fa5175bff8d33",
+    "assets": {
+      "bar_delay.png": "125cf39825e5d7dd",
+      "float_hist.png": "d7946bbd66e88e72",
+      "gantt.png": "d275c60829ea6191",
+      "scurve.png": "bd16500d33635b95",
+      "site_photo.png": "a526f0cabfb71c6d",
+      "window_table.png": "cf7fdc584458588b"
+    },
+    "deps": {
+      "python_docx": "1.2.0"
+    }
+  },
+  "elements": 434,
+  "non_conforming_elements": 0,
+  "total_defects": 0,
+  "computed_quality": 1.0,
+  "expected_holds": 0,
+  "counts": {},
+  "revisions": [],
+  "tracked_by_kind": {},
+  "tracked_total": 0,
+  "comments": [],
+  "comment_count": 0,
+  "authors": [],
+  "spelling_errors": 0,
+  "grammar_errors": 0,
+  "figures": 25,
+  "tables": 13,
+  "expected_preservation": "clean",
+  "defects": []
+}

@@ -1,189 +1,212 @@
-# Synthetic Conformance Test Plan — LI Report Conformer
+# Synthetic Conformance Test Plan — LI Report Conformer (v2)
 
-**Status:** DRAFT for GPT-6 sign-off. Testing does **not** begin until GPT-6 has signed off on the
-three synthetic documents **and** this plan. GPT-6 reviews the scored results afterward.
+**Status:** DRAFT for GPT-6 sign-off (resubmission after the Gate-A review). Testing (Gate B) does not
+begin until GPT-6 signs off on the documents **and** this plan. GPT-6 reviews the scored results after.
 
 **Author:** Claude (Opus 4.8). **Branch:** `feat/tracked-changes-judgment`.
+
+This revision rebuilds the ground truth to be **per-instance and independently verifiable**, and
+rebuilds the scorer to **enforce** the pass criteria. See §11 for the point-by-point response to the
+Gate-A review.
 
 ---
 
 ## 1. Purpose
 
-Verify — end to end and against a known ground truth — that the conformer correctly (a) **detects and
-fixes** every conformance class it claims to handle, and (b) **preserves** every tracked change,
-comment, author, and embedded object while doing so, across a spectrum of document quality. The test
-is designed so that *all bases are covered*: every conformance class appears in each document, in both
-non-tracked and tracked-change form, inside a document that reads like a real forensic expert report.
+Verify — against a known, per-instance ground truth — that the conformer (a) detects and correctly
+disposes of every conformance class it handles, and (b) preserves every tracked change, comment,
+author, and object while doing so, across a spectrum of document quality including a clean control.
 
-## 2. Test articles — three synthetic reports
+## 2. Test articles — four reports + an adversarial suite
 
-Three fictitious forensic construction-delay expert reports (invented parties, project, numbers —
-no client data), each **~130–160 pages**, generated deterministically by `synthetic/generate.py` and
-accompanied by a machine-readable **ground-truth manifest** (`*_manifest.json`) listing every injected
-defect and every tracked change. Each report contains: a title/privilege page; a TOC field; Lists of
-Figures, Exhibits, and Attachments; a glossary table; twelve numbered sections with sub-headings,
-numbered paragraphs, bullet lists, block quotes, footnotes, tables, and figures (charts + a
-photograph); tracked changes by five authors; comments; a landscape appendix table; and a signature
-block.
+Fictitious forensic construction-delay expert reports (invented parties/project/figures — no client
+data), generated deterministically by `synthetic/generate.py`, each with a per-instance
+`*_manifest.json`. A **clean control** measures false positives; three defect-density tiers span
+near-clean to stress.
 
-| Report | Quality | Character | Injected conformance defects | Tracked changes | Comments | Spelling/grammar |
+| Report | Density | computed_quality (element pass-rate) | ~pages | Defects | Tracked changes | Comments |
 |---|---|---|---|---|---|---|
-| `synthetic_report_90pct.docx` | **90%** | Near-clean; drift only | 56 | 25 | 6 | 31 / 1 |
-| `synthetic_report_70pct.docx` | **70%** | Moderately damaged | 191 | 40 | 6 | 149 / 8 |
-| `synthetic_report_25pct.docx` | **25%** | Stress tester | 533 | 39 | 16 | 459 / 20 |
+| `synthetic_report_clean.docx`  | control | 1.000 | ~59 | 0   | 0  | 0 |
+| `synthetic_report_low.docx`    | low     | ~0.89 | ~65 | ~49 | ~47 | ~15 |
+| `synthetic_report_medium.docx` | medium  | ~0.67 | ~67 | ~174 | ~42 | ~20 |
+| `synthetic_report_high.docx`   | high    | ~0.22 | ~58 | ~502 | ~19 | ~4 |
 
-"Quality" = the approximate fraction of conformance opportunities left correct; 100% would mean zero
-non-conformances and no spelling/grammar errors. Counts above are emitted by the generator and are the
-authoritative expected values (see each manifest for the per-instance list).
+`computed_quality` = 1 − (non-conforming elements / conformance-eligible elements), an **element
+pass-rate over a real denominator** — it is the authoritative figure; the "low/medium/high" labels are
+informal. Page counts are **estimated** from word/figure/table volume (see §9 on rendered pagination).
 
-### 2.1 Conformance classes covered (all present in every report, tracked + non-tracked)
+Each report has full front matter (title/privilege page, TOC field, **List of Figures, List of
+Tables**, List of Exhibits, List of Attachments, glossary), twelve numbered sections with sub-headings,
+numbered paragraphs, bullet lists, block quotes, footnotes, tables, and figures (charts + a
+photograph), tracked changes by five authors, comments, and a landscape appendix. Reproducibility:
+fixed integer seeds (not `hash()`), recorded in the manifest with generator version, template/asset
+SHAs, and dependency versions.
 
-`classify_body`, `classify_bullet`, `level_fix`, `strip_direct`, `table_style`, `table_empty_col`
-(#7), `wrapper_table` (#3), `floating_image` (#5), `caption_literal` (#8a), `xref_literal` (#8b),
+**Adversarial suite** (`tests/test_adversarial_synth.py`): small, targeted fixtures for the hard
+constructs kept out of the long reports — paragraph-mark deletion, a move (`moveFrom`/`moveTo`), a
+table-cell revision (`cellDel`, surfaced as a restriction), a tracked table row, a **corrupted List
+Bullet style definition** and a **corrupted table-style definition** (Claire's real complaint;
+repaired from the template), and a comment anchored wholly inside a deleted region. Each asserts the
+engine's expected disposition with preservation verified clean.
+
+### 2.1 Conformance classes (each present in every report, non-tracked and tracked)
+
+`classify_body`, `classify_bullet`, `level_fix`, `strip_direct`, `table_style`, `table_empty_col` (#7),
+`wrapper_table` (#3), `floating_image` (#5), `caption_literal` (#8a), `xref_literal` (#8b),
 `heading_body_merge` (#6), `pdf_linesplit` (#1), `empty_para` (#2), `page_break` (#4), `typography`,
 `footnote_style`, `section_landscape`, `figure_numbering` (audit), `tof_mismatch` (audit).
 
-Tracked-change payloads present in every report: run insertions (`w:ins`), run deletions (`w:del`),
-a paragraph-mark insertion, a `pPrChange` and an `rPrChange` formatting-revision snapshot, plus
-tracked variants of `classify_body`, `strip_direct`, `typography`, `floating_image`, `caption_literal`,
-`xref_literal`, and a tracked footnote — so the preservation gate and the tracked-adjacent review flag
-are exercised.
+## 3. Per-instance ground truth (the manifest)
 
-## 3. Test procedure (executed by Claude)
+Every defect record carries: a stable **locator** (an invisible bookmark at the instance, or a
+`text:` content locator where a bookmark would itself change the outcome, e.g. the merge pass), a
+**revision_relation** (`unrelated` / `inside_revision` / `adjacent_to_revision`), and an explicit
+**expected_disposition** — what the engine should do to *this* instance. Dispositions are exact:
+`restyle_to_LI`, `strip_direct_formatting`, `set_LITable`, `columns_dropped`, `unwrapped`, `inline`,
+`fielded`, `split`, `merged`, `typography_applied`, `footnote_restyled`, `portrait_restored`,
+`removed`, `audit_flag`, or **`hold`**.
 
-For each of the three reports:
+A `hold` is asserted **only** where the operation would actually disturb tracked content — e.g. a
+literal caption whose text is itself a tracked insertion (fielding would drop the insertion), a
+revised paragraph's direct formatting (preserve mode leaves it), inserted text with straight quotes
+(typography preserves the payload). Where a structural op preserves the edit — inlining a tracked
+floating image, dropping an empty column beside a cell revision, unwrapping a wrapper whose content is
+inserted — the expected disposition is the **applied** outcome (`inline` / `columns_dropped` /
+`unwrapped`), flagged for individual review, **not** a hold. "A rollback is not correct merely because
+tracked content is nearby."
 
-1. **Load & route.** Open with `Conformer(template, report)`. Assert it routes to `preserve`
-   disposition (`revision_ledger.has_content_revisions()` is true).
-2. **Analyze.** Run `analyze()`; capture JudgmentCalls (by kind), mechanical-action count,
-   figure-audit findings (by level), and any rolled-back passes (`exceptions`).
-3. **Apply.** Run `apply_with_decisions(accept-all)` to produce the conformed output.
-4. **Preservation gate.** Run `verify_preservation()` on the output; require it **clean** (no lost /
-   altered / re-attributed revision, no lost/edited comment, no altered binary).
-5. **Structural validity.** Run `validate_output()`; require **valid** (every XML part well-formed,
-   required parts present).
-6. **Residual rescan.** Re-scan the conformed output for residual defect markers (literal captions,
-   floating images, wrapper tables, unstyled tables, foreign body styles, straight quotes in text)
-   and record the drop from the pre-conformance baseline.
-7. **Score.** `synthetic/measure.py` writes `*_scorecard.json` comparing observed signals to the
-   manifest, per class.
+Every tracked change is recorded as an **actual occurrence** (kind, id, author, date, payload,
+locator, part); all counts are **derived** from that list, never hand-incremented. Generation **fails
+loud** if a declared asset (image/comment) cannot be created.
 
-The whole run is `python synthetic/measure.py`; it is deterministic and repeatable.
+## 4. Independent validation (before any conformance testing)
 
-## 4. Expected results
+`synthetic/validate_fixture.py` is an **independent oracle** — it does not use the conformer's gate.
+For each report it checks: XML well-formedness of every part; document (not template) content type;
+the **final `sectPr` is the last body element** and no bare `sectPr` appears mid-body; every floating
+anchor places its wrap element **before** `docPr`; no paragraph-mark `rPr` precedes `pStyle`; every
+relationship/media target resolves; and **manifest reconciliation** — every recorded revision id is
+present with matching author, every locator resolves, every comment exists with matching author, every
+List-of-Figures/Tables hyperlink anchor has a bookmark target. It exits non-zero on any failure. All
+four reports currently pass.
 
-**Hard guarantees (must hold for all three reports; a failure is a STOP-ship defect):**
+## 5. Test procedure (Gate B, by Claude)
 
-- **Preservation clean.** Every injected tracked change, comment, author, and binary survives
-  unchanged. Expected `tracked_total` / `comments` per manifest.
-- **Output valid.** Conformed `.docx` is well-formed OOXML and opens.
-- **No crash / graceful holds.** Any pass that cannot be applied safely is rolled back and recorded,
-  never applied destructively.
+For each report: (1) assert `preserve` routing; (2) `analyze()` → JudgmentCalls, mechanical actions,
+audit findings, analyze-stage exceptions; (3) `apply_with_decisions(ACCEPT ALL CONFORMANCE
+SUGGESTIONS)` and capture the **fresh conformer's apply-stage exceptions**; (4) **save and re-open**
+the conformed `.docx`; (5) the two guarantees — the engine's preservation gate **and** an independent
+reconciliation of every recorded revision against the re-opened output — plus output validity; (6)
+score **each** manifest instance at its locator against its `expected_disposition`. `python
+synthetic/measure.py` runs it and exits non-zero on any FAIL.
 
-**Conformance expectations (per class; measured as detection + residual drop):**
+## 6. Expected results & pass criteria
 
-- **Detected.** For each ASK class the engine emits the mapped JudgmentCall kind (`style`, `level`,
-  `caption`, `xref`, `unwrap`, `dropcol`, `imgextract`, `splitcap`); for the audit classes it emits
-  the mapped audit finding. Detected count should be ≥ injected count for that class (the engine may
-  also flag naturally-occurring instances).
-- **Resolved.** After accept-all, residual markers for a class drop to **0** for non-tracked
-  instances: `foreign_body_styles → 0`, `unstyled_tables → 0`, `floating_images → 0`,
-  `wrapper_tables → 0`; `straight_quotes` in text materially reduced.
-- **Held-by-design (not a failure).** An instance **on or adjacent to a tracked change/comment** is
-  flagged `needs_review` and, if the accept-all edit would disturb protected content, is rolled back
-  by the local gate and left as authored. These appear as a residual that does **not** clear and as a
-  `passes_rolled_back` entry; they are correct behaviour, not defects.
-- **Advisory only.** `figure_numbering` and `tof_mismatch` produce figure-audit findings; they do not
-  mutate the document (Word renumbers on open). Expected: the audit reports them.
-- **Out of scope.** Spelling and grammar errors are **not** corrected by the conformer; they are
-  counted in the manifest and reported, but their persistence is expected, not a defect.
+Each instance receives one verdict: **resolved** (change applied correctly), **expected_hold**
+(protected instance correctly left untouched), **missed** (a required change did not happen),
+**incorrectly_changed** (protected content was modified — a serious defect), or **indeterminate**.
 
-Each manifest's `counts`, `tracked`, `comments`, and `expected_preservation` fields are the numeric
-baseline. The scorecard's `classes[*].injected` vs `detected` and `residuals_before` vs
-`residuals_after` are the comparison.
+- **P1 (blocking):** `preservation_clean` AND independent reconciliation (0 missing revisions) AND
+  `output_valid`, for every report.
+- **P2:** every non-tracked ASK class is detected (its JudgmentCall kind present) at ≥ its injected
+  count. Body vs bullet classification are counted against the same `style` kind but scored per
+  instance in P3, so a miss in one cannot hide behind the other.
+- **P3:** zero `missed` and zero `incorrectly_changed` instances.
+- **P4:** every rolled-back pass is explained — a known tracked-adjacent hold, or an open RCA.
+- **P5:** the figure audit reports the injected `figure_numbering` and `tof_mismatch`.
 
-## 5. Measurement & comparison
+A report is **PASS** when P1–P5 hold, **PARTIAL** when P1 holds but a P2/P3/P4/P5 item is open,
+**FAIL** when P1 fails. The suite passes when all four reports PASS.
 
-`synthetic/measure.py` produces, per report, a `*_scorecard.json` with:
+## 7. Root-cause analysis (RCA) for every issue
 
-- `guarantees`: `preservation_clean`, `preservation_discrepancies`, `output_valid`.
-- `analyze`: `judgment_calls` (by kind), `mechanical_actions`, `audit_findings` (by level),
-  `passes_rolled_back`.
-- `residuals_before` / `residuals_after`: the residual-marker rescan.
-- `classes[cls]`: `{injected, signal, detected}` for every manifest class.
+Each discrepancy opens an RCA record: `RCA-<n>`; report/class/instance (manifest defect id(s));
+observed verdict vs expected disposition; minimal reproduction (added to `tests/` if not already
+covered); **root cause with the layer named — fixture, manifest, scorer, or engine** — established by
+reading code and watching a test go RED on the real defect; severity (blocking / major / minor). A
+failing test reproduces a *symptom*; the diagnosis must also present evidence linking the cause to that
+failure.
 
-**Pass criteria per report:**
+## 8. Corrective action plan (CAP) for every issue
 
-- P1 (blocking): `preservation_clean = true` and `output_valid = true`.
-- P2: every non-tracked ASK class is *detected* (mapped JudgmentCall present) at ≥ its injected count.
-- P3: residual markers for non-tracked structural classes drop to 0.
-- P4: every `passes_rolled_back` entry is explained (either a known tracked-adjacent hold or an RCA
-  item — see §6).
-- P5: figure-audit reports the injected `figure_numbering` and `tof_mismatch`.
+Each RCA gets a `CAP-<n>`: the fix (engine change, or fixture/manifest/scorer correction, or a ruling
+that it is a disclosed limitation); a regression test (run ≥8× for flaky-prone areas); re-measure to a
+cleared scorecard signal; verification (preservation still clean + full suite green); disposition
+(Fixed / Accepted-as-limitation / Deferred). **"Accepted as limitation" remains a disclosed
+limitation** in `docs/tracked_changes_plan.md` — it never silently converts a failed capability into a
+suite pass.
 
-A report **passes** when P1–P3 and P5 hold and every P4 exception is either a by-design hold or has a
-closed CAP. The suite passes when all three reports pass.
+## 9. Realism, scope, and honest limitations
 
-## 6. Root-cause analysis (RCA) for every issue discovered
+- **List of Tables** is emitted; the literal caption carries its own bookmark target so its
+  List-of-Figures hyperlink resolves; the guaranteed-coverage instances are **distributed through the
+  body**, not collected in a visible test-catalogue section.
+- The **TOC** is a real field with placeholder cached text and the figure/table lists use placeholder
+  page numbers — Word regenerates both on open; they are not asserted.
+- **Pagination is estimated** (~58–67 pages) from word/figure/table volume; a pixel-accurate page
+  count and representative rendered pages require opening in Word (no headless renderer is available
+  here). Rendered/visual sign-off is a manual step and is **not** inferred from the manifest.
+- These tiers stress **defect density**, not **revision density** (they carry tens of revisions). The
+  revision-density stress case is the real 11,374-revision Warhoe draft; a high-revision synthetic
+  variant can be added if wanted, but is out of scope for the conformance-coverage goal here.
 
-For each discrepancy (a guarantee failure, a missing detection, a non-clearing residual that is *not*
-a by-design hold, or an unexplained rolled-back pass), open an RCA record:
+## 10. Preliminary dry run (illustrative; the official scored run is Gate B)
 
-| Field | Content |
-|---|---|
-| ID | `RCA-<n>` |
-| Report / class / instance | which document, conformance class, manifest defect id(s) |
-| Observed vs expected | scorecard signal vs manifest baseline |
-| Reproduction | minimal synthetic fixture (add to `tests/` if not already covered) |
-| Root cause | the specific engine behaviour, established by reading code + a failing test watched go RED |
-| Severity | blocking (preservation/validity), major (class not fixed), minor (advisory/cosmetic) |
+All four reports: **P1 holds** (preservation clean, independent reconciliation 0 missing, output
+valid), no `incorrectly_changed` instances, and every non-`hold` instance resolves except two:
 
-RCA discipline follows the repo standard: *a green result proves nothing* — the root cause is only
-established once a test has been watched failing on the real defect, and fixes target the whole class,
-not the single repro.
+- **RCA-1 candidate (major, ENGINE layer):** `page_break` and `empty_para` non-tracked instances are
+  `missed` in every tier — `_prune_preserving` (#2/#4) rolls the whole pass back because the
+  content-stream gate counts a page-break token (`<w:br w:type="page"/>`) as content. **Isolated
+  reproduction and a fix are Gate-B work.** The proposed CAP is **narrow**, per the review: authorize
+  removal only of *identified, eligible manual page-break paragraphs*; do **not** globally ignore
+  page/column breaks in the gate; keep all other breaks (line breaks, column breaks elsewhere)
+  protected; add positive tests for the permitted deletion and negative tests proving unrelated or
+  protected breaks cannot disappear.
 
-## 7. Corrective action plan (CAP) for every issue
+The clean control produces zero conformance changes beyond the expected baseline (no false positives).
 
-Each RCA gets a CAP record:
+## 11. Response to the Gate-A review
 
-| Field | Content |
-|---|---|
-| ID | `CAP-<n>` (1:1 with `RCA-<n>`) |
-| Fix | the code change (engine/gate) or the ruling (accept as by-design; document as a limitation) |
-| Regression test | the synthetic fixture / unit test that now passes, run ≥8× if flaky-prone |
-| Re-measure | re-run `measure.py`; the scorecard signal clears |
-| Verification | preservation still clean + full suite green + no new residual |
-| Disposition | Fixed / Accepted-as-limitation / Deferred (with reason) |
+1. **Structural fixture errors — fixed.** `_move_to_front` is gone: the List-of-Figures/Tables entries
+   are now inserted directly after their headings, so the **final `sectPr` stays last** (verified).
+   The floating anchor now places `wrapNone` **before `docPr`**; the paragraph-mark `rPr` is inserted
+   after `pStyle`. `validate_fixture.py` checks all three independently. Deliberately malformed markup
+   lives only in named negative fixtures, never in the builders.
+2. **Manifest as ground truth — rebuilt.** Per-instance locators + explicit expected dispositions +
+   `revision_relation`. Every revision is a recorded occurrence; counts are derived. The phantom
+   insertion (a deletion mislabelled via `_track`) and the uncounted footnote insertions are fixed;
+   `maybe_track` no longer decorates a paragraph already recorded as a defect. The "tracked
+   floating-image" now wraps the **drawing run**, not a caption. Generation fails loud on a missing
+   asset. `validate_fixture.py` reconciles every recorded revision/comment/locator against the saved
+   package independently.
+3. **`measure.py` enforces P1–P5 — rebuilt.** Per-instance verdicts, explicit PASS/PARTIAL/FAIL, and a
+   non-zero exit on FAIL. It saves and re-opens the conformed `.docx`, captures apply-stage exceptions
+   from the fresh conformer, distinguishes body vs bullet at the instance level, and scores each
+   structural class by a **postcondition at its locator** (a wrapper gaining a style still counts as a
+   wrapper; a caption losing its style is still not a field). The decision set is named "accept all
+   conformance suggestions."
+4. **Validity — independent.** `validate_fixture.py` separates well-formedness, package/reference
+   integrity, and structural-order checks, and reconciles preservation against the manifest
+   **independently of the engine's gate**. (Full schema validation and true Word-open evidence remain
+   a manual step — noted, not claimed.)
+5. **Paired coverage — corrected + adversarial suite.** Every trackable class now has a non-tracked
+   **and** a tracked instance with a per-instance expected disposition (often `hold`). The hard
+   constructs (paragraph-mark deletion, move, cell/row revisions, corrupted style definitions,
+   comment-inside-deletion) are a **separate** adversarial suite, and unsupported constructs map to an
+   explicit restriction (`cellDel`).
+6. **Reproducibility + tiering — corrected.** Fixed integer seeds recorded with provenance;
+   `computed_quality` is an element pass-rate over a real denominator; a clean control measures false
+   positives. Density labels are informal. The revision-density point is acknowledged in §9.
+7. **Expected outcomes + pruning CAP — corrected.** The contradictory tracked-caption and
+   tracked-typography expectations are fixed to per-instance holds that match preservation. The
+   pruning CAP is constrained to eligible manual page-break instances with positive/negative tests;
+   the blanket gate relaxation is **not** proposed.
 
-CAPs that change the engine are committed on the feature branch with the RCA/CAP id in the message.
-CAPs that rule an issue "by design" update `docs/tracked_changes_plan.md` limitations and the plan.
+## 12. Deliverables & sign-off gates
 
-## 8. Preliminary dry-run (illustrative — not the official scored run)
-
-A dry run of `measure.py` over the three reports already establishes the harness works and surfaces
-the expected signals. Notable preliminary observations (to be confirmed and RCA'd in the official run
-after sign-off):
-
-- **All three reports:** preservation **clean**, output **valid**; `foreign_body_styles`,
-  `unstyled_tables`, `floating_images`, `wrapper_tables` all drop to **0**; all five ASK JudgmentCall
-  kinds plus `style`/`level` fire; figure-audit reports the injected numbering and ToF defects.
-- **Candidate RCA-1 (major):** `_prune_preserving` (#2 empty paragraphs / #4 manual page breaks) is
-  **rolled back** in every report. Preliminary root cause: the content-stream gate counts a
-  page-break token (`<w:br w:type="page"/>`) as content, so removing a manual page-break paragraph
-  reads as an unauthorized content change and the whole prune pass reverts. Candidate CAP: treat
-  page/column break tokens as layout (droppable) in the structure-tolerant gate, mirroring the
-  existing tab-stop fix; add a regression fixture. **To be confirmed under RCA in the official run.**
-- **By-design hold (not a defect):** the single *tracked* literal caption is flagged `needs_review`
-  and left as authored by the local gate; its residual does not clear. This is correct
-  tracked-adjacent behaviour and will be recorded as such, not as an RCA.
-
-## 9. Deliverables & sign-off gates
-
-1. **Gate A (this submission):** three synthetic reports + manifests + this plan + the generator and
-   measurement code, on `feat/tracked-changes-judgment`. → **GPT-6 signs off on documents + plan.**
-2. **Gate B:** after sign-off, Claude runs the official scored test, opens RCA/CAP for every issue,
-   applies fixes on the branch, re-measures to green. → **GPT-6 reviews the scored results + RCAs/CAPs.**
-
-Artifacts: `synthetic/generate.py`, `synthetic/lib.py`, `synthetic/content.py`, `synthetic/measure.py`,
-`synthetic/assets/*.png`, `synthetic/out/*.docx`, `synthetic/out/*_manifest.json`,
-`synthetic/out/*_scorecard.json` (produced at Gate B).
+- **Gate A (this resubmission):** four reports + manifests + this plan + `generate.py`, `lib.py`,
+  `content.py`, `measure.py`, `validate_fixture.py`, `tests/test_adversarial_synth.py`,
+  `synthetic/assets/*.png`, on `feat/tracked-changes-judgment`. → GPT-6 signs off on documents + plan.
+- **Gate B:** Claude runs the official scored test, opens RCA/CAP for every issue (starting RCA-1),
+  fixes on the branch, re-measures to green. → GPT-6 reviews the scored results + RCAs/CAPs.

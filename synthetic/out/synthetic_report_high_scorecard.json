@@ -1,0 +1,172 @@
+{
+  "tier": "high",
+  "verdict": "PARTIAL",
+  "quality": 0.218,
+  "guarantees": {
+    "preservation_clean": true,
+    "output_valid": true,
+    "independent_reconciliation_missing_revisions": [],
+    "preservation_discrepancies": {}
+  },
+  "analyze": {
+    "judgment_calls": {
+      "unwrap": 2,
+      "style": 241,
+      "caption": 6,
+      "splitcap": 1,
+      "imgextract": 2,
+      "dropcol": 2
+    },
+    "mechanical_actions": 15,
+    "audit_findings": {
+      "not-fielded": 1,
+      "numbering": 2,
+      "toc-title": 1,
+      "toc-orphan": 1
+    }
+  },
+  "exceptions": {
+    "analyze_stage": [
+      [
+        "_prune_preserving",
+        "unauthorized content change (1)"
+      ],
+      [
+        "caption[41]",
+        "local display gate tripped (not applied)"
+      ]
+    ],
+    "apply_stage": [
+      [
+        "_prune_preserving",
+        "unauthorized content change (1)"
+      ],
+      [
+        "caption[41]",
+        "local display gate tripped (not applied)"
+      ]
+    ],
+    "unexplained": []
+  },
+  "per_instance_verdicts": {
+    "resolved": 492,
+    "missed": 2,
+    "expected_hold": 8
+  },
+  "per_class": {
+    "classify_body": {
+      "resolved": 235
+    },
+    "strip_direct": {
+      "resolved": 239,
+      "expected_hold": 1
+    },
+    "classify_bullet": {
+      "resolved": 2
+    },
+    "figure_numbering": {
+      "resolved": 1
+    },
+    "page_break": {
+      "missed": 1,
+      "expected_hold": 1
+    },
+    "wrapper_table": {
+      "resolved": 2
+    },
+    "tof_mismatch": {
+      "resolved": 1
+    },
+    "caption_literal": {
+      "expected_hold": 1,
+      "resolved": 1
+    },
+    "floating_image": {
+      "resolved": 2
+    },
+    "empty_para": {
+      "missed": 1,
+      "expected_hold": 1
+    },
+    "footnote_style": {
+      "resolved": 1,
+      "expected_hold": 1
+    },
+    "table_empty_col": {
+      "resolved": 2
+    },
+    "heading_body_merge": {
+      "expected_hold": 1,
+      "resolved": 1
+    },
+    "table_style": {
+      "resolved": 2
+    },
+    "pdf_linesplit": {
+      "resolved": 1,
+      "expected_hold": 1
+    },
+    "typography": {
+      "expected_hold": 1,
+      "resolved": 1
+    },
+    "section_landscape": {
+      "resolved": 1
+    }
+  },
+  "incorrectly_changed": [],
+  "criteria": {
+    "P1_guarantees": true,
+    "P2_detection": true,
+    "P3_no_missed": false,
+    "P4_exceptions_explained": true,
+    "P5_audit": true
+  },
+  "detection": {
+    "classify_body": {
+      "injected": 234,
+      "detected": 241,
+      "ok": true
+    },
+    "classify_bullet": {
+      "injected": 1,
+      "detected": 241,
+      "ok": true
+    },
+    "level_fix": {
+      "injected": 0,
+      "detected": 0,
+      "ok": true
+    },
+    "caption_literal": {
+      "injected": 1,
+      "detected": 6,
+      "ok": true
+    },
+    "xref_literal": {
+      "injected": 0,
+      "detected": 0,
+      "ok": true
+    },
+    "wrapper_table": {
+      "injected": 1,
+      "detected": 2,
+      "ok": true
+    },
+    "table_empty_col": {
+      "injected": 1,
+      "detected": 2,
+      "ok": true
+    },
+    "floating_image": {
+      "injected": 1,
+      "detected": 2,
+      "ok": true
+    },
+    "heading_body_merge": {
+      "injected": 1,
+      "detected": 1,
+      "ok": true
+    }
+  }
+}
