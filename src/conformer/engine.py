@@ -10,6 +10,7 @@ Original CLI flow (run() + save()) still works unchanged.
 import re, os, sys, json, zipfile
 from dataclasses import dataclass, field
 
+__all__ = ['Conformer', 'JudgmentCall', 'STYLE_ALTERNATIVES']
 
 STYLE_ALTERNATIVES = [
     'NumberedParagraph', 'NumberedParagraphL1', 'NumberedParagraphL2',
@@ -138,7 +139,6 @@ class Conformer:
         self.stname = dict(re.findall(r'<w:style [^>]*w:styleId="([^"]+)"[^>]*><w:name w:val="([^"]+)"', self.styles))
         self.numfmt = {}
         abs_fmt = {}
-        for a in re.findall(r'<w:abstractNum w:abstractNumId="(\d+)".*?</w:abstractNum>', self.num, re.S): pass
         for m in re.finditer(r'<w:abstractNum w:abstractNumId="(\d+)"[^>]*>(.*?)</w:abstractNum>', self.num, re.S):
             abs_fmt[m.group(1)] = {l: f for l, f in re.findall(r'<w:lvl w:ilvl="(\d)"[^>]*>.*?<w:numFmt w:val="(\w+)"', m.group(2), re.S)}
         for nid, aid in re.findall(r'<w:num w:numId="(\d+)"[^>]*><w:abstractNumId w:val="(\d+)"/>', self.num): self.numfmt[nid] = abs_fmt.get(aid, {})

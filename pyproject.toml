@@ -12,3 +12,4 @@ li-conformer = "conformer.main:main"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+pythonpath = ["src"]

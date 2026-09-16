@@ -14,29 +14,15 @@ Checks (each PASS/FAIL with counts):
 """
 import re, sys, json, zipfile, unicodedata
 
+from conformer.engine import split_body as _engine_split_body
+
 def load(path):
     z = zipfile.ZipFile(path); P = {n: z.read(n).decode('utf8', 'replace') for n in z.namelist() if n.endswith('.xml')}
     doc = P['word/document.xml']; body = re.search(r'<w:body>(.*)</w:body>', doc, re.S).group(1)
     return P, body
 
 def split_body(body):
-    items = []; i = 0
-    while i < len(body):
-        m = re.match(r'<w:(p|tbl|sectPr|bookmarkStart|bookmarkEnd|sdt)\b', body[i:])
-        if not m: raise ValueError(body[i:i+60])
-        tag = m.group(1)
-        if tag in ('bookmarkStart', 'bookmarkEnd'): e = body.index('/>', i) + 2
-        else:
-            depth = 0; j = i; pat = re.compile(r'<(/?)w:%s\b([^>]*?)(/?)>' % tag)
-            while True:
-                mm = pat.search(body, j)
-                if mm.group(1) == '' and mm.group(3) == '': depth += 1
-                elif mm.group(1) == '/': depth -= 1
-                j = mm.end()
-                if depth == 0: break
-            e = j
-        items.append((tag, body[i:e])); i = e
-    return items
+    return [(re.match(r'<w:(\w+)\b', x).group(1), x) for x in _engine_split_body(body)]
 
 def text(x): return re.sub(r'\s+', ' ', re.sub('<[^>]+>', '', re.sub(r'<w:instrText.*?</w:instrText>', '', x, flags=re.S))).strip()
 def pstyle(x):

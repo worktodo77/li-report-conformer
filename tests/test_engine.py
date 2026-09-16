@@ -1,7 +1,6 @@
 """Engine tests: original flow + two-pass analyze/apply."""
-import os, sys, tempfile, json
+import os, tempfile, zipfile
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
 from conformer.engine import Conformer, JudgmentCall
 from conformer.scorer import score
 
@@ -80,3 +79,32 @@ def test_validate_output():
     c.run()
     valid, msg = c.validate_output()
     assert valid, f"Engine output should validate: {msg}"
+
+
+def test_change_decision_applies_alternative_style():
+    c = Conformer(TEMPLATE, KITCHEN_SINK)
+    calls = c.analyze()
+    style_calls = [jc for jc in calls if jc.kind == 'style' and jc.alternatives]
+    assert style_calls, "Should have style judgment calls with alternatives"
+    target = style_calls[0]
+    alt = next(a for a in target.alternatives if a != target.recommended_action)
+    decisions = {jc.id: 'accept' for jc in calls}
+    decisions[target.id] = f'change:{alt}'
+    fresh = c.apply_with_decisions(decisions)
+    with tempfile.TemporaryDirectory() as tmp:
+        out = os.path.join(tmp, 'repaired.docx')
+        fresh.save(out)
+        valid, msg = fresh.validate_output()
+        assert valid, f"Change-decision output should be valid: {msg}"
+
+
+def test_corrupt_input_raises():
+    with tempfile.TemporaryDirectory() as tmp:
+        bad = os.path.join(tmp, 'corrupt.docx')
+        with open(bad, 'wb') as f:
+            f.write(b'not a zip file')
+        try:
+            Conformer(TEMPLATE, bad)
+            assert False, "Should have raised on corrupt input"
+        except Exception:
+            pass
