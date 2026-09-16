@@ -351,6 +351,32 @@ def _excerpt(t):
     return f'<w:p><w:pPr><w:pStyle w:val="ExcerptorQuote"/></w:pPr><w:r><w:i/><w:t xml:space="preserve">{t}</w:t></w:r></w:p>'
 
 
+# ======================================================================== CAP-1 page-break pruning
+def test_cap1_page_break_pruned_column_line_and_tracked_breaks_protected():
+    pgpara = '<w:p><w:pPr><w:pStyle w:val="NumberedParagraph"/></w:pPr><w:r><w:br w:type="page"/></w:r></w:p>'
+    colpara = '<w:p><w:pPr><w:pStyle w:val="NumberedParagraph"/></w:pPr><w:r><w:br w:type="column"/></w:r></w:p>'
+    linepara = ('<w:p><w:pPr><w:pStyle w:val="BodyText"/></w:pPr>'
+                '<w:r><w:t>Line one</w:t><w:br/><w:t xml:space="preserve">line two</w:t></w:r></w:p>')
+    tracked_pg = ('<w:p><w:pPr><w:pStyle w:val="NumberedParagraph"/></w:pPr>'
+                  '<w:ins w:id="8" w:author="Zoe" w:date="D"><w:r><w:br w:type="page"/></w:r></w:ins></w:p>')
+    body = (HEAD + pgpara + colpara + linepara + tracked_pg + INS.replace(HEAD, '')
+            + '<w:sectPr><w:pgSz w:w="12240" w:h="15840"/></w:sectPr>')
+    with tempfile.TemporaryDirectory() as tmp:
+        p = os.path.join(tmp, 'pb.docx')
+        make_docx(p, body)
+        c = Conformer(TEMPLATE, p)
+        c.run()
+        out = ''.join(c.items)
+        assert '<w:br w:type="page"/>' in out            # the TRACKED page break survives (in the ins)
+        assert out.count('<w:br w:type="page"/>') == 1    # the plain page-break paragraph was pruned
+        assert '<w:br w:type="column"/>' in out           # column break protected
+        assert '<w:br/>' in out                           # line break protected
+        assert not any('_prune' in n for n, _ in c.exceptions)   # prune applied, not rolled back
+        clean, disc = c.verify_preservation()
+        assert clean, disc
+        assert 'w:author="Zoe"' in out
+
+
 def test_merge_pdf_line_splits_authorized():
     # two block-quote paragraphs split mid-sentence by a PDF paste -> joined with a space
     body = (HEAD + _excerpt('The contractor shall complete the works') + _excerpt('within the time stated.')

@@ -884,17 +884,17 @@ class Conformer:
         typo_ok = lambda old, new: typo_text(old) == new
         # (pass, gate): 'stream' = strict content stream (formatting only); 'text' = typography's
         # authorized text edit; 'struct' = AUTO structural change (paragraph structure may change,
-        # every text token / object / revision-comment-bookmark boundary must still line up).
-        # Deferred (need per-instance JudgmentCalls or authorized text edits): unwrap wrapper tables,
-        # figure extraction / caption split, drop empty columns, cross-ref rebuild, PDF-line merge,
-        # tracked-formatting resolution.
+        # every text token / object / revision-comment-bookmark boundary must still line up); 'prune' =
+        # like 'struct' but ALSO tolerates the loss of an eligible manual page-break token ('BR','page')
+        # — the prune pass (#4) removes page-break-ONLY paragraphs, which are layout, not reading
+        # content (CAP-1). Column breaks, line breaks, and every other token stay protected.
         ordered = [
             (self._repair_styles, 'stream'), (self._conform_tables_preserving, 'stream'),
             (self.classify, 'stream'), (self.fix_levels, 'stream'),
             (self._caps_headings_preserving, 'stream'), (self.strip_direct, 'stream'),
             (self.fix_footnotes, 'stream'), (self.fix_sections, 'stream'),
             (self.typography, 'text'),
-            (self._prune_preserving, 'struct'),
+            (self._prune_preserving, 'prune'),
         ]
         # #3 unwrap wrapper tables runs FIRST (before formatting): the extracted paragraphs then
         # flow through classify/strip_direct and get properly conformed, instead of keeping the
@@ -913,7 +913,8 @@ class Conformer:
             after_stream = _rev.content_stream(self._output_parts(), cache=self._verify_cache)
             sviol = _rev.stream_violations(prev_stream, after_stream,
                                            text_ok=typo_ok if gate == 'text' else None,
-                                           ignore_structure=(gate == 'struct'))
+                                           ignore_structure=(gate in ('struct', 'prune')),
+                                           ignore_page_breaks=(gate == 'prune'))
             if not clean or sviol:
                 self._restore(snap)
                 reason = self._summarize_disc(disc) if not clean else f'unauthorized content change ({len(sviol)})'
@@ -932,9 +933,11 @@ class Conformer:
         self._label_review_copy()           # GPT-6 2a: stamp as a normalized-formatting review copy
 
     def _prune_preserving(self):
-        """AUTO structural: remove manual page-break paragraphs (#4) and empty numbered/Normal
-        paragraphs (#2). Skips any paragraph carrying a tracked change so review content is untouched;
-        the structure-tolerant gate verifies no text/boundary was lost."""
+        """AUTO structural: remove eligible manual PAGE-break paragraphs (#4) and TRULY-empty
+        numbered/Normal paragraphs (#2). Skips any paragraph carrying a tracked change so review
+        content is untouched. The empty-paragraph branch requires no text AND no drawing AND no break
+        AND no field, so a paragraph whose only content is a COLUMN or LINE break (or a field) is left
+        alone — only the page-break branch removes a break, and only a page break (CAP-1)."""
         i = 0
         while i < self.n():
             x = self.item(i)
@@ -943,7 +946,8 @@ class Conformer:
                                 r'<w:br w:type="page"/></w:r></w:p>', x, re.S):
                     del self.items[self.b0 + i]; self.say('M', i, 'removed manual page break'); continue
                 if (self.style(i) in (NUMBERED | {'Normal', 'ListParagraph'})
-                        and not self.text(i).strip() and '<w:drawing>' not in x):
+                        and not self.text(i).strip() and '<w:drawing>' not in x
+                        and '<w:br' not in x and '<w:fldChar' not in x and '<w:object' not in x):
                     del self.items[self.b0 + i]; self.say('M', i, 'deleted empty paragraph'); continue
             i += 1
 

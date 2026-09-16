@@ -240,6 +240,27 @@ def test_stream_allows_current_formatting_change_under_revision():
     assert not R.stream_violations(*_streams(BODY, after))
 
 
+def test_prune_gate_tolerates_page_break_only_protects_column_and_line_breaks():
+    # CAP-1: with ignore_page_breaks, removing a manual PAGE break is authorized; a COLUMN break and
+    # a LINE break are still protected (their loss is a violation).
+    base = ('<w:p><w:r><w:br w:type="page"/></w:r></w:p>'
+            '<w:p><w:r><w:br w:type="column"/></w:r></w:p>'
+            '<w:p><w:r><w:t>x</w:t><w:br/></w:r></w:p>')
+    drop_page = ('<w:p><w:r><w:br w:type="column"/></w:r></w:p>'
+                 '<w:p><w:r><w:t>x</w:t><w:br/></w:r></w:p>')
+    drop_col = ('<w:p><w:r><w:br w:type="page"/></w:r></w:p>'
+                '<w:p><w:r><w:t>x</w:t><w:br/></w:r></w:p>')
+    drop_line = ('<w:p><w:r><w:br w:type="page"/></w:r></w:p>'
+                 '<w:p><w:r><w:br w:type="column"/></w:r></w:p>'
+                 '<w:p><w:r><w:t>x</w:t></w:r></w:p>')
+    kw = dict(ignore_structure=True, ignore_page_breaks=True)
+    assert not R.stream_violations(*_streams(base, drop_page), **kw)     # page break removal allowed
+    assert R.stream_violations(*_streams(base, drop_col), **kw)          # column break protected
+    assert R.stream_violations(*_streams(base, drop_line), **kw)         # line break protected
+    # and without the flag, even the page break is protected
+    assert R.stream_violations(*_streams(base, drop_page), ignore_structure=True)
+
+
 def test_content_stream_ignores_tab_stops_keeps_content_tabs():
     # A run-level content <w:tab/> IS in the stream; a <w:tabs> tab-STOP definition (pPr formatting)
     # is NOT — so stripping direct tab-stop formatting must not look like deleting a content tab.

@@ -1,6 +1,6 @@
 {
   "tier": "high",
-  "verdict": "PARTIAL",
+  "verdict": "PASS",
   "quality": 0.236,
   "guarantees": {
     "preservation_clean": true,
@@ -30,19 +30,11 @@
   "exceptions": {
     "analyze_stage": [
       [
-        "_prune_preserving",
-        "unauthorized content change (1)"
-      ],
-      [
         "caption[29]",
         "local display gate tripped (not applied)"
       ]
     ],
     "apply_stage": [
-      [
-        "_prune_preserving",
-        "unauthorized content change (1)"
-      ],
       [
         "caption[29]",
         "local display gate tripped (not applied)"
@@ -51,9 +43,8 @@
     "unexplained": []
   },
   "per_instance_verdicts": {
-    "resolved": 559,
-    "expected_hold": 9,
-    "missed": 2
+    "resolved": 561,
+    "expected_hold": 9
   },
   "per_class": {
     "classify_body": {
@@ -80,11 +71,11 @@
       "resolved": 2
     },
     "empty_para": {
-      "missed": 1,
+      "resolved": 1,
       "expected_hold": 1
     },
     "page_break": {
-      "missed": 1,
+      "resolved": 1,
       "expected_hold": 1
     },
     "level_fix": {
@@ -127,7 +118,7 @@
   "criteria": {
     "P1_guarantees": true,
     "P2_detection": true,
-    "P3_no_missed": false,
+    "P3_no_missed": true,
     "P4_exceptions_explained": true,
     "P5_audit": true
   },

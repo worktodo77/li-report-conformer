@@ -179,6 +179,12 @@ for its tracked instance, per the manifest. Note the level-promotion tracked ins
 **applied-with-preservation** (`level_fixed`), not held: promoting L2→L1 is a style change orthogonal
 to the tracked content, like `classify`.
 
+**Gate B is now COMPLETE — all four reports PASS.** RCA-1 was root-caused and fixed with the narrow
+CAP (a prune-scoped `ignore_page_breaks` gate that tolerates only the `('BR','page')` token, plus a
+tightened empty-paragraph branch), with positive/negative regression tests; the page_break and
+empty_para instances now resolve. Full results, the RCA-1/CAP-1 record, and the per-instance verdicts
+are in **`docs/synthetic_gate_b_results.md`**.
+
 ## 11. Response to the Gate-A review
 
 1. **Structural fixture errors — fixed.** `_move_to_front` is gone: the List-of-Figures/Tables entries

@@ -466,15 +466,25 @@ def content_stream(parts, cache=None):
 
 
 _STRUCTURE_TOKENS = {'P', 'TBL', 'TR', 'TC'}
+_PAGE_BREAK_TOKEN = ('BR', 'page')
 
-def stream_violations(before, after, text_ok=None, ignore_structure=False):
+def stream_violations(before, after, text_ok=None, ignore_structure=False, ignore_page_breaks=False):
     """Differences between two content streams that are NOT an authorized change. `text_ok(old,new)`
     permits a text transformation (e.g. typography). `ignore_structure=True` drops paragraph/table
     structure markers before comparing, so an AUTO structural pass may merge/delete/split paragraphs
     while every text token, object, and revision/comment/bookmark boundary must still line up exactly
-    (a deleted word or moved boundary is still caught)."""
+    (a deleted word or moved boundary is still caught). `ignore_page_breaks=True` ADDITIONALLY drops
+    the manual PAGE-break token `('BR','page')` — and ONLY that token — so the prune pass may remove an
+    eligible manual page-break paragraph (#4) whose sole content is a page break, which is layout, not
+    reading content. Column breaks `('BR','column')`, line breaks `('BR','')`, and every other token
+    stay protected."""
+    drop = set(_STRUCTURE_TOKENS) if ignore_structure else set()
+
     def prep(stream):
-        return [t for t in stream if t[0] not in _STRUCTURE_TOKENS] if ignore_structure else stream
+        if not ignore_structure and not ignore_page_breaks:
+            return stream
+        return [t for t in stream
+                if t[0] not in drop and not (ignore_page_breaks and t == _PAGE_BREAK_TOKEN)]
     viols = []
     for name in sorted(set(before) | set(after)):
         b, a = prep(before.get(name, [])), prep(after.get(name, []))

@@ -1,6 +1,6 @@
 {
   "tier": "medium",
-  "verdict": "PARTIAL",
+  "verdict": "PASS",
   "quality": 0.647,
   "guarantees": {
     "preservation_clean": true,
@@ -30,30 +30,21 @@
   "exceptions": {
     "analyze_stage": [
       [
-        "_prune_preserving",
-        "unauthorized content change (1)"
-      ],
-      [
-        "caption[147]",
+        "caption[145]",
         "local display gate tripped (not applied)"
       ]
     ],
     "apply_stage": [
       [
-        "_prune_preserving",
-        "unauthorized content change (1)"
-      ],
-      [
-        "caption[147]",
+        "caption[145]",
         "local display gate tripped (not applied)"
       ]
     ],
     "unexplained": []
   },
   "per_instance_verdicts": {
-    "resolved": 178,
-    "expected_hold": 9,
-    "missed": 2
+    "resolved": 180,
+    "expected_hold": 9
   },
   "per_class": {
     "strip_direct": {
@@ -71,7 +62,7 @@
       "resolved": 1
     },
     "page_break": {
-      "missed": 1,
+      "resolved": 1,
       "expected_hold": 1
     },
     "floating_image": {
@@ -102,7 +93,7 @@
     },
     "empty_para": {
       "expected_hold": 1,
-      "missed": 1
+      "resolved": 1
     },
     "typography": {
       "resolved": 1,
@@ -127,7 +118,7 @@
   "criteria": {
     "P1_guarantees": true,
     "P2_detection": true,
-    "P3_no_missed": false,
+    "P3_no_missed": true,
     "P4_exceptions_explained": true,
     "P5_audit": true
   },
