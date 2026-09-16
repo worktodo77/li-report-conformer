@@ -59,6 +59,13 @@ class ApplyWorker(QThread):
             self.error.emit(str(e))
 
 
+KIND_LABELS = {
+    'style': 'Style', 'level': 'List level', 'merge': 'Merge', 'split': 'Split',
+    'promote': 'Heading', 'caption': 'Caption', 'xref': 'Cross-references',
+    'unwrap': 'Table', 'dropcol': 'Table', 'splitcap': 'Split', 'imgextract': 'Figure',
+}
+
+
 class JudgmentRow(QFrame):
     def __init__(self, index, call: JudgmentCall, parent=None):
         super().__init__(parent)
@@ -87,6 +94,13 @@ class JudgmentRow(QFrame):
         num.setObjectName('judgmentNum')
         num.setFixedWidth(28)
 
+        chip = QLabel(KIND_LABELS.get(call.kind, call.kind.title()))
+        _flag = getattr(call, 'needs_review', False)
+        chip.setStyleSheet(
+            'font-size: 10px; font-weight: 600; border-radius: 4px; padding: 2px 7px; ' +
+            ('color: #8a5a00; background: #fbf1d8;' if _flag else 'color: #1f3a5f; background: #eaf0f7;'))
+        chip.setFixedHeight(18)
+
         text_display = call.short_text if len(call.full_text) > 50 else call.full_text
         self.text_label = QLabel(f'"{text_display}"')
         self.text_label.setObjectName('judgmentText')
@@ -94,6 +108,7 @@ class JudgmentRow(QFrame):
 
         top.addWidget(self.chevron)
         top.addWidget(num, 0, Qt.AlignTop)
+        top.addWidget(chip, 0, Qt.AlignTop)
         top.addWidget(self.text_label, 1)
         layout.addLayout(top)
 
@@ -428,6 +443,16 @@ class MainWindow(QMainWindow):
         mech_label = QLabel(f'{mech_count} fixes applied automatically')
         mech_label.setStyleSheet('font-size: 12px; color: #66707a; padding-bottom: 8px;')
         self.body_layout.addWidget(mech_label)
+
+        if self.conformer and getattr(self.conformer, 'disposition', None) == 'preserve':
+            s = self.conformer.revision_ledger.summary()
+            notice = QLabel(
+                f"Review-preserving mode — {s['total']:,} tracked changes · {s['comments']} "
+                f"comments · {len(s['authors'])} authors will be preserved and verified.")
+            notice.setWordWrap(True)
+            notice.setStyleSheet('font-size: 12px; color: #1f3a5f; background: #eef2f7; '
+                                 'border-radius: 6px; padding: 8px 10px; margin-bottom: 8px;')
+            self.body_layout.addWidget(notice)
 
         if self.judgment_calls:
             judge_sec = QLabel(f'JUDGMENT CALLS ({len(self.judgment_calls)})')
