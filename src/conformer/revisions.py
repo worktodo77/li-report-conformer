@@ -442,6 +442,91 @@ def stream_violations(before, after, text_ok=None, ignore_structure=False):
     return viols
 
 
+# ---------------------------------------------------------------- display-preserving invariant
+# For the interactive ASK structural changes (#3/#5/#6/#7/#8) the reader's document must be
+# IDENTICAL while the underlying structure may change: literal text becomes a field, a wrapper table
+# is unwrapped, a floating image is pulled inline, a caption is split from body text. The DISPLAY
+# stream captures exactly what a reader sees — consecutive visible-text tokens merged; field
+# instruction tokens (IT/DIT) and paragraph/table STRUCTURE tokens dropped; every object and every
+# revision / comment / bookmark boundary kept in order. A display-preserving edit leaves this
+# identical; a lost/reordered word, a lost object, or a moved tracked/comment boundary changes it.
+# Field instruction tokens (IT/DIT), paragraph/table STRUCTURE tokens, and BOOKMARK boundaries are
+# dropped from the DISPLAY stream: rebuilding a literal cross-reference as a field ADDS instruction
+# text + a new bookmark target, and unwrapping/splitting changes structure — all invisible to the
+# reader. Existing bookmarks are guarded separately (no-loss set check) so an ADD is allowed but a
+# LOSS is not. Revision, comment and object tokens stay positional (moving/losing one is caught).
+_DROP_VIS = {'IT', 'DIT', 'BMS', 'BME'} | _STRUCTURE_TOKENS
+
+def _collapse_visible(stream):
+    out, buf = [], None   # buf = (type, text) accumulating consecutive same-type visible text
+    for tok in stream:
+        t = tok[0]
+        if t in _DROP_VIS:
+            continue
+        if t in ('T', 'DT'):
+            if buf and buf[0] == t:
+                buf = (t, buf[1] + tok[1])
+            else:
+                if buf is not None: out.append(('VTEXT', buf[0], buf[1]))
+                buf = (t, tok[1])
+            continue
+        if buf is not None:
+            out.append(('VTEXT', buf[0], buf[1])); buf = None
+        out.append(tok)
+    if buf is not None:
+        out.append(('VTEXT', buf[0], buf[1]))
+    return out
+
+
+def visible_stream(parts):
+    """Per story part: the display stream (see above). Whole-document form of the display gate."""
+    return {name: _collapse_visible(s) for name, s in content_stream(parts).items()}
+
+
+def visible_violations(before, after):
+    """Differences between two DISPLAY streams — anything a display-preserving transform must not do
+    (drop/alter visible text, lose an object, move a revision/comment/bookmark boundary)."""
+    viols = []
+    for name in sorted(set(before) | set(after)):
+        b, a = before.get(name, []), after.get(name, [])
+        if len(b) != len(a):
+            viols.append((name, 'token-count', len(b), len(a))); continue
+        for i, (x, y) in enumerate(zip(b, a)):
+            if x != y:
+                viols.append((name, i, x, y))
+    return viols
+
+
+def region_display(xml_fragment):
+    """The display stream of a FRAGMENT of body items (one or more <w:p>/<w:tbl>/markers), for the
+    fast LOCAL gate on a single structural edit — no whole-document ledger rebuild. Because the
+    display stream carries visible text AND every revision / comment / bookmark boundary AND every
+    object, an unchanged fragment display stream proves this one edit disturbed no tracked content,
+    lost no object, and left the reader's text identical, in O(fragment) not O(document)."""
+    wrapped = (f'<w:document xmlns:w="{W}" xmlns:r="{RNS}"><w:body>'
+               f'{xml_fragment}</w:body></w:document>').encode('utf8')
+    try:
+        return _collapse_visible(content_stream({'word/document.xml': wrapped})
+                                 .get('word/document.xml', []))
+    except Exception:
+        return [('fragment-parse-error',)]
+
+
+def region_bookmark_names(xml_fragment):
+    """Multiset (name -> count) of bookmark starts in a body fragment. The LOCAL ASK gate uses it to
+    forbid LOSING an existing bookmark (a cross-reference target) while allowing new ones to be
+    added — bookmarks are dropped from the positional display stream, so this is their guard."""
+    from collections import Counter
+    return Counter(re.findall(r'<w:bookmarkStart\b[^>]*\bw:name="([^"]*)"', xml_fragment))
+
+
+def bookmarks_lost(before_fragment, after_fragment):
+    """True if any bookmark name present in `before_fragment` occurs FEWER times in `after_fragment`
+    (an existing cross-reference anchor was dropped)."""
+    b, a = region_bookmark_names(before_fragment), region_bookmark_names(after_fragment)
+    return any(a.get(name, 0) < cnt for name, cnt in b.items())
+
+
 def is_clean(d, allow_introduced=False):
     for key in ('lost', 'payload_altered', 'placement_altered', 'metadata_altered', 'lost_comments',
                 'comment_body_altered', 'comment_anchor_altered', 'binary_altered',

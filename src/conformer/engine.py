@@ -907,6 +907,10 @@ class Conformer:
                 self.exceptions.append((fn.__name__, reason))
                 continue
             prev_stream = after_stream
+        # Interactive ASK structural changes (display-preserving, per-instance JudgmentCalls).
+        # #8 first (Claire's explicit need): caption fielding then cross-reference rebuild.
+        self._caption_fields_preserving()   # #8a
+        self._xrefs_preserving()            # #8b
         self.audit_figures()
 
     def _prune_preserving(self):
@@ -1055,6 +1059,233 @@ class Conformer:
                 self.set(i, nx); cnt += 1
         if cnt:
             self.say('M', -1, f'preserve mode: {cnt} tables set to the LI table style')
+
+    # ================================================================ interactive ASK structural
+    # The five ASK structural changes (#3 unwrap wrapper table, #5 extract floating image, #6 split
+    # caption/heading from body, #7 drop empty columns, #8 rebuild caption/cross-references as
+    # fields) each emit ONE JudgmentCall per instance through the existing analyze/apply mechanism.
+    # They are DISPLAY-PRESERVING: the reader sees the same document; only the structure/machinery
+    # changes. Each accepted instance is applied behind a fast LOCAL display gate (region signature,
+    # O(instance) not O(document)); the whole pass then confirms with the ledger + whole-document
+    # display gate. Instances on/adjacent to a tracked change or comment are flagged for individual
+    # review (recommended action = review, not accept) but still protected by the gate if accepted.
+
+    @staticmethod
+    def _fld(instr, result, rstyle=None):
+        rp = f'<w:rPr><w:rStyle w:val="{rstyle}"/></w:rPr>' if rstyle else ''
+        return (f'<w:r>{rp}<w:fldChar w:fldCharType="begin"/></w:r>'
+                f'<w:r>{rp}<w:instrText xml:space="preserve"> {instr} </w:instrText></w:r>'
+                f'<w:r>{rp}<w:fldChar w:fldCharType="separate"/></w:r>'
+                f'<w:r>{rp}<w:t xml:space="preserve">{esc(result)}</w:t></w:r>'
+                f'<w:r>{rp}<w:fldChar w:fldCharType="end"/></w:r>')
+
+    def _next_bm_id(self):
+        ids = [int(x) for x in re.findall(r'<w:bookmarkStart w:id="(\d+)"', ''.join(self.items))]
+        return max(ids + [900]) + 1
+
+    def _ask_pass(self, kind, detect):
+        """Generic interactive ASK structural pass. `detect()` returns candidate dicts WITHOUT
+        mutating — {index, message, recommended, apply, tracked_adjacent?, span?, alternatives?,
+        ...op data}. Detection runs first so JudgmentCall ids match between analyze() and
+        apply_with_decisions(); accepted instances are applied in REVERSE index order (so earlier
+        indices stay valid) each behind a fast local display gate; a whole-document backstop rolls
+        the pass back if anything slipped through the local gates."""
+        from conformer import revisions as _rev
+        cands = detect()
+        plan = []
+        for cand in cands:
+            i = cand['index']
+            adj = cand.get('tracked_adjacent', False)
+            rec = 'Review individually (tracked change nearby)' if adj else cand['recommended']
+            jc = self._jcall(kind, i, cand['message'], rec, cand.get('alternatives'))
+            self.say('J', i, cand['message'])
+            dec = self._decision_for(jc)
+            if dec == 'accept' or dec.startswith('change'):
+                plan.append(cand)
+        if not plan:
+            return
+        pass_snap = self._snapshot()
+        before_disp = _rev.visible_stream(self._output_parts())
+        applied = 0
+        for cand in sorted(plan, key=lambda c: c['index'], reverse=True):
+            if self._apply_ask_instance(kind, cand):
+                applied += 1
+        if not applied:
+            return
+        clean, _ = self.verify_preservation()
+        after_disp = _rev.visible_stream(self._output_parts())
+        if not clean or _rev.visible_violations(before_disp, after_disp):
+            self._restore(pass_snap)
+            self.exceptions.append((kind, f'whole-pass backstop tripped ({applied} instance(s) '
+                                          f'rolled back)'))
+
+    def _apply_ask_instance(self, kind, cand):
+        """Apply ONE ASK instance behind a local display gate: the fragment of items it touches must
+        keep an identical display stream (visible text + objects + revision/comment boundaries) and
+        lose no existing bookmark. On any disturbance, roll the single instance back and record an
+        exception — one risky instance never poisons the batch."""
+        from conformer import revisions as _rev
+        i = cand['index']; span = cand.get('span', 1)
+        lo = max(0, i - 1)
+        hi = min(self.n(), i + span + 1)
+        before_frag = ''.join(self.item(j) for j in range(lo, hi))
+        n_before = self.n()
+        snap = self._snapshot()
+        try:
+            cand['apply'](cand)
+        except Exception as e:
+            self._restore(snap)
+            self.exceptions.append((f'{kind}[{i}]', f'apply error: {str(e)[:80]}'))
+            return False
+        hi_after = hi + (self.n() - n_before)
+        after_frag = ''.join(self.item(j) for j in range(lo, min(self.n(), hi_after)))
+        if (_rev.visible_violations({'d': _rev.region_display(before_frag)},
+                                    {'d': _rev.region_display(after_frag)})
+                or _rev.bookmarks_lost(before_frag, after_frag)):
+            self._restore(snap)
+            self.exceptions.append((f'{kind}[{i}]', 'local display gate tripped (not applied)'))
+            return False
+        return True
+
+    # ---------------------------------------------------------------- #8 captions + cross-references
+    _CAP_RE = re.compile(r'^(Table|Figure) (\d+)([-‑‐–])(\d+)(:.*)$', re.S)
+
+    def _caption_fields_preserving(self):
+        """#8a: rebuild a literal 'Table 3-1: Title' / 'Figure 3-1: Title' caption as
+        STYLEREF/SEQ auto-number fields anchored by a bookmark, so cross-references can target it and
+        Word can renumber. Display-preserving: the caption reads identically (cached field results =
+        the current numbers, separator kept verbatim). Skips captions already fielded+bookmarked and
+        flags tracked-adjacent captions for review."""
+        def detect():
+            out = []
+            for i in range(self.n()):
+                if not self.is_par(i) or self.style(i) != 'Caption':
+                    continue
+                x = self.item(i); t = self.text(i).strip()
+                m = self._CAP_RE.match(t)
+                if not m:
+                    continue
+                has_seq = 'SEQ ' in x and '<w:bookmarkStart' in x
+                if has_seq:
+                    continue
+                label, a, sep, b, rest = m.groups()
+                existing = re.search(r'<w:bookmarkStart w:id="\d+" w:name="([^"]+)"', x)
+                name = existing.group(1) if existing else f'_Ref_{label[0]}{a}{b}'
+                bid = self._next_bm_id()
+                inner = (f'<w:r><w:t xml:space="preserve">{label} </w:t></w:r>'
+                         + self._fld('STYLEREF 1 \\s', a)
+                         + f'<w:r><w:t xml:space="preserve">{esc(sep)}</w:t></w:r>'
+                         + self._fld(f'SEQ {label} \\* ARABIC \\s 1', b)
+                         + f'<w:r><w:t xml:space="preserve">{esc(rest)}</w:t></w:r>')
+                bm = f'<w:bookmarkStart w:id="{bid}" w:name="{name}"/>{inner}<w:bookmarkEnd w:id="{bid}"/>'
+                newx = '<w:p><w:pPr><w:pStyle w:val="Caption"/><w:jc w:val="center"/></w:pPr>' + bm + '</w:p>'
+                out.append({'index': i, 'newxml': newx, 'apply': self._apply_setitem,
+                            'recommended': 'Accept (display unchanged; enables auto-numbering)',
+                            'tracked_adjacent': self._para_has_revision(i),
+                            'message': f'rebuild caption {t[:40]!r} as STYLEREF/SEQ fields + bookmark'})
+            return out
+        self._ask_pass('caption', detect)
+
+    def _apply_setitem(self, cand):
+        self.set(cand['index'], cand['newxml'])
+
+    def _xrefs_preserving(self):
+        """#8b (Claire's explicit need): rebuild literal cross-references — 'Figure 3-1', 'Table
+        3-1', 'Section 5', 'Sections 5 and 7' — as live REF fields pointing at the caption/heading
+        bookmark, so they update with the document. Display-preserving (the field's cached result IS
+        the original literal text). Only rewrites PLAIN runs (revision content is masked out), only
+        when the target bookmark exists, and one JudgmentCall per paragraph."""
+        caps, heads = self._xref_targets()
+        def detect():
+            out = []
+            for i in range(self.n()):
+                if not self.is_par(i) or self.style(i) == 'Caption' or self.style(i) in HEADINGS:
+                    continue
+                newx, refs = self._rebuild_xrefs_in(self.item(i), caps, heads)
+                if refs:
+                    out.append({'index': i, 'newxml': newx, 'apply': self._apply_setitem,
+                                'recommended': 'Accept (displayed text unchanged)',
+                                'tracked_adjacent': self._para_has_revision(i),
+                                'message': f'rebuild {refs} literal cross-reference(s) as REF field(s)'})
+            return out
+        self._ask_pass('xref', detect)
+
+    def _xref_targets(self):
+        """caps: 'Figure 3-1' -> bookmark name (from a bookmarked caption); heads: section ordinal
+        -> bookmark name (from a bookmarked Heading1). Only targets that ALREADY have a bookmark are
+        offered, so #8b never has to mutate a second paragraph to create one."""
+        caps = {}
+        for i in range(self.n()):
+            if self.style(i) != 'Caption':
+                continue
+            t = self.text(i).strip()
+            m = re.match(r'(Table|Figure) (\d+)[-‑‐–](\d+)', t)
+            bm = re.search(r'<w:bookmarkStart w:id="\d+" w:name="([^"]+)"', self.item(i))
+            if m and bm:
+                caps[f'{m.group(1)} {m.group(2)}-{m.group(3)}'] = bm.group(1)
+        heads = {}; hn = 0
+        for i in range(self.n()):
+            if self.style(i) == 'Heading1':
+                hn += 1
+                bm = re.search(r'<w:bookmarkStart w:id="\d+" w:name="([^"]+)"', self.item(i))
+                if bm:
+                    heads[str(hn)] = bm.group(1)
+        return caps, heads
+
+    _XREF_RE = re.compile(r'(Table|Figure) (\d+-\d+)|Sections? (\d+)(?!\.\d)(?: and (\d+)(?!\.\d))?')
+
+    def _rebuild_xrefs_in(self, xml, caps, heads):
+        """Return (new_xml, count) with literal cross-references in PLAIN runs rewritten as REF
+        fields. Revision content is masked first, so tracked insertions/deletions are never edited;
+        runs already carrying a CrossReference style or field are left alone."""
+        masked, masks = self._mask_revisions(xml)
+        count = [0]
+        def repl_text(seg):
+            out = ''; pos = 0
+            for mm in self._XREF_RE.finditer(seg):
+                pre = seg[pos:mm.start()]
+                if pre:
+                    out += f'<w:r><w:t xml:space="preserve">{esc(pre)}</w:t></w:r>'
+                if mm.group(1):                                   # Figure/Table N-M
+                    key = f'{mm.group(1)} {mm.group(2)}'
+                    if key in caps:
+                        out += self._fld(f'REF {caps[key]} \\h', key, 'CrossReference'); count[0] += 1
+                    else:
+                        out += f'<w:r><w:t xml:space="preserve">{esc(mm.group(0))}</w:t></w:r>'
+                else:                                             # Section(s) N [and M]
+                    word = 'Sections' if mm.group(0).startswith('Sections') else 'Section'
+                    out += f'<w:r><w:t xml:space="preserve">{word} </w:t></w:r>'
+                    g3, g4 = mm.group(3), mm.group(4)
+                    out += (self._fld(f'REF {heads[g3]} \\r \\h', g3, 'CrossReference')
+                            if g3 in heads else f'<w:r><w:t xml:space="preserve">{esc(g3)}</w:t></w:r>')
+                    if g3 in heads:
+                        count[0] += 1
+                    if g4:
+                        out += '<w:r><w:t xml:space="preserve"> and </w:t></w:r>'
+                        out += (self._fld(f'REF {heads[g4]} \\r \\h', g4, 'CrossReference')
+                                if g4 in heads else f'<w:r><w:t xml:space="preserve">{esc(g4)}</w:t></w:r>')
+                        if g4 in heads:
+                            count[0] += 1
+                pos = mm.end()
+            if pos == 0:
+                return None
+            rest = seg[pos:]
+            if rest:
+                out += f'<w:r><w:t xml:space="preserve">{esc(rest)}</w:t></w:r>'
+            return out
+        # rewrite only plain text runs (no rStyle, not sentinels): <w:r>[<w:rPr>..</w:rPr>]<w:t>..</w:t></w:r>
+        def run_sub(rm):
+            r = rm.group(0)
+            if 'CrossReference' in r or '\x00' in r:
+                return r
+            tm = re.search(r'<w:t(?: xml:space="preserve")?>([^<]*)</w:t>', r)
+            if not tm:
+                return r
+            rebuilt = repl_text(tm.group(1))
+            return rebuilt if rebuilt is not None else r
+        new_masked = re.sub(r'<w:r\b[^>]*>(?:<w:rPr>.*?</w:rPr>)?<w:t(?: xml:space="preserve")?>[^<]*</w:t></w:r>',
+                            run_sub, masked, flags=re.S)
+        return self._unmask(new_masked, masks), count[0]
 
     def run(self):
         self._run_passes()
