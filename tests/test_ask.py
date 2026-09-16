@@ -5,6 +5,7 @@ analyze()/apply_with_decisions() flow, and every 'challenge' asserts the display
 deliberately corrupted edit — a green result proves nothing until the gate has been watched failing.
 """
 import os
+import re
 import tempfile
 import zipfile
 
@@ -191,3 +192,94 @@ def test_whole_pass_backstop_present(report):
     before = R.visible_stream(Conformer(TEMPLATE, report)._output_parts())
     after = R.visible_stream(applied._output_parts())
     assert not R.visible_violations(before, after)
+
+
+# ======================================================================== #3 unwrap wrapper tables
+HEAD = '<w:p><w:pPr><w:pStyle w:val="Heading1"/></w:pPr><w:r><w:t>SECTION</w:t></w:r></w:p>'
+INS = (HEAD + '<w:p><w:pPr><w:pStyle w:val="BodyText"/></w:pPr>'
+       '<w:ins w:id="9" w:author="Ed" w:date="2026-01-02T00:00:00Z">'
+       '<w:r><w:t>an edit</w:t></w:r></w:ins></w:p>')   # heading + an insertion (forces preserve)
+
+WRAPPER = (
+    '<w:tbl><w:tblPr><w:tblW w:w="9000" w:type="dxa"/></w:tblPr>'
+    '<w:tblGrid><w:gridCol w:w="9000"/></w:tblGrid>'
+    '<w:tr><w:tc><w:tcPr><w:tcW w:w="9000" w:type="dxa"/></w:tcPr>'
+    '<w:p><w:pPr><w:pStyle w:val="BodyText"/></w:pPr><w:r><w:t>Wrapped one.</w:t></w:r></w:p>'
+    '<w:p><w:pPr><w:pStyle w:val="BodyText"/></w:pPr><w:r><w:t>Wrapped two.</w:t></w:r></w:p>'
+    '</w:tc></w:tr></w:tbl>')
+
+
+@pytest.fixture
+def wrapper_doc():
+    with tempfile.TemporaryDirectory() as tmp:
+        p = os.path.join(tmp, 'w.docx')
+        make_docx(p, INS + WRAPPER + '<w:sectPr><w:pgSz w:w="12240" w:h="15840"/></w:sectPr>')
+        yield p
+
+
+def test_unwrap_wrapper_table(wrapper_doc):
+    calls, applied = _accept_all(wrapper_doc)
+    assert any(jc.kind == 'unwrap' for jc in calls)
+    out = ''.join(applied.items)
+    assert '<w:tbl' not in out                                  # the wrapper shell is gone
+    assert 'Wrapped one.' in out and 'Wrapped two.' in out      # its paragraphs survive
+    clean, disc = applied.verify_preservation()
+    assert clean, disc
+    ok, msg = applied.validate_output()
+    assert ok, msg
+
+
+def test_unwrap_preserves_tracked_change_inside():
+    # a wrapper table whose cell holds a tracked insertion: still unwrappable, insertion preserved
+    body = (HEAD + WRAPPER.replace('<w:r><w:t>Wrapped two.</w:t></w:r>',
+                            '<w:ins w:id="3" w:author="Ann" w:date="D"><w:r><w:t>Wrapped two.</w:t></w:r></w:ins>')
+            + '<w:sectPr><w:pgSz w:w="12240" w:h="15840"/></w:sectPr>')
+    with tempfile.TemporaryDirectory() as tmp:
+        p = os.path.join(tmp, 'x.docx')
+        make_docx(p, body)
+        calls, applied = _accept_all(p)
+        out = ''.join(applied.items)
+        assert '<w:tbl' not in out and 'w:author="Ann"' in out
+        clean, disc = applied.verify_preservation()
+        assert clean, disc
+        # the instance carrying a tracked change is flagged for review
+        assert any(jc.kind == 'unwrap' and 'Review individually' in jc.recommended_action for jc in calls)
+
+
+# ======================================================================== #7 drop empty columns
+def _two_col(row_texts, extra_second=''):
+    rows = ''
+    for a in row_texts:
+        rows += (f'<w:tr><w:tc><w:tcPr><w:tcW w:w="6000" w:type="dxa"/></w:tcPr>'
+                 f'<w:p><w:pPr><w:pStyle w:val="TableData"/></w:pPr><w:r><w:t>{a}</w:t></w:r></w:p></w:tc>'
+                 f'<w:tc><w:tcPr><w:tcW w:w="3000" w:type="dxa"/></w:tcPr>'
+                 f'<w:p><w:pPr><w:pStyle w:val="TableData"/></w:pPr>{extra_second}</w:p></w:tc></w:tr>')
+    return ('<w:tbl><w:tblPr><w:tblStyle w:val="LITable"/><w:tblW w:w="9000" w:type="dxa"/></w:tblPr>'
+            '<w:tblGrid><w:gridCol w:w="6000"/><w:gridCol w:w="3000"/></w:tblGrid>' + rows + '</w:tbl>')
+
+
+def test_drop_empty_column():
+    body = INS + _two_col(['Alpha', 'Beta']) + '<w:sectPr><w:pgSz w:w="12240" w:h="15840"/></w:sectPr>'
+    with tempfile.TemporaryDirectory() as tmp:
+        p = os.path.join(tmp, 'd.docx')
+        make_docx(p, body)
+        calls, applied = _accept_all(p)
+        assert any(jc.kind == 'dropcol' for jc in calls)
+        tbl = next(applied.item(i) for i in range(applied.n()) if applied.item(i).startswith('<w:tbl'))
+        assert len(re.findall(r'<w:gridCol', tbl)) == 1          # the empty column is gone
+        assert 'Alpha' in tbl and 'Beta' in tbl
+        clean, disc = applied.verify_preservation()
+        assert clean, disc
+
+
+def test_empty_column_with_bookmark_is_not_dropped():
+    # the 'empty' second column actually holds a bookmark -> it must NOT be treated as droppable
+    second = '<w:bookmarkStart w:id="7" w:name="_KEEP"/><w:bookmarkEnd w:id="7"/>'
+    body = INS + _two_col(['Alpha', 'Beta'], extra_second=second) + '<w:sectPr><w:pgSz w:w="12240" w:h="15840"/></w:sectPr>'
+    with tempfile.TemporaryDirectory() as tmp:
+        p = os.path.join(tmp, 'd2.docx')
+        make_docx(p, body)
+        calls, applied = _accept_all(p)
+        assert not any(jc.kind == 'dropcol' for jc in calls)     # detection skips it
+        tbl = next(applied.item(i) for i in range(applied.n()) if applied.item(i).startswith('<w:tbl'))
+        assert len(re.findall(r'<w:gridCol', tbl)) == 2 and '_KEEP' in tbl

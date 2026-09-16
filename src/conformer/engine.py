@@ -887,6 +887,10 @@ class Conformer:
             (self.typography, 'text'),
             (self._prune_preserving, 'struct'),
         ]
+        # #3 unwrap wrapper tables runs FIRST (before formatting): the extracted paragraphs then
+        # flow through classify/strip_direct and get properly conformed, instead of keeping the
+        # TableData styling a later table pass would wrongly stamp on a layout wrapper.
+        self._unwrap_tables_preserving()    # #3
         prev_stream = _rev.content_stream(self._output_parts())
         for fn, gate in ordered:
             snap = self._snapshot()
@@ -911,6 +915,7 @@ class Conformer:
         # #8 first (Claire's explicit need): caption fielding then cross-reference rebuild.
         self._caption_fields_preserving()   # #8a
         self._xrefs_preserving()            # #8b
+        self._drop_empty_columns_preserving()  # #7
         self.audit_figures()
 
     def _prune_preserving(self):
@@ -1286,6 +1291,113 @@ class Conformer:
         new_masked = re.sub(r'<w:r\b[^>]*>(?:<w:rPr>.*?</w:rPr>)?<w:t(?: xml:space="preserve")?>[^<]*</w:t></w:r>',
                             run_sub, masked, flags=re.S)
         return self._unmask(new_masked, masks), count[0]
+
+    # ---------------------------------------------------------------- #3 unwrap wrapper tables
+    _CELL_MARKER_RE = re.compile(r'<w:(ins|del|moveFrom|moveTo|bookmarkStart|commentRangeStart'
+                                 r'|commentReference|pPrChange|rPrChange)\b')
+
+    def _unwrap_tables_preserving(self):
+        """#3: a single-cell (1 row x 1 cell) table with no table style is a layout WRAPPER — unwrap
+        it, replacing the table with the cell's own paragraphs. Display-preserving (only the table
+        shell, invisible to the reader, is removed). Tracked-adjacent wrapper tables are flagged for
+        review; the gate protects any revision/comment/bookmark inside either way."""
+        def detect():
+            out = []
+            for i in range(self.n()):
+                x = self.item(i)
+                if not x.startswith('<w:tbl'):
+                    continue
+                if '<w:tblStyle' in x:
+                    continue
+                if len(re.findall(r'<w:tr\b', x)) != 1 or len(re.findall(r'<w:tc>', x)) != 1:
+                    continue
+                paras = self._wrapper_cell_items(x)
+                if paras is None or not paras:
+                    continue
+                out.append({'index': i, 'paras': paras, 'apply': self._apply_unwrap, 'span': 1,
+                            'recommended': 'Accept (removes an invisible layout wrapper)',
+                            'tracked_adjacent': bool(self._CELL_MARKER_RE.search(x)),
+                            'message': f'unwrap single-cell wrapper table into {len(paras)} paragraph(s)'})
+            return out
+        self._ask_pass('unwrap', detect)
+
+    @staticmethod
+    def _wrapper_cell_items(tbl_xml):
+        """Body items inside the single cell of a wrapper table, or None if it can't be parsed."""
+        tc = tbl_xml.find('<w:tc>')
+        if tc < 0:
+            return None
+        end = span(tbl_xml, 'tc', tc)
+        if end is None:
+            return None
+        inner = tbl_xml[tc + len('<w:tc>'):end - len('</w:tc>')]
+        if inner.startswith('<w:tcPr>'):
+            tcend = span(inner, 'tcPr', 0)
+            if tcend is not None:
+                inner = inner[tcend:]
+        try:
+            return split_body(inner)
+        except ValueError:
+            return None
+
+    def _apply_unwrap(self, cand):
+        i = cand['index']
+        self.items[self.b0 + i:self.b0 + i + 1] = cand['paras']
+        self.say('M', i, f"unwrapped wrapper table into {len(cand['paras'])} paragraph(s)")
+
+    # ---------------------------------------------------------------- #7 drop empty table columns
+    def _drop_empty_columns_preserving(self):
+        """#7: drop table columns that are empty in every row (no text, object, bookmark, comment or
+        tracked change) from a simple (un-merged) grid. Display-preserving: only empty structure is
+        removed. One JudgmentCall per table; tables with merged cells are skipped (too ambiguous to
+        touch safely) and the gate backstops."""
+        def detect():
+            out = []
+            for i in range(self.n()):
+                x = self.item(i)
+                if not x.startswith('<w:tbl'):
+                    continue
+                if re.search(r'<w:(gridSpan|vMerge|hMerge)\b', x):
+                    continue
+                rows = re.findall(r'<w:tr\b.*?</w:tr>', x, re.S)
+                cells = [re.findall(r'<w:tc>.*?</w:tc>', r, re.S) for r in rows]
+                if not cells or not any(cells):
+                    continue
+                ncol = max(len(c) for c in cells)
+                empty = [k for k in range(ncol)
+                         if all(len(c) > k and self._cell_is_empty(c[k]) for c in cells)]
+                if not empty:
+                    continue
+                out.append({'index': i, 'empty': empty, 'apply': self._apply_drop_cols, 'span': 1,
+                            'recommended': 'Accept (empty columns only)',
+                            'tracked_adjacent': bool(self._CELL_MARKER_RE.search(x)),
+                            'message': f'drop {len(empty)} empty table column(s)'})
+            return out
+        self._ask_pass('dropcol', detect)
+
+    @classmethod
+    def _cell_is_empty(cls, cell):
+        return (not text_of(cell).strip() and '<w:drawing' not in cell
+                and not cls._CELL_MARKER_RE.search(cell))
+
+    def _apply_drop_cols(self, cand):
+        i = cand['index']; x = self.item(i); empty = cand['empty']
+        rows = re.findall(r'<w:tr\b.*?</w:tr>', x, re.S)
+        cells = [re.findall(r'<w:tc>.*?</w:tc>', r, re.S) for r in rows]
+        for r, cs in zip(rows, cells):
+            nr = r
+            for k in sorted(empty, reverse=True):
+                if len(cs) > k:
+                    nr = nr.replace(cs[k], '', 1)
+            x = x.replace(r, nr, 1)
+        grid = re.findall(r'<w:gridCol w:w="\d+"/>', x)
+        for k in sorted(empty, reverse=True):
+            if len(grid) > k:
+                x = x.replace(grid[k], '', 1)
+        width = sum(int(w) for w in re.findall(r'<w:gridCol w:w="(\d+)"/>', x))
+        if width:
+            x = re.sub(r'<w:tblW [^>]*/>', f'<w:tblW w:w="{width}" w:type="dxa"/>', x)
+        self.set(i, x); self.say('M', i, f'removed {len(empty)} empty column(s)')
 
     def run(self):
         self._run_passes()
