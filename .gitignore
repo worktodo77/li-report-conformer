@@ -4,7 +4,8 @@ __pycache__/
 *.egg-info/
 dist/
 build/
-*.spec
+# PyInstaller build specs are tracked
+# *.spec
 .eggs/
 *.egg
 
