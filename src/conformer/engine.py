@@ -1,17 +1,34 @@
 """LI report conformer: repair a damaged report so it conforms to the LI template and guidelines.
-Usage: python3 conform.py <template.dotx> <input.docx> <output.docx> [--log log.json]
 
-Mechanical repairs (deterministic): style/numbering parts restored from the template; foreign
-styles mapped to LI styles; direct paragraph/run formatting stripped except a whitelist;
-duplicate list instances removed; wrapper tables unwrapped; tables restyled to LI Table; floating
-pictures made inline; footnotes normalised; tracked formatting revisions reverted; typography
-(smart quotes, en dashes, sentence spacing, dates); section orientation repaired; captions and
-cross-references rebuilt as fields; missing bookmarks restored.
-Judgment repairs (heuristic, logged with reason): unstyled paragraph classification
-(numbered paragraph / list / excerpt), PDF line-merge, merged or demoted headings, list levels
-out of sequence.
+Two-pass architecture for interactive review:
+  1. analyze() — runs all passes, applies everything, collects enriched judgment info
+  2. apply_with_decisions(decisions) — re-runs from the original file, applying only
+     accepted/changed judgment calls per user decisions
+
+Original CLI flow (run() + save()) still works unchanged.
 """
 import re, os, sys, json, zipfile
+from dataclasses import dataclass, field
+
+
+STYLE_ALTERNATIVES = [
+    'NumberedParagraph', 'NumberedParagraphL1', 'NumberedParagraphL2',
+    'ListBullet', 'Listbulletasasentence', 'Listbulletunderanumberedlist',
+    'Dashunderabullet', 'ExcerptorQuote', 'BodyText',
+]
+
+
+@dataclass
+class JudgmentCall:
+    id: str
+    kind: str
+    item_index: int
+    full_text: str
+    short_text: str
+    message: str
+    recommended_action: str
+    alternatives: list = field(default_factory=list)
+    original_style: str = ''
 
 # ---------------------------------------------------------------- shared helpers (same as corrupt.py)
 def split_body(body):
@@ -100,6 +117,8 @@ LITABLE = ('<w:style w:type="table" w:customStyle="1" w:styleId="LITable"><w:nam
 
 class Conformer:
     def __init__(self, template, path):
+        self.template_path = template
+        self.input_path = path
         self.parts = {}
         with zipfile.ZipFile(path) as z:
             for n in z.namelist(): self.parts[n] = z.read(n)
@@ -113,7 +132,9 @@ class Conformer:
         self.items = split_body(body)
         self.b0 = next(i for i, it in enumerate(self.items) if 'w:val="Heading1"' in it)
         self.log = []; self.judgment = []
-        # candidate style names and numbering formats (needed before we replace the parts)
+        self.pending_judgments = []
+        self.decisions = None
+        self._jcall_counter = 0
         self.stname = dict(re.findall(r'<w:style [^>]*w:styleId="([^"]+)"[^>]*><w:name w:val="([^"]+)"', self.styles))
         self.numfmt = {}
         abs_fmt = {}
@@ -151,6 +172,25 @@ class Conformer:
         return j
     def say(self, kind, i, msg):
         (self.judgment if kind == 'J' else self.log).append({'item': i, 'text': self.text(i)[:50] if 0 <= i < self.n() else '', 'msg': msg})
+
+    def _jcall(self, kind, i, msg, recommended, alternatives=None):
+        self._jcall_counter += 1
+        call_id = f'{kind}_{self._jcall_counter}'
+        full = self.text(i) if 0 <= i < self.n() else ''
+        short = full[:50] + ('...' if len(full) > 50 else '')
+        orig_style = self.style(i) if 0 <= i < self.n() and self.is_par(i) else ''
+        jc = JudgmentCall(
+            id=call_id, kind=kind, item_index=i, full_text=full,
+            short_text=short, message=msg, recommended_action=recommended,
+            alternatives=alternatives or [], original_style=orig_style,
+        )
+        self.pending_judgments.append(jc)
+        return jc
+
+    def _decision_for(self, jc):
+        if self.decisions is None:
+            return 'accept'
+        return self.decisions.get(jc.id, 'skip')
 
     # ================================================================ passes
     def revert_tracked_formatting(self):
@@ -202,14 +242,20 @@ class Conformer:
                 elif pst in ('NumberedParagraphL1', 'Listbulletunderanumberedlist') and not ptxt.endswith(':'): new = 'Listbulletunderanumberedlist'
                 elif len(t) > 45 or t.endswith((';', '.', ':')): new = 'Listbulletasasentence'
                 else: new = 'ListBullet'
-                self.say('J', i, f'{st} bulleted paragraph -> {new} (level {lvl}, length {len(t)}, follows {pst})')
+                msg = f'{st} bulleted paragraph -> {new} (level {lvl}, length {len(t)}, follows {pst})'
             elif runs_i and ind and int(ind.group(1)) >= 700 and not np_:
-                new = 'ExcerptorQuote'; self.say('J', i, f'{st} italic indented paragraph -> Excerpt or Quote')
+                new = 'ExcerptorQuote'; msg = f'{st} italic indented paragraph -> Excerpt or Quote'
             elif not np_ and ((ptxt.endswith(':') and (t.endswith(';') or t.endswith('; and'))) or (pst == 'Listbulletasasentence' and (t.endswith(';') or t.endswith('; and') or (ptxt.endswith('; and') and t.endswith('.'))))):
-                new = 'Listbulletasasentence'; self.say('J', i, f'{st} item after a colon lead-in ending with ";" -> List bullet as a sentence')
+                new = 'Listbulletasasentence'; msg = f'{st} item after a colon lead-in ending with ";" -> List bullet as a sentence'
             else:
-                new = 'NumberedParagraph'; self.say('J', i, f'{st} body paragraph -> Numbered Paragraph')
-            self.set_style(i, new)
+                new = 'NumberedParagraph'; msg = f'{st} body paragraph -> Numbered Paragraph'
+            jc = self._jcall('style', i, msg, new, alternatives=STYLE_ALTERNATIVES)
+            self.say('J', i, msg)
+            decision = self._decision_for(jc)
+            if decision == 'accept':
+                self.set_style(i, new)
+            elif decision.startswith('change:'):
+                self.set_style(i, decision.split(':', 1)[1])
 
     def merge_pdf_lines(self):
         i = 0
@@ -217,9 +263,13 @@ class Conformer:
             if self.is_par(i) and self.style(i) == 'ExcerptorQuote' and self.is_par(i + 1) and self.style(i + 1) == 'ExcerptorQuote':
                 a, b = self.text(i).rstrip(), self.text(i + 1).strip()
                 if not re.search(r'[.!?:;"\u201d]$', a) or a.endswith('-'):
-                    joined = (a[:-1] + b) if a.endswith('-') and b[:1].islower() else (a + ' ' + b)
-                    self.set(i, re.sub(r'(<w:r\b.*)</w:p>', '', self.item(i), flags=re.S).split('</w:pPr>')[0] + '</w:pPr>' + f'<w:r><w:t xml:space="preserve">{esc(joined)}</w:t></w:r></w:p>')
-                    del self.items[self.b0 + i + 1]; self.say('J', i, 'joined PDF line-break paragraphs into one excerpt'); continue
+                    msg = 'joined PDF line-break paragraphs into one excerpt'
+                    jc = self._jcall('merge', i, msg, 'Merge paragraphs')
+                    self.say('J', i, msg)
+                    if self._decision_for(jc) == 'accept':
+                        joined = (a[:-1] + b) if a.endswith('-') and b[:1].islower() else (a + ' ' + b)
+                        self.set(i, re.sub(r'(<w:r\b.*)</w:p>', '', self.item(i), flags=re.S).split('</w:pPr>')[0] + '</w:pPr>' + f'<w:r><w:t xml:space="preserve">{esc(joined)}</w:t></w:r></w:p>')
+                        del self.items[self.b0 + i + 1]; continue
             i += 1
 
     def fix_headings(self):
@@ -232,9 +282,13 @@ class Conformer:
             if st in HEADINGS and '  ' in t.strip() and len(t) > 80:
                 m = re.search(r'<w:r>(?:<w:rPr>.*?</w:rPr>)?<w:t xml:space="preserve">  </w:t></w:r>', self.item(i))
                 if m:
-                    head_x = self.item(i)[:m.start()] + '</w:p>'; rest = self.item(i)[m.end():]
-                    body_x = '<w:p><w:pPr><w:pStyle w:val="NumberedParagraph"/></w:pPr>' + rest
-                    self.set(i, head_x); self.items.insert(self.b0 + i + 1, body_x); self.say('J', i, 'split body text that had been merged into a heading paragraph')
+                    msg = 'split body text that had been merged into a heading paragraph'
+                    jc = self._jcall('split', i, msg, 'Split heading from body text')
+                    self.say('J', i, msg)
+                    if self._decision_for(jc) == 'accept':
+                        head_x = self.item(i)[:m.start()] + '</w:p>'; rest = self.item(i)[m.end():]
+                        body_x = '<w:p><w:pPr><w:pStyle w:val="NumberedParagraph"/></w:pPr>' + rest
+                        self.set(i, head_x); self.items.insert(self.b0 + i + 1, body_x)
         for i in range(self.n()):
             if not self.is_par(i) or self.style(i) != 'NumberedParagraph': continue
             t = self.text(i).strip(); words = t.split()
@@ -243,7 +297,11 @@ class Conformer:
                 while j >= 0 and self.style(j) not in HEADINGS: j = self.prev_par(j)
                 lvl = self.style(j) if j >= 0 else 'Heading2'
                 if lvl == 'Heading1': lvl = 'Heading2'
-                self.set_style(i, lvl); self.say('J', i, f'short title-case numbered paragraph promoted to {lvl}')
+                msg = f'short title-case numbered paragraph promoted to {lvl}'
+                jc = self._jcall('promote', i, msg, f'Promote to {lvl}')
+                self.say('J', i, msg)
+                if self._decision_for(jc) == 'accept':
+                    self.set_style(i, lvl)
 
     def fix_levels(self):
         for i in range(self.n()):
@@ -252,11 +310,18 @@ class Conformer:
             if st == 'NumberedParagraphL2':
                 p = self.prev_par(i)
                 if p >= 0 and self.style(p) == 'NumberedParagraph':
-                    k = i
-                    while k < self.n() and self.style(k) == 'NumberedParagraphL2': self.set_style(k, 'NumberedParagraphL1'); k += 1
-                    self.say('J', i, 'sub-level list started at L2 under a numbered paragraph; promoted run to L1')
+                    msg = 'sub-level list started at L2 under a numbered paragraph; promoted run to L1'
+                    jc = self._jcall('level', i, msg, 'Promote L2 to L1')
+                    self.say('J', i, msg)
+                    if self._decision_for(jc) == 'accept':
+                        k = i
+                        while k < self.n() and self.style(k) == 'NumberedParagraphL2': self.set_style(k, 'NumberedParagraphL1'); k += 1
             if st == 'NumberedParagraphL1' and self.text(i).strip().endswith(':') and i + 1 < self.n() and self.style(i + 1) in ('ListBullet', 'Listbulletasasentence'):
-                self.set_style(i, 'NumberedParagraph'); self.say('J', i, 'L1 lead-in followed by List Bullet items promoted to Numbered Paragraph')
+                msg = 'L1 lead-in followed by List Bullet items promoted to Numbered Paragraph'
+                jc = self._jcall('level', i, msg, 'Promote L1 to Numbered Paragraph')
+                self.say('J', i, msg)
+                if self._decision_for(jc) == 'accept':
+                    self.set_style(i, 'NumberedParagraph')
 
     def strip_direct(self):
         i = 0
@@ -483,10 +548,49 @@ class Conformer:
         with zipfile.ZipFile(path, 'w', zipfile.ZIP_DEFLATED) as z:
             for n_, b in self.parts.items(): z.writestr(n_, b)
 
-    def run(self):
+    def _run_passes(self):
         self.revert_tracked_formatting(); self.unwrap_and_prune(); self.classify(); self.merge_pdf_lines()
         self.fix_headings(); self.fix_levels(); self.strip_direct(); self.fix_tables(); self.fix_figures()
         self.fix_footnotes(); self.rebuild_fields(); self.typography(); self.fix_sections(); self.replace_parts()
+
+    def run(self):
+        self._run_passes()
+
+    def analyze(self):
+        self.decisions = None
+        self._run_passes()
+        return list(self.pending_judgments)
+
+    def apply_with_decisions(self, decisions):
+        fresh = Conformer(self.template_path, self.input_path)
+        fresh.decisions = decisions
+        fresh._run_passes()
+        return fresh
+
+    def validate_output(self):
+        doc = normalize(self.head + ''.join(self.items) + self.tail)
+        parts = dict(self.parts)
+        parts['word/document.xml'] = doc.encode('utf8')
+        parts['word/styles.xml'] = self.styles.encode('utf8')
+        parts['word/numbering.xml'] = self.num.encode('utf8')
+        parts['word/footnotes.xml'] = normalize(self.fn).encode('utf8')
+        parts['word/settings.xml'] = self.settings.encode('utf8')
+        import io
+        buf = io.BytesIO()
+        with zipfile.ZipFile(buf, 'w', zipfile.ZIP_DEFLATED) as z:
+            for n_, b in parts.items(): z.writestr(n_, b)
+        buf.seek(0)
+        try:
+            with zipfile.ZipFile(buf) as z:
+                for name in z.namelist():
+                    if name.endswith('.xml'):
+                        data = z.read(name).decode('utf8')
+                        if '<w:' in data and not re.search(r'<w:\w+', data):
+                            return False, f'Malformed XML in {name}'
+            return True, 'Output validated'
+        except Exception as e:
+            return False, str(e)
+
 
 if __name__ == '__main__':
     tpl, src, dst = sys.argv[1:4]
