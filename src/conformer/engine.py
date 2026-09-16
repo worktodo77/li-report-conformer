@@ -160,7 +160,10 @@ class Conformer:
         self.pending_judgments = []
         self.decisions = None
         from conformer import revisions as _rev
-        self.revision_ledger = _rev.Ledger.build(self.parts)
+        # Per-part parse cache (bytes-keyed) shared by every verify/content-stream call this run, so
+        # unchanged parts are parsed once. Seed it by building the original ledger through it.
+        self._verify_cache = {}
+        self.revision_ledger = _rev.Ledger.build(self.parts, cache=self._verify_cache)
         self.disposition = None      # None/clean → legacy pipeline; 'preserve' → review-preserving
         self.exceptions = []         # (pass_name, reason) for passes rolled back in preserve mode
         self._jcall_counter = 0
@@ -896,7 +899,7 @@ class Conformer:
         # flow through classify/strip_direct and get properly conformed, instead of keeping the
         # TableData styling a later table pass would wrongly stamp on a layout wrapper.
         self._unwrap_tables_preserving()    # #3
-        prev_stream = _rev.content_stream(self._output_parts())
+        prev_stream = _rev.content_stream(self._output_parts(), cache=self._verify_cache)
         for fn, gate in ordered:
             snap = self._snapshot()
             try:
@@ -906,7 +909,7 @@ class Conformer:
                 self.exceptions.append((fn.__name__, f'pass error: {str(e)[:100]}'))
                 continue
             clean, disc = self.verify_preservation()
-            after_stream = _rev.content_stream(self._output_parts())
+            after_stream = _rev.content_stream(self._output_parts(), cache=self._verify_cache)
             sviol = _rev.stream_violations(prev_stream, after_stream,
                                            text_ok=typo_ok if gate == 'text' else None,
                                            ignore_structure=(gate == 'struct'))
@@ -1159,7 +1162,7 @@ class Conformer:
         if not plan:
             return
         pass_snap = self._snapshot()
-        before_disp = _rev.visible_stream(self._output_parts())
+        before_disp = _rev.visible_stream(self._output_parts(), cache=self._verify_cache)
         applied = 0
         for cand in sorted(plan, key=lambda c: c['index'], reverse=True):
             if self._apply_ask_instance(kind, cand):
@@ -1167,7 +1170,7 @@ class Conformer:
         if not applied:
             return
         clean, _ = self.verify_preservation()
-        after_disp = _rev.visible_stream(self._output_parts())
+        after_disp = _rev.visible_stream(self._output_parts(), cache=self._verify_cache)
         if not clean or _rev.visible_violations(before_disp, after_disp):
             self._restore(pass_snap)
             self.exceptions.append((kind, f'whole-pass backstop tripped ({applied} instance(s) '
@@ -1558,7 +1561,7 @@ class Conformer:
         re-attributed. NOTE: for ACCEPT/REJECT dispositions revisions are intentionally resolved,
         so this gate applies to preservation modes, not to accept/reject projections."""
         from conformer import revisions as _rev
-        after = _rev.Ledger.build(self._output_parts())
+        after = _rev.Ledger.build(self._output_parts(), cache=self._verify_cache)
         d = _rev.diff(self.revision_ledger, after)
         return _rev.is_clean(d, allow_introduced=allow_introduced), d
 

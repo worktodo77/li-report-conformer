@@ -227,6 +227,23 @@ def _comment_bodies(parts):
     return bodies
 
 
+def _anchors_in(xml_bytes):
+    """Comment markers present in ONE story part (per-part, cacheable by bytes)."""
+    anchors = {}
+    try:
+        root = ET.fromstring(xml_bytes)
+    except ET.ParseError:
+        return anchors
+    for n in root.iter():
+        lt = _local(n.tag)
+        if lt not in ('commentRangeStart', 'commentRangeEnd', 'commentReference'):
+            continue
+        cid = n.get(_w('id'))
+        a = anchors.setdefault(cid, {'start': False, 'end': False, 'ref': False})
+        a['start' if lt == 'commentRangeStart' else 'end' if lt == 'commentRangeEnd' else 'ref'] = True
+    return anchors
+
+
 def _comment_anchors(parts):
     """Per comment id: which markers exist (range start/end + reference) and the anchored text."""
     anchors = {}
@@ -261,21 +278,43 @@ class Ledger:
     rels: dict = field(default_factory=dict)
 
     @classmethod
-    def build(cls, parts):
+    def build(cls, parts, cache=None):
+        """Build the ledger. `cache` (a dict) memoizes the expensive per-part parses by part-bytes
+        hash, so re-verifying after a pass that changed only styles.xml (not a story part) or only
+        footnotes.xml reuses the unchanged document.xml / header / comment parses instead of
+        re-parsing them. Passes never mutate media/embeddings, so a part's parse — including the
+        drawing content-hashes it reads from constant media — is a pure function of its own bytes."""
+        def memo(key, fn):
+            if cache is None:
+                return fn()
+            if key not in cache:
+                cache[key] = fn()
+            return cache[key]
         revs, unsup = [], []
-        for name in sorted(parts):
-            if STORY_RE.match(name) and 'comments' not in name:
-                r, u = parse_part(parts[name], name, parts)
-                revs.extend(r); unsup.extend(u)
-        binaries = {n: _sha(parts[n]) for n in parts if BINARY_RE.match(n)}
+        anchors = {}
         rels = {}
         for name in sorted(parts):
-            if STORY_RE.match(name):
-                rr = _rels_for(parts, name)
-                if rr:
-                    rels[name] = rr
+            if not STORY_RE.match(name):
+                continue
+            data = parts[name]
+            h = _sha(data)
+            if 'comments' not in name:
+                r, u = memo(('rev', name, h), lambda d=data, n=name: parse_part(d, n, parts))
+                revs.extend(r); unsup.extend(u)
+                for cid, flags in memo(('anch', name, h), lambda d=data: _anchors_in(d)).items():
+                    a = anchors.setdefault(cid, {'start': False, 'end': False, 'ref': False})
+                    for k, v in flags.items():
+                        if v:
+                            a[k] = True
+            rr = _rels_for(parts, name)
+            if rr:
+                rels[name] = rr
+        binaries = {n: _sha(parts[n]) for n in parts if BINARY_RE.match(n)}
+        ckey = ('cbodies', _sha(b''.join(parts[n] for n in sorted(parts)
+                                        if re.match(r'word/comments\.xml$', n))))
+        cbodies = memo(ckey, lambda: _comment_bodies(parts))
         return cls(revisions=revs, unsupported=unsup,
-                   comment_bodies=_comment_bodies(parts), comment_anchors=_comment_anchors(parts),
+                   comment_bodies=cbodies, comment_anchors=anchors,
                    binaries=binaries, rels=rels)
 
     def has_revisions(self):
@@ -405,18 +444,24 @@ def _stream_emit(elem, out, part, rels, parts):
         out.append((f'{lt}>', elem.get(_w('id'), '')))
 
 
-def content_stream(parts):
+def content_stream(parts, cache=None):
     streams = {}
     for name in sorted(parts):
         if not STORY_RE.match(name):
             continue
+        data = parts[name]
+        key = ('stream', name, _sha(data))
+        if cache is not None and key in cache:
+            streams[name] = cache[key]; continue
         try:
-            root = ET.fromstring(parts[name])
+            root = ET.fromstring(data)
+            out = []
+            _stream_emit(root, out, name, _rels_for(parts, name), parts)
         except ET.ParseError:
-            streams[name] = [('parse-error',)]; continue
-        out = []
-        _stream_emit(root, out, name, _rels_for(parts, name), parts)
+            out = [('parse-error',)]
         streams[name] = out
+        if cache is not None:
+            cache[key] = out
     return streams
 
 
@@ -480,9 +525,9 @@ def _collapse_visible(stream):
     return out
 
 
-def visible_stream(parts):
+def visible_stream(parts, cache=None):
     """Per story part: the display stream (see above). Whole-document form of the display gate."""
-    return {name: _collapse_visible(s) for name, s in content_stream(parts).items()}
+    return {name: _collapse_visible(s) for name, s in content_stream(parts, cache).items()}
 
 
 def visible_violations(before, after):
