@@ -916,6 +916,7 @@ class Conformer:
                 self.exceptions.append((fn.__name__, reason))
                 continue
             prev_stream = after_stream
+        self._merge_pdf_lines_preserving()   # #1 AUTO authorized text edit (clean excerpts only)
         # Interactive ASK structural changes (display-preserving, per-instance JudgmentCalls).
         # #8 first (Claire's explicit need): caption fielding then cross-reference rebuild.
         self._caption_fields_preserving()   # #8a
@@ -940,6 +941,46 @@ class Conformer:
                         and not self.text(i).strip() and '<w:drawing>' not in x):
                     del self.items[self.b0 + i]; self.say('M', i, 'deleted empty paragraph'); continue
             i += 1
+
+    _MARKER_RE = re.compile(r'<w:(ins|del|moveFrom|moveTo|pPrChange|rPrChange|commentRangeStart'
+                            r'|commentRangeEnd|commentReference|bookmarkStart)\b')
+
+    def _para_has_marker(self, i):
+        return bool(self._MARKER_RE.search(self.item(i)))
+
+    @staticmethod
+    def _pdf_join(a, b):
+        return (a[:-1] + b) if a.endswith('-') and b[:1].islower() else (a + ' ' + b)
+
+    def _merge_pdf_lines_preserving(self):
+        """#1 as an AUTHORIZED text edit: join two consecutive block-quote (Excerpt or Quote)
+        paragraphs that a PDF paste split mid-sentence — remove a trailing soft hyphen or insert the
+        missing space. AUTO (per the structural-change policy) but only on CLEAN excerpts: a merge is
+        skipped if EITHER paragraph carries any tracked change, comment or bookmark, so it can never
+        disturb reviewed content; the merged text is BUILT as exactly the house join (the authorized
+        edit, nothing else), and the ledger backstops the whole pass."""
+        snap = self._snapshot()
+        merged = 0
+        i = 0
+        while i < self.n() - 1:
+            if (self.is_par(i) and self.style(i) == 'ExcerptorQuote'
+                    and self.is_par(i + 1) and self.style(i + 1) == 'ExcerptorQuote'
+                    and not self._para_has_marker(i) and not self._para_has_marker(i + 1)):
+                a, b = self.text(i).rstrip(), self.text(i + 1).strip()
+                if a and b and (not re.search(r'[.!?:;"”]$', a) or a.endswith('-')):
+                    joined = self._pdf_join(a, b)
+                    head = re.match(r'(<w:p\b[^>]*>(?:<w:pPr>.*?</w:pPr>)?)', self.item(i), re.S).group(1)
+                    self.set(i, head + f'<w:r><w:t xml:space="preserve">{esc(joined)}</w:t></w:r></w:p>')
+                    del self.items[self.b0 + i + 1]
+                    merged += 1
+                    self.say('M', i, 'merged PDF line-break split excerpt (authorized text edit)')
+                    continue
+            i += 1
+        if merged:
+            clean, _ = self.verify_preservation()
+            if not clean:
+                self._restore(snap)
+                self.exceptions.append(('merge_pdf_lines', 'ledger backstop tripped (rolled back)'))
 
     def _caps_headings_preserving(self):
         """#9 as FORMATTING: display Heading1/2 uppercase via <w:caps/> on their runs, leaving the

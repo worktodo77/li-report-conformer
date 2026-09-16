@@ -313,6 +313,42 @@ def test_split_heading_from_body():
         assert ok, msg
 
 
+# ======================================================================== #1 merge PDF line splits
+def _excerpt(t):
+    return f'<w:p><w:pPr><w:pStyle w:val="ExcerptorQuote"/></w:pPr><w:r><w:i/><w:t xml:space="preserve">{t}</w:t></w:r></w:p>'
+
+
+def test_merge_pdf_line_splits_authorized():
+    # two block-quote paragraphs split mid-sentence by a PDF paste -> joined with a space
+    body = (HEAD + _excerpt('The contractor shall complete the works') + _excerpt('within the time stated.')
+            + INS.replace(HEAD, '') + '<w:sectPr><w:pgSz w:w="12240" w:h="15840"/></w:sectPr>')
+    with tempfile.TemporaryDirectory() as tmp:
+        p = os.path.join(tmp, 'm.docx')
+        make_docx(p, body)
+        calls, applied = _accept_all(p)
+        texts = [applied.text(i) for i in range(applied.n()) if applied.style(i) == 'ExcerptorQuote']
+        assert any('complete the works within the time stated.' in t for t in texts)
+        assert not any(name == 'merge_pdf_lines' for name, _ in applied.exceptions)
+        clean, disc = applied.verify_preservation()
+        assert clean, disc
+
+
+def test_merge_skips_excerpt_carrying_a_tracked_change():
+    # the second excerpt carries an insertion -> the pair must NOT be merged (tracked content safe)
+    tracked = ('<w:p><w:pPr><w:pStyle w:val="ExcerptorQuote"/></w:pPr>'
+               '<w:ins w:id="4" w:author="Ann" w:date="D"><w:r><w:t>within the time stated.</w:t></w:r></w:ins></w:p>')
+    body = (HEAD + _excerpt('The contractor shall complete the works') + tracked
+            + '<w:sectPr><w:pgSz w:w="12240" w:h="15840"/></w:sectPr>')
+    with tempfile.TemporaryDirectory() as tmp:
+        p = os.path.join(tmp, 'm2.docx')
+        make_docx(p, body)
+        calls, applied = _accept_all(p)
+        excerpts = [i for i in range(applied.n()) if applied.style(i) == 'ExcerptorQuote']
+        assert len(excerpts) == 2                                 # NOT merged
+        clean, disc = applied.verify_preservation()
+        assert clean, disc
+
+
 def test_split_preserves_every_character():
     # the separator whitespace is kept (on the heading), so concatenated visible text is unchanged
     merged = (HEAD.replace('<w:r><w:t>SECTION</w:t></w:r>',
