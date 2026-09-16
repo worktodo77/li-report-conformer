@@ -1,0 +1,14 @@
+[project]
+name = "li-report-conformer"
+version = "0.1.0"
+description = "Desktop app that repairs expert reports to match the LI Word template"
+requires-python = ">=3.10"
+dependencies = [
+    "PySide6-Essentials>=6.7,<6.9",
+]
+
+[project.scripts]
+li-conformer = "conformer.main:main"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

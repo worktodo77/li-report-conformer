@@ -1,0 +1,40 @@
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+dist/
+build/
+*.spec
+.eggs/
+*.egg
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# PyInstaller
+*.exe
+*.app
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# Client data — never ship
+*.docx
+!src/conformer/assets/*.docx
+!src/conformer/assets/*.dotx
+
+# Backups created by the app
+_LI Conformer Backups/
+
+# Claude Code
+.claude/worktrees/
