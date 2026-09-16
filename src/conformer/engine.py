@@ -30,6 +30,7 @@ class JudgmentCall:
     recommended_action: str
     alternatives: list = field(default_factory=list)
     original_style: str = ''
+    needs_review: bool = False   # on/adjacent to a tracked change or comment: review individually
 
 # ---------------------------------------------------------------- shared helpers (same as corrupt.py)
 # Empty body-level marker elements (self-closing): bookmarks, comment ranges, tracked move/
@@ -1155,6 +1156,7 @@ class Conformer:
             adj = cand.get('tracked_adjacent', False)
             rec = 'Review individually (tracked change nearby)' if adj else cand['recommended']
             jc = self._jcall(kind, i, cand['message'], rec, cand.get('alternatives'))
+            jc.needs_review = adj
             self.say('J', i, cand['message'])
             dec = self._decision_for(jc)
             if dec == 'accept' or dec.startswith('change'):

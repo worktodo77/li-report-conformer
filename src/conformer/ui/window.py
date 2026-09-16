@@ -63,7 +63,9 @@ class JudgmentRow(QFrame):
     def __init__(self, index, call: JudgmentCall, parent=None):
         super().__init__(parent)
         self.call = call
-        self.decision = 'accept'
+        # tracked-adjacent structural changes are flagged for individual review -> default to Skip so
+        # they are never silently applied; the reviewer opts in consciously.
+        self.decision = 'skip' if getattr(call, 'needs_review', False) else 'accept'
         self.change_style = call.recommended_action if call.alternatives else ''
         self.expanded = False
 
@@ -100,6 +102,18 @@ class JudgmentRow(QFrame):
         self.full_text_label.setWordWrap(True)
         self.full_text_label.setVisible(False)
         layout.addWidget(self.full_text_label)
+
+        # what the fix does (esp. for structural changes) + a review flag when tracked-adjacent
+        msg = call.message
+        if getattr(call, 'needs_review', False):
+            msg = '⚠ ' + msg + '  — tracked change nearby; review before accepting'
+        self.message_label = QLabel(msg)
+        self.message_label.setObjectName('judgmentReason')
+        self.message_label.setWordWrap(True)
+        self.message_label.setContentsMargins(24, 0, 0, 0)
+        if getattr(call, 'needs_review', False):
+            self.message_label.setStyleSheet('color: #9a6a00;')
+        layout.addWidget(self.message_label)
 
         view_layout = QHBoxLayout()
         view_layout.setContentsMargins(24, 0, 0, 0)
@@ -141,7 +155,7 @@ class JudgmentRow(QFrame):
         self.accept_btn = QPushButton('✓ Accept')
         self.accept_btn.setObjectName('acceptBtn')
         self.accept_btn.setCheckable(True)
-        self.accept_btn.setChecked(True)
+        self.accept_btn.setChecked(self.decision == 'accept')
         self.accept_btn.clicked.connect(lambda: self._set_decision('accept'))
 
         self.change_btn = QPushButton('Change →')
@@ -158,6 +172,7 @@ class JudgmentRow(QFrame):
         self.skip_btn = QPushButton('Skip')
         self.skip_btn.setObjectName('skipBtn')
         self.skip_btn.setCheckable(True)
+        self.skip_btn.setChecked(self.decision == 'skip')
         self.skip_btn.clicked.connect(lambda: self._set_decision('skip'))
 
         actions_layout.addWidget(self.accept_btn)
@@ -432,13 +447,43 @@ class MainWindow(QMainWindow):
         self.tally_bar.setVisible(bool(self.judgment_calls))
         self._update_tally()
 
-    def _build_complete_state(self, output_path, decisions_log, audit=None):
+    def _build_complete_state(self, output_path, decisions_log, audit=None, fresh=None):
         self._clear_body()
         self.tally_bar.setVisible(False)
 
         sec = QLabel('COMPLETE')
         sec.setObjectName('sectionLabel')
         self.body_layout.addWidget(sec)
+
+        # Review-preserving output: state plainly what this file is and that tracked changes were
+        # preserved and verified — never present it as a fully-conformed reading copy.
+        if fresh is not None and getattr(fresh, 'disposition', None) == 'preserve':
+            try:
+                clean, _ = fresh.verify_preservation()
+            except Exception:
+                clean = None
+            n_roll = len(getattr(fresh, 'exceptions', []))
+            banner = QFrame()
+            banner.setObjectName('card')
+            bl = QVBoxLayout(banner)
+            title = QLabel('Normalized-formatting review copy')
+            title.setStyleSheet('font-weight: 600; color: #1f3a5f;')
+            bl.addWidget(title)
+            summ = QLabel(
+                'Formatting was conformed to the LI template while every tracked change, comment '
+                'and author was preserved' + (' and verified.' if clean else '.') +
+                ' This is not a fully-conformed reading copy. The original is backed up; an audit '
+                'record (_conform_audit.json) was written beside the output.')
+            summ.setWordWrap(True)
+            summ.setStyleSheet('font-size: 12px; color: #66707a;')
+            bl.addWidget(summ)
+            status = QLabel(('✓ Preservation verified clean.' if clean
+                             else '⚠ Preservation could not be verified.')
+                            + (f'  {n_roll} pass(es) conformed conservatively.' if n_roll else ''))
+            status.setStyleSheet('font-size: 12px; color: %s;' % ('#2e7d32' if clean else '#b26a00'))
+            status.setWordWrap(True)
+            bl.addWidget(status)
+            self.body_layout.addWidget(banner)
 
         card = QFrame()
         card.setObjectName('card')
@@ -665,7 +710,7 @@ class MainWindow(QMainWindow):
                 'action': action,
             })
 
-        self._build_complete_state(output_path, decisions_log, getattr(fresh, 'audit', []))
+        self._build_complete_state(output_path, decisions_log, getattr(fresh, 'audit', []), fresh)
 
     def _save_output(self, fresh):
         src = self.input_path
@@ -697,6 +742,15 @@ class MainWindow(QMainWindow):
         }
         with open(log_path, 'w') as f:
             json.dump(log_data, f, indent=2)
+
+        # Review-preserving output: write the normalized-formatting-review-copy audit record beside
+        # the file (disposition, honest label, original SHA-256, preservation verdict, rolled-back
+        # passes). The docx itself is stamped as a review copy by the engine (core.xml contentStatus).
+        if getattr(fresh, 'disposition', None) == 'preserve':
+            try:
+                fresh.write_audit(output_path)
+            except Exception:
+                pass
 
         return output_path
 
