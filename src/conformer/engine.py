@@ -925,6 +925,7 @@ class Conformer:
         self._extract_images_preserving()   # #5
         self._drop_empty_columns_preserving()  # #7
         self.audit_figures()
+        self._label_review_copy()           # GPT-6 2a: stamp as a normalized-formatting review copy
 
     def _prune_preserving(self):
         """AUTO structural: remove manual page-break paragraphs (#4) and empty numbered/Normal
@@ -1560,6 +1561,71 @@ class Conformer:
         after = _rev.Ledger.build(self._output_parts())
         d = _rev.diff(self.revision_ledger, after)
         return _rev.is_clean(d, allow_introduced=allow_introduced), d
+
+    # ---------------------------------------------------------------- normalized-copy label + audit
+    REVIEW_COPY_LABEL = ('Normalized-formatting review copy — formatting conformed to the LI '
+                         'template; tracked changes, comments and authorship preserved and verified. '
+                         'Not a fully-conformed reading copy.')
+
+    def _label_review_copy(self):
+        """GPT-6 2a: stamp the output as a normalized-formatting review copy. Written to the
+        docProps/core.xml <cp:contentStatus> — the schema's own document-status field, shown in
+        Word's file properties — so the file is never mistaken for a fully-conformed reading copy.
+        core.xml is not a story part, so this never affects the preservation gate."""
+        core = self.parts.get('docProps/core.xml')
+        if not core:
+            return
+        text = core.decode('utf8')
+        status = esc(self.REVIEW_COPY_LABEL)
+        if '<cp:contentStatus>' in text:
+            text = re.sub(r'<cp:contentStatus>.*?</cp:contentStatus>',
+                          f'<cp:contentStatus>{status}</cp:contentStatus>', text, flags=re.S)
+        elif '</cp:coreProperties>' in text:
+            text = text.replace('</cp:coreProperties>',
+                                f'<cp:contentStatus>{status}</cp:contentStatus></cp:coreProperties>', 1)
+        else:
+            return
+        self.parts['docProps/core.xml'] = text.encode('utf8')
+
+    def build_audit(self):
+        """Machine-readable audit record for a review-preserving output (GPT-6 2a): the disposition
+        and its honest label, the original package SHA-256 (the byte-exact fidelity anchor), the
+        revision inventory, the preservation-gate verdict, every pass rolled back and why, and the
+        judgment calls surfaced. Written beside the output by write_audit()."""
+        import hashlib
+        import datetime
+        from collections import Counter
+        clean, disc = self.verify_preservation()
+        try:
+            with open(self.input_path, 'rb') as fh:
+                src_sha = hashlib.sha256(fh.read()).hexdigest()
+        except OSError:
+            src_sha = None
+        return {
+            'tool': 'LI Report Conformer',
+            'disposition': self.disposition or 'clean',
+            'label': self.REVIEW_COPY_LABEL if self.disposition == 'preserve' else 'Conformed copy',
+            'generated': datetime.datetime.now().isoformat(timespec='seconds'),
+            'source_file': os.path.basename(self.input_path),
+            'source_sha256': src_sha,
+            'revision_summary': self.revision_ledger.summary(),
+            'preservation_verified': clean,
+            'preservation_discrepancies': {k: len(v) for k, v in disc.items()
+                                           if isinstance(v, list) and v},
+            'passes_rolled_back': [{'pass': n, 'reason': r} for n, r in self.exceptions],
+            'judgment_calls': {'total': len(self.pending_judgments),
+                               'by_kind': dict(Counter(jc.kind for jc in self.pending_judgments))},
+            'mechanical_actions': len(self.log),
+            'figure_audit': [{'level': lvl, 'detail': msg} for lvl, msg in self.audit],
+        }
+
+    def write_audit(self, docx_path):
+        """Write <stem>_conform_audit.json next to the output. Returns its path."""
+        stem, _ = os.path.splitext(docx_path)
+        audit_path = stem + '_conform_audit.json'
+        with open(audit_path, 'w', encoding='utf8') as fh:
+            json.dump(self.build_audit(), fh, indent=2)
+        return audit_path
 
     def validate_output(self):
         parts = self._output_parts()

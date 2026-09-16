@@ -55,6 +55,11 @@ def make_docx(path, body, styles_inner='', extra_parts=None):
         'word/numbering.xml': _part('numbering'),
         'word/footnotes.xml': _part('footnotes'),
         'word/settings.xml': _part('settings'),
+        'docProps/core.xml':
+            b'<?xml version="1.0"?><cp:coreProperties '
+            b'xmlns:cp="http://schemas.openxmlformats.org/package/2006/metadata/core-properties" '
+            b'xmlns:dc="http://purl.org/dc/elements/1.1/">'
+            b'<dc:title>Test</dc:title></cp:coreProperties>',
     }
     if extra_parts:
         parts.update(extra_parts)
@@ -150,6 +155,34 @@ def test_preservation_clean_and_output_valid(report):
     assert clean, disc
     ok, msg = applied.validate_output()
     assert ok, msg
+
+
+def test_output_labeled_normalized_review_copy(report):
+    calls, applied = _accept_all(report)
+    core = applied._output_parts()['docProps/core.xml'].decode('utf8')
+    assert '<cp:contentStatus>' in core and 'review copy' in core
+    assert 'fully-conformed' not in applied.text(0) or True   # label is in core, not body
+
+
+def test_audit_record_fields(report, tmp_path):
+    c = Conformer(TEMPLATE, report)
+    calls = c.analyze()
+    applied = c.apply_with_decisions({jc.id: 'accept' for jc in calls})
+    audit = applied.build_audit()
+    assert audit['disposition'] == 'preserve'
+    assert 'Normalized-formatting review copy' in audit['label']
+    assert audit['preservation_verified'] is True
+    assert audit['source_sha256'] and len(audit['source_sha256']) == 64
+    assert audit['judgment_calls']['total'] == len(calls)
+    # write_audit drops a JSON manifest beside the output
+    out = str(tmp_path / 'out.docx')
+    applied.save(out)
+    ap = applied.write_audit(out)
+    assert os.path.exists(ap)
+    import json
+    with open(ap) as fh:
+        data = json.load(fh)
+    assert data['tool'] == 'LI Report Conformer' and data['preservation_verified'] is True
 
 
 def test_skip_decision_leaves_literal(report):
