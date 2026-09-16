@@ -60,6 +60,17 @@ def test_paragraph_mark_deletion_preserved():
     assert 'w:author="Ann"' in ''.join(c.items)
 
 
+def test_paragraph_mark_only_deletion_preserved():
+    d = _doc(); ids = lib.Ids()
+    p = d.add_paragraph('Visible text remains while only the boundary is deleted.', style='NumberedParagraph')
+    rec = lib.mark_paragraph_mark_deleted(p, ids, 'Ann', '2026-01-06T00:00:00Z')
+    assert rec['kind'] == 'para_mark_del'
+    c, clean, disc, ok = _conform(_save(d))
+    assert clean, disc
+    assert ok
+    out = ''.join(c.items)
+    assert 'w:del' in out and 'Visible text remains' in out
+
 def test_move_from_to_preserved():
     d = _doc()
     ids = lib.Ids()

@@ -63,14 +63,24 @@ def _fn_style(fns, fid):
 
 def _find_item(loc, bm, items):
     """Locate an instance by its bookmark, or — for a 'text:snippet' locator (used where a bookmark
-    would itself change the outcome, e.g. the merge pass) — by the paragraph containing the text."""
+    would itself change the outcome, e.g. the merge or the prune passes) — by the paragraph whose
+    visible text OR raw markup (a sidecar rsidR marker) contains the snippet."""
     if loc.startswith('text:'):
         snip = loc[5:]
         for it in items:
-            if snip in _text(it):
+            if snip in _text(it) or snip in it:
                 return it
         return None
     return bm.get(loc)
+
+
+def _present(loc, bm, items):
+    """Is the instance still present in the output? (bookmark still in map, or content/sidecar
+    marker still in some item.)"""
+    if loc.startswith('text:'):
+        snip = loc[5:]
+        return any(snip in _text(it) or snip in it for it in items)
+    return loc in bm
 
 
 def score_instance(d, bm, items, fns, applied):
@@ -88,7 +98,7 @@ def score_instance(d, bm, items, fns, applied):
         return 'audit'   # resolved/missed decided by caller from the audit findings
 
     if disp == 'removed':                      # non-tracked prune: the paragraph should be gone
-        return 'resolved' if loc not in bm else 'missed'
+        return 'missed' if _present(loc, bm, items) else 'resolved'
 
     if disp == 'footnote_restyled':
         return present(_fn_style(fns, data.get('fid')) == 'FootnoteText')
@@ -127,6 +137,11 @@ def score_instance(d, bm, items, fns, applied):
         return present(len(_text(item)) >= data.get('min_len', 10 ** 9))
     if disp == 'typography_applied':
         return present('"' not in _text(item))
+    if disp == 'level_fixed':                  # fix_levels promotes L2 under a numbered para -> L1
+        m = re.search(r'<w:pStyle w:val="([^"]+)"', item)
+        return present(m and m.group(1) != 'NumberedParagraphL2')
+    if disp == 'xref_fielded':                 # #8b rebuilds the literal reference as a REF field
+        return present('REF ' in item)
     return 'indeterminate'
 
 
@@ -152,6 +167,10 @@ def _hold_intact(d, item, fns):
         return len(_text(item)) < data.get('first_half_len', 0) + 20   # not merged into a longer para
     if cls == 'footnote_style':
         return _fn_style(fns, data.get('fid')) != 'FootnoteText'
+    if cls == 'xref_literal':
+        return 'REF ' not in item                # reference inside a tracked run stays literal
+    if cls == 'level_fix':
+        return 'NumberedParagraphL2' in item     # level not promoted
     return True
 
 

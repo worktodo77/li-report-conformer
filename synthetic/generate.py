@@ -328,7 +328,11 @@ class Report:
     def emit_empty_para(self, tracked):
         self._elem()
         p = self.doc.add_paragraph('', style='NumberedParagraph')
-        loc = self.loc(p, 'empty')
+        # Sidecar locator (an rsidR attribute on the <w:p>, not a bookmark): a bookmark would add
+        # BMS/BME tokens whose loss on pruning trips the structure gate, so the locator would itself
+        # prevent the removal we are trying to measure.
+        loc = 'text:__SYN_EMPTY_%04d__' % self.elements
+        p._p.set(qn('w:rsidR'), loc.split(':', 1)[1])
         if tracked:
             r = p.add_run(' ')
             self.ins_run(r, p, loc)   # the empty paragraph is itself a tracked insertion
@@ -340,8 +344,12 @@ class Report:
     def emit_page_break(self, tracked):
         self._elem()
         p = self.doc.add_paragraph(style='NumberedParagraph')
-        loc = self.loc(p, 'pb')
         r = p.add_run(); r.add_break(WD_BREAK.PAGE)
+        # Sidecar locator on the <w:p> (a valid rsidR attribute, matched by the prune's `<w:p\b[^>]*>`):
+        # a bookmark or a marker on the <w:br> would change the pure page-break shape and block the
+        # prune match, so the locator would itself prevent the removal we are measuring.
+        loc = 'text:__SYN_PAGE_BREAK_%04d__' % self.elements
+        p._p.set(qn('w:rsidR'), loc.split(':', 1)[1])
         if tracked:
             self.ins_run(r, p, loc)
             self.record('page_break', loc, 'inside_revision', 'hold',
@@ -364,6 +372,42 @@ class Report:
             self.record('heading_body_merge', loc, 'unrelated', 'split', 'heading+body merged',
                         data={'body_marker': 'must be split out'})
 
+    def emit_level_fix(self, tracked):
+        """A nested-list level defect: an L2 list item directly under a numbered paragraph, which
+        fix_levels promotes to L1. Paired with a tracked-content case that must be held."""
+        self._elem()
+        self.doc.add_paragraph('A numbered lead-in paragraph introduces the sub-list.',
+                               style='NumberedParagraph')                     # the promotion anchor
+        p = self.doc.add_paragraph('A nested sub-item that started at level two.',
+                                   style='NumberedParagraphL2')
+        loc = self.loc(p, 'lvl')
+        if tracked and p.runs:
+            self.ins_run(p.runs[-1], p, loc)
+            # the promotion is a pStyle change (L2 -> L1), orthogonal to the tracked content, so the
+            # engine applies it AND preserves the edit — like classify. Not a hold.
+            self.record('level_fix', loc, 'inside_revision', 'level_fixed',
+                        'L2 promotion applies to a revised paragraph; the edit is preserved')
+        else:
+            self.record('level_fix', loc, 'unrelated', 'level_fixed',
+                        'L2 under a numbered paragraph -> promote to L1')
+
+    def emit_xref_literal(self, tracked):
+        """A literal cross-reference ('See Figure X-Y'). In the clean case #8b rebuilds it as a REF
+        field pointing at a REAL, fielded, bookmarked caption created here; in the tracked case the
+        reference text is itself an insertion (masked from #8b) and must remain literal."""
+        self._elem()
+        sec, seq, _name = self.figure('window_table.png', 'Reference target for a cross-reference')
+        label = "Figure %d-%d" % (sec, seq)
+        p = self.doc.add_paragraph('See %s for the delay analysis.' % label,
+                                   style='NumberedParagraph')
+        loc = self.loc(p, 'xref')
+        if tracked and p.runs:
+            self.ins_run(p.runs[-1], p, loc)
+            self.record('xref_literal', loc, 'inside_revision', 'hold',
+                        'the cross-reference is inside a tracked insertion (masked) -> stays literal')
+        else:
+            self.record('xref_literal', loc, 'unrelated', 'xref_fielded',
+                        'literal cross-reference -> REF field', data={'label': label})
     # -- tables -------------------------------------------------------------
     def _ensure_litable(self):
         if not lib.has_style(self.doc, 'LITable'):
@@ -492,6 +536,7 @@ class Report:
             self.record('tof_mismatch', self.loc(cap, 'tof'), 'unrelated', 'audit_flag',
                         'List-of-Figures title differs from the caption')
         self.tof_entries.append((name, "Figure %d-%d: %s" % (disp_sec, seq, shown), True))
+        return disp_sec, seq, name
 
     def _make_floating(self, p):
         """Inline drawing -> floating anchor with schema-correct child order (wrap BEFORE docPr)."""
@@ -544,7 +589,7 @@ class Report:
         trackable = ['classify_body', 'classify_bullet', 'strip_direct', 'typography',
                      'pdf_linesplit', 'empty_para', 'page_break', 'heading_body_merge',
                      'wrapper_table', 'floating_image', 'caption_literal', 'footnote_style',
-                     'table_style', 'table_empty_col']
+                     'table_style', 'table_empty_col', 'level_fix', 'xref_literal']
         untracked_only = ['section_landscape', 'figure_numbering', 'tof_mismatch']
         for cls in trackable:
             pairs.append((cls, False)); pairs.append((cls, True))
@@ -573,6 +618,8 @@ class Report:
         elif cls == 'table_style': self.table_with_caption(clean=False, tracked=tracked)
         elif cls == 'table_empty_col':
             self.table_with_caption(clean=False, empty_col=True, tracked=tracked)
+        elif cls == 'level_fix': self.emit_level_fix(tracked)
+        elif cls == 'xref_literal': self.emit_xref_literal(tracked)
         elif cls == 'section_landscape': pass   # emitted once at the end
         elif cls == 'figure_numbering':
             self.figure('bar_delay.png', 'Delay days by causal category', wrong_number=True)

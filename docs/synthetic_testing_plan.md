@@ -150,21 +150,34 @@ suite pass.
   revision-density stress case is the real 11,374-revision Warhoe draft; a high-revision synthetic
   variant can be added if wanted, but is out of scope for the conformance-coverage goal here.
 
-## 10. Preliminary dry run (illustrative; the official scored run is Gate B)
+## 10. Dry run (the official scored run is Gate B)
 
-All four reports: **P1 holds** (preservation clean, independent reconciliation 0 missing, output
-valid), no `incorrectly_changed` instances, and every non-`hold` instance resolves except two:
+All four reports: **P1 holds** (preservation clean, independent reconciliation 0 missing revisions,
+output valid), **no `incorrectly_changed`** instances, and the **clean control produces zero
+false-positive conformance changes**. Every instance resolves or is a correct `expected_hold` except
+two, which are one real engine finding:
 
-- **RCA-1 candidate (major, ENGINE layer):** `page_break` and `empty_para` non-tracked instances are
-  `missed` in every tier — `_prune_preserving` (#2/#4) rolls the whole pass back because the
-  content-stream gate counts a page-break token (`<w:br w:type="page"/>`) as content. **Isolated
-  reproduction and a fix are Gate-B work.** The proposed CAP is **narrow**, per the review: authorize
-  removal only of *identified, eligible manual page-break paragraphs*; do **not** globally ignore
-  page/column breaks in the gate; keep all other breaks (line breaks, column breaks elsewhere)
-  protected; add positive tests for the permitted deletion and negative tests proving unrelated or
+- **RCA-1 (major, ENGINE layer) — root cause isolated.** `page_break` and `empty_para` non-tracked
+  instances are `missed` in every tier because `_prune_preserving` (#4/#2) rolls the whole pass back.
+  Isolated on the low report: the prune removes a manual page-break paragraph, which deletes a
+  `('BR','page')` content-stream token; the structure-tolerant gate drops only `P/TBL/TR/TC` tokens, so
+  the removed page-break token registers as *unauthorized content change (1)* and the pass reverts,
+  taking the empty-paragraph removal (#2) with it. This is a **real engine gap, now precisely located**
+  — not a fixture artifact (the trigger is the front-matter page break, which carries no locator). The
+  fixture locators for these two classes are deliberately **sidecar attributes** (an `rsidR` on the
+  `<w:p>`), not bookmarks, so the locator does not itself block the prune. **The fix is Gate-B work and
+  the CAP is narrow**, per the review: authorize removal only of *eligible manual page-break
+  paragraphs*; do **not** globally ignore page/column breaks in the gate; keep every other break
+  protected; add a positive test for the permitted deletion and negative tests proving unrelated or
   protected breaks cannot disappear.
 
-The clean control produces zero conformance changes beyond the expected baseline (no false positives).
+Everything else — classify (body and bullet, scored per instance at each locator), strip-direct,
+tables (style / empty-column / wrapper), floating image, caption fielding, cross-reference REF fields,
+level promotion, heading/body split, PDF-line merge, typography, footnotes, section restore, and the
+figure-audit classes — resolves for its non-tracked instance and holds (or applies-with-preservation)
+for its tracked instance, per the manifest. Note the level-promotion tracked instance is
+**applied-with-preservation** (`level_fixed`), not held: promoting L2→L1 is a style change orthogonal
+to the tracked content, like `classify`.
 
 ## 11. Response to the Gate-A review
 
@@ -202,6 +215,34 @@ The clean control produces zero conformance changes beyond the expected baseline
    tracked-typography expectations are fixed to per-instance holds that match preservation. The
    pruning CAP is constrained to eligible manual page-break instances with positive/negative tests;
    the blanket gate relaxation is **not** proposed.
+
+### 11.1 Second-round corrections (after the v2 review — "§11 overstated; specific fixture/scoring defects")
+
+These are the concrete defects the v2 review named, now fixed — they were fixture/scoring defects, not
+a redesign:
+
+- **`level_fix` and `xref_literal` were under-covered.** Both now have real paired emitters:
+  `level_fix` places an L2 item under a numbered paragraph so `fix_levels` actually promotes it;
+  `xref_literal` creates a real, fielded, bookmarked caption and references it so `#8b` actually
+  rebuilds a REF field. The scorer now has `level_fixed` and `xref_fielded` postconditions. (Previously
+  §2.1's "all classes paired" over-claimed for these two.)
+- **`move_runs` used mismatched range ids.** `moveFromRangeStart`/`End` (and `moveTo…`) now share one
+  id, so the adversarial move test exercises a schema-valid move. A **paragraph-mark-only deletion**
+  construct and test were added (distinct from whole-paragraph deletion).
+- **Prune-class locators were the wrong kind.** A locator *bookmark* on a `page_break`/`empty_para`
+  paragraph blocks or breaks its own prune (a page-break paragraph must keep its exact shape; an empty
+  paragraph loses BMS/BME tokens on removal). These two classes now use **sidecar `rsidR` attribute
+  locators on the `<w:p>`**, so the locator no longer changes the outcome. This is what let RCA-1 be
+  isolated as a **real** engine gap rather than mis-attributed to the fixture.
+- **A wrong expected disposition was corrected.** The tracked `level_fix` is
+  **applied-with-preservation** (`level_fixed`), not `hold` — the engine promotes the level (a style
+  change) while preserving the edit. The scorer confirmed the engine's behaviour; the manifest now
+  matches it.
+- **Honest scope of P2 vs P3.** P2 is *aggregate* detection: `classify_body` and `classify_bullet`
+  both surface as the `style` JudgmentCall kind, so P2 cannot separate them. The separation is enforced
+  by **P3**, which scores each instance's resulting style at its own locator — a body-classify miss and
+  a bullet-classify miss are distinct P3 verdicts and cannot hide behind each other. §6 states this
+  explicitly now.
 
 ## 12. Deliverables & sign-off gates
 

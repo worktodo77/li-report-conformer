@@ -1,7 +1,7 @@
 {
   "tier": "medium",
   "verdict": "PARTIAL",
-  "quality": 0.666,
+  "quality": 0.647,
   "guarantees": {
     "preservation_clean": true,
     "output_valid": true,
@@ -12,7 +12,9 @@
     "judgment_calls": {
       "unwrap": 2,
       "style": 81,
+      "level": 2,
       "caption": 6,
+      "xref": 1,
       "splitcap": 1,
       "imgextract": 2,
       "dropcol": 2
@@ -20,7 +22,7 @@
     "mechanical_actions": 15,
     "audit_findings": {
       "not-fielded": 1,
-      "numbering": 3,
+      "numbering": 2,
       "toc-title": 1,
       "toc-orphan": 1
     }
@@ -32,7 +34,7 @@
         "unauthorized content change (1)"
       ],
       [
-        "caption[148]",
+        "caption[147]",
         "local display gate tripped (not applied)"
       ]
     ],
@@ -42,35 +44,35 @@
         "unauthorized content change (1)"
       ],
       [
-        "caption[148]",
+        "caption[147]",
         "local display gate tripped (not applied)"
       ]
     ],
     "unexplained": []
   },
   "per_instance_verdicts": {
-    "resolved": 164,
-    "expected_hold": 8,
+    "resolved": 178,
+    "expected_hold": 9,
     "missed": 2
   },
   "per_class": {
     "strip_direct": {
-      "resolved": 71,
+      "resolved": 82,
       "expected_hold": 1
     },
     "classify_body": {
       "resolved": 75
     },
-    "typography": {
-      "expected_hold": 1,
-      "resolved": 1
-    },
-    "footnote_style": {
-      "expected_hold": 1,
-      "resolved": 1
-    },
     "classify_bullet": {
       "resolved": 2
+    },
+    "heading_body_merge": {
+      "expected_hold": 1,
+      "resolved": 1
+    },
+    "page_break": {
+      "missed": 1,
+      "expected_hold": 1
     },
     "floating_image": {
       "resolved": 2
@@ -79,36 +81,43 @@
       "resolved": 1,
       "expected_hold": 1
     },
-    "table_style": {
-      "resolved": 2
+    "xref_literal": {
+      "resolved": 1,
+      "expected_hold": 1
     },
     "wrapper_table": {
       "resolved": 2
     },
-    "page_break": {
-      "missed": 1,
-      "expected_hold": 1
-    },
-    "heading_body_merge": {
-      "expected_hold": 1,
+    "figure_numbering": {
       "resolved": 1
     },
     "table_empty_col": {
       "resolved": 2
     },
+    "tof_mismatch": {
+      "resolved": 1
+    },
+    "level_fix": {
+      "resolved": 2
+    },
+    "empty_para": {
+      "expected_hold": 1,
+      "missed": 1
+    },
+    "typography": {
+      "resolved": 1,
+      "expected_hold": 1
+    },
     "caption_literal": {
       "resolved": 1,
       "expected_hold": 1
     },
-    "empty_para": {
-      "missed": 1,
-      "expected_hold": 1
-    },
-    "tof_mismatch": {
+    "footnote_style": {
+      "expected_hold": 1,
       "resolved": 1
     },
-    "figure_numbering": {
-      "resolved": 1
+    "table_style": {
+      "resolved": 2
     },
     "section_landscape": {
       "resolved": 1
@@ -134,8 +143,8 @@
       "ok": true
     },
     "level_fix": {
-      "injected": 0,
-      "detected": 0,
+      "injected": 1,
+      "detected": 2,
       "ok": true
     },
     "caption_literal": {
@@ -144,8 +153,8 @@
       "ok": true
     },
     "xref_literal": {
-      "injected": 0,
-      "detected": 0,
+      "injected": 1,
+      "detected": 1,
       "ok": true
     },
     "wrapper_table": {

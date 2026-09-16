@@ -132,6 +132,18 @@ def mark_paragraph_deleted(p, ids, author, date):
     return recs
 
 
+def mark_paragraph_mark_deleted(p, ids, author, date):
+    """Mark only the paragraph boundary as deleted; leave visible runs retained."""
+    pPr = p._p.get_or_add_pPr()
+    rPr = pPr.find(qn('w:rPr'))
+    if rPr is None:
+        rPr = OxmlElement('w:rPr')
+        ppr_insert_rpr(pPr, rPr)
+    rid = ids.next()
+    rPr.append(_rev('w:del', rid, author, date))
+    return {'kind': 'para_mark_del', 'id': rid, 'author': author, 'date': date,
+            'payload_text': p.text}
+
 def add_ppr_change(p, ids, author, date, old_ppr_xml):
     pPr = p._p.get_or_add_pPr()
     rid = ids.next()
@@ -161,8 +173,9 @@ def move_runs(run_from, run_to, ids, author, date, mv_name):
         r.addprevious(mv)
         mv.append(r)
         start = OxmlElement('w:%sRangeStart' % rng)
-        start.set(qn('w:id'), str(ids.next())); start.set(qn('w:name'), mv_name)
-        end = OxmlElement('w:%sRangeEnd' % rng); end.set(qn('w:id'), str(ids.next()))
+        range_id = ids.next()
+        start.set(qn('w:id'), str(range_id)); start.set(qn('w:name'), mv_name)
+        end = OxmlElement('w:%sRangeEnd' % rng); end.set(qn('w:id'), str(range_id))
         mv.addprevious(start); mv.addnext(end)
         recs.append({'kind': rng, 'id': rid, 'author': author, 'date': date,
                      'payload_text': run_text(run)})

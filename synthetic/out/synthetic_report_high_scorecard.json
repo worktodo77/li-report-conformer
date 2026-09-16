@@ -1,7 +1,7 @@
 {
   "tier": "high",
   "verdict": "PARTIAL",
-  "quality": 0.218,
+  "quality": 0.236,
   "guarantees": {
     "preservation_clean": true,
     "output_valid": true,
@@ -11,8 +11,10 @@
   "analyze": {
     "judgment_calls": {
       "unwrap": 2,
-      "style": 241,
+      "style": 283,
+      "level": 2,
       "caption": 6,
+      "xref": 1,
       "splitcap": 1,
       "imgextract": 2,
       "dropcol": 2
@@ -20,7 +22,7 @@
     "mechanical_actions": 15,
     "audit_findings": {
       "not-fielded": 1,
-      "numbering": 2,
+      "numbering": 5,
       "toc-title": 1,
       "toc-orphan": 1
     }
@@ -32,7 +34,7 @@
         "unauthorized content change (1)"
       ],
       [
-        "caption[41]",
+        "caption[29]",
         "local display gate tripped (not applied)"
       ]
     ],
@@ -42,36 +44,26 @@
         "unauthorized content change (1)"
       ],
       [
-        "caption[41]",
+        "caption[29]",
         "local display gate tripped (not applied)"
       ]
     ],
     "unexplained": []
   },
   "per_instance_verdicts": {
-    "resolved": 492,
-    "missed": 2,
-    "expected_hold": 8
+    "resolved": 559,
+    "expected_hold": 9,
+    "missed": 2
   },
   "per_class": {
     "classify_body": {
-      "resolved": 235
+      "resolved": 277
     },
     "strip_direct": {
-      "resolved": 239,
+      "resolved": 261,
       "expected_hold": 1
     },
-    "classify_bullet": {
-      "resolved": 2
-    },
-    "figure_numbering": {
-      "resolved": 1
-    },
-    "page_break": {
-      "missed": 1,
-      "expected_hold": 1
-    },
-    "wrapper_table": {
+    "table_style": {
       "resolved": 2
     },
     "tof_mismatch": {
@@ -84,30 +76,47 @@
     "floating_image": {
       "resolved": 2
     },
+    "classify_bullet": {
+      "resolved": 2
+    },
     "empty_para": {
       "missed": 1,
       "expected_hold": 1
     },
+    "page_break": {
+      "missed": 1,
+      "expected_hold": 1
+    },
+    "level_fix": {
+      "resolved": 2
+    },
+    "xref_literal": {
+      "resolved": 1,
+      "expected_hold": 1
+    },
+    "heading_body_merge": {
+      "expected_hold": 1,
+      "resolved": 1
+    },
+    "wrapper_table": {
+      "resolved": 2
+    },
     "footnote_style": {
+      "expected_hold": 1,
+      "resolved": 1
+    },
+    "pdf_linesplit": {
       "resolved": 1,
       "expected_hold": 1
     },
     "table_empty_col": {
       "resolved": 2
     },
-    "heading_body_merge": {
-      "expected_hold": 1,
-      "resolved": 1
-    },
-    "table_style": {
-      "resolved": 2
-    },
-    "pdf_linesplit": {
+    "typography": {
       "resolved": 1,
       "expected_hold": 1
     },
-    "typography": {
-      "expected_hold": 1,
+    "figure_numbering": {
       "resolved": 1
     },
     "section_landscape": {
@@ -124,18 +133,18 @@
   },
   "detection": {
     "classify_body": {
-      "injected": 234,
-      "detected": 241,
+      "injected": 276,
+      "detected": 283,
       "ok": true
     },
     "classify_bullet": {
       "injected": 1,
-      "detected": 241,
+      "detected": 283,
       "ok": true
     },
     "level_fix": {
-      "injected": 0,
-      "detected": 0,
+      "injected": 1,
+      "detected": 2,
       "ok": true
     },
     "caption_literal": {
@@ -144,8 +153,8 @@
       "ok": true
     },
     "xref_literal": {
-      "injected": 0,
-      "detected": 0,
+      "injected": 1,
+      "detected": 1,
       "ok": true
     },
     "wrapper_table": {

@@ -17,25 +17,27 @@
       "python_docx": "1.2.0"
     }
   },
-  "elements": 449,
+  "elements": 480,
   "non_conforming_elements": 49,
-  "total_defects": 49,
-  "computed_quality": 0.891,
-  "expected_holds": 8,
+  "total_defects": 50,
+  "computed_quality": 0.898,
+  "expected_holds": 9,
   "counts": {
     "table_style": 2,
-    "page_break": 2,
-    "caption_literal": 2,
-    "heading_body_merge": 2,
-    "typography": 2,
-    "figure_numbering": 1,
-    "classify_body": 14,
+    "xref_literal": 2,
     "table_empty_col": 2,
-    "floating_image": 2,
-    "footnote_style": 2,
+    "page_break": 2,
+    "typography": 2,
+    "caption_literal": 2,
+    "classify_body": 8,
+    "heading_body_merge": 2,
     "wrapper_table": 2,
-    "strip_direct": 8,
     "empty_para": 2,
+    "figure_numbering": 1,
+    "strip_direct": 11,
+    "footnote_style": 2,
+    "level_fix": 2,
+    "floating_image": 2,
     "classify_bullet": 2,
     "pdf_linesplit": 2,
     "tof_mismatch": 1,
@@ -45,28 +47,28 @@
     {
       "kind": "ins",
       "id": 1001,
-      "author": "James Okonkwo",
+      "author": "Dr. Evelyn Marchetti",
       "date": "2026-04-02T09:01:00Z",
-      "payload_text": "Progress on commissioning stalled during the window, and the as-built records show no compensating acceleration. My analysis indicates a net slippage of 230 working days to the Contract Completion Date attributable to the commissioning events.",
+      "payload_text": "As shown in the record, the compressor foundation activity absorbed its available float by the April update update and thereafter drove the forecast completion date. My analysis indicates a net slippage of 191 working days to the Contract Completion Date attributable to the piling events.",
       "locator": "_LOC_ins_0001",
       "part": "document"
     },
     {
       "kind": "ins",
       "id": 1002,
-      "author": "James Okonkwo",
+      "author": "T. Nakamura",
       "date": "2026-04-03T10:02:00Z",
-      "payload_text": "This body sentence was merged into the heading and must be split out.",
-      "locator": "_LOC_hbm_0005",
+      "payload_text": "The delay to pipe-rack was neither foreseeable at tender nor within the Contractor's control, based on the documents reviewed. Progress on jetty topsides stalled during the window, and the as-built records show no compensating acceleration.",
+      "locator": "_LOC_ins_0006",
       "part": "document"
     },
     {
       "kind": "ins",
       "id": 1003,
-      "author": "Dr. Evelyn Marchetti",
+      "author": "Priya Raman",
       "date": "2026-04-04T11:03:00Z",
-      "payload_text": "",
-      "locator": "_LOC_pb_0007",
+      "payload_text": "My analysis indicates a net slippage of 172 working days to the Contract Completion Date attributable to the LNG tank events. As shown in the record, the flare package activity absorbed its available float by the May update update and thereafter drove the forecast completion date.",
+      "locator": "_LOC_ins_0007",
       "part": "document"
     },
     {
@@ -74,8 +76,8 @@
       "id": 1004,
       "author": "T. Nakamura",
       "date": "2026-04-05T12:04:00Z",
-      "payload_text": "W-1",
-      "locator": "_LOC_tbl_0010",
+      "payload_text": "Figure 1-3: Planned versus actual cumulative progress",
+      "locator": "_Ref_F13217",
       "part": "document"
     },
     {
@@ -83,17 +85,17 @@
       "id": 1005,
       "author": "Dr. Evelyn Marchetti",
       "date": "2026-04-06T13:05:00Z",
-      "payload_text": "Figure 1-4: Planned versus actual cumulative progress",
-      "locator": "_Ref_F14151",
+      "payload_text": "See Figure 1-4 for the delay analysis.",
+      "locator": "_LOC_xref_0011",
       "part": "document"
     },
     {
       "kind": "ins",
       "id": 1006,
-      "author": "Priya Raman",
+      "author": "Dr. Evelyn Marchetti",
       "date": "2026-04-07T14:06:00Z",
-      "payload_text": "Progress on jetty topsides stalled during the window, and the as-built records show no compensating acceleration.",
-      "locator": "_LOC_cb_0015",
+      "payload_text": "The delay to commissioning was neither foreseeable at tender nor within the Contractor's control, based on the documents reviewed.",
+      "locator": "_LOC_cb_0013",
       "part": "document"
     },
     {
@@ -101,26 +103,26 @@
       "id": 1007,
       "author": "Dr. Evelyn Marchetti",
       "date": "2026-04-08T15:07:00Z",
-      "payload_text": "The delay to jetty topsides was neither foreseeable at tender nor within the Contractor's control, based on the documents reviewed. The evidence establishes that the jetty topsides interface was not released for construction until well after the planned start.",
-      "locator": "_LOC_ins_0019",
+      "payload_text": "",
+      "locator": "text:__SYN_PAGE_BREAK_0044__",
       "part": "document"
     },
     {
       "kind": "ins",
       "id": 1008,
-      "author": "T. Nakamura",
+      "author": "Dr. Evelyn Marchetti",
       "date": "2026-04-09T16:08:00Z",
-      "payload_text": "The contemporaneous schedule updates demonstrate that the critical path ran through the control building works from data date April update. The delay to compressor foundation was neither foreseeable at tender nor within the Contractor's control, based on the documents reviewed.",
-      "locator": "_LOC_ins_0020",
+      "payload_text": "W-1",
+      "locator": "_LOC_tbl_0018",
       "part": "document"
     },
     {
       "kind": "ins",
       "id": 1009,
-      "author": "Counsel review",
+      "author": "James Okonkwo",
       "date": "2026-04-10T17:09:00Z",
-      "payload_text": "",
-      "locator": "_LOC_fig_0021",
+      "payload_text": "W-1",
+      "locator": "_LOC_tbl_0020",
       "part": "document"
     },
     {
@@ -128,8 +130,8 @@
       "id": 1010,
       "author": "Priya Raman",
       "date": "2026-04-11T08:10:00Z",
-      "payload_text": "My analysis indicates a net slippage of 142 working days to the Contract Completion Date attributable to the electrical building events.",
-      "locator": "_LOC_cbul_0028",
+      "payload_text": "Progress on commissioning stalled during the window, and the as-built records show no compensating acceleration. The evidence establishes that the compressor foundation interface was not released for construction until well after the planned start.",
+      "locator": "_LOC_ins_0022",
       "part": "document"
     },
     {
@@ -138,16 +140,16 @@
       "author": "Priya Raman",
       "date": "2026-04-12T09:11:00Z",
       "payload_text": "The Engineer stated the works were \"substantially complete\" -- a view I do not share -- and fixed the milestone at 05 June with a 3\" tolerance.",
-      "locator": "_LOC_typo_0032",
+      "locator": "_LOC_typo_0026",
       "part": "document"
     },
     {
       "kind": "ins",
       "id": 1012,
-      "author": "James Okonkwo",
+      "author": "Counsel review",
       "date": "2026-04-13T10:12:00Z",
-      "payload_text": "W-1",
-      "locator": "_LOC_tbl_0034",
+      "payload_text": "Progress on compressor foundation stalled during the window, and the as-built records show no compensating acceleration. As shown in the record, the compressor foundation activity absorbed its available float by the March update update and thereafter drove the forecast completion date.",
+      "locator": "_LOC_ins_0028",
       "part": "document"
     },
     {
@@ -155,26 +157,26 @@
       "id": 1013,
       "author": "James Okonkwo",
       "date": "2026-04-14T11:13:00Z",
-      "payload_text": "record, and that the relevant notice provisions had been substantially complied with.",
-      "locator": "text:In respect of matter number 24 ",
+      "payload_text": "My analysis indicates a net slippage of 160 working days to the Contract Completion Date attributable to the commissioning events. Progress on piling stalled during the window, and the as-built records show no compensating acceleration.",
+      "locator": "_LOC_ins_0029",
       "part": "document"
     },
     {
       "kind": "ins",
       "id": 1014,
-      "author": "Counsel review",
+      "author": "T. Nakamura",
       "date": "2026-04-15T12:14:00Z",
-      "payload_text": " ",
-      "locator": "_LOC_empty_0042",
+      "payload_text": "This body sentence was merged into the heading and must be split out.",
+      "locator": "_LOC_hbm_0031",
       "part": "document"
     },
     {
       "kind": "ins",
       "id": 1015,
-      "author": "Priya Raman",
+      "author": "Counsel review",
       "date": "2026-04-16T13:15:00Z",
-      "payload_text": "A second wrapped paragraph continues the passage.",
-      "locator": "_LOC_wrap_0044",
+      "payload_text": "Progress on electrical building stalled during the window, and the as-built records show no compensating acceleration.",
+      "locator": "_LOC_sd_0036",
       "part": "document"
     },
     {
@@ -182,89 +184,89 @@
       "id": 1016,
       "author": "Priya Raman",
       "date": "2026-04-17T14:16:00Z",
-      "payload_text": "As shown in the record, the LNG tank activity absorbed its available float by the June update update and thereafter drove the forecast completion date.",
-      "locator": "_LOC_sd_0046",
+      "payload_text": "",
+      "locator": "_LOC_fig_0038",
       "part": "document"
     },
     {
       "kind": "ins",
       "id": 1017,
-      "author": "T. Nakamura",
+      "author": "Counsel review",
       "date": "2026-04-18T15:17:00Z",
-      "payload_text": "I hold the opinion that the concurrent-delay assertion advanced in the Rebuttal is not supported by the contemporaneous record. The evidence establishes that the piling interface was not released for construction until well after the planned start.",
-      "locator": "_LOC_ins_0048",
+      "payload_text": "A second wrapped paragraph continues the passage.",
+      "locator": "_LOC_wrap_0041",
       "part": "document"
     },
     {
       "kind": "ins",
       "id": 1018,
-      "author": "Dr. Evelyn Marchetti",
+      "author": "T. Nakamura",
       "date": "2026-04-19T16:18:00Z",
-      "payload_text": "I hold the opinion that the concurrent-delay assertion advanced in the Rebuttal is not supported by the contemporaneous record. The delay to jetty topsides was neither foreseeable at tender nor within the Contractor's control, based on the documents reviewed.",
-      "locator": "_LOC_ins_0049",
+      "payload_text": "My analysis indicates a net slippage of 67 working days to the Contract Completion Date attributable to the electrical building events.",
+      "locator": "_LOC_cbul_0045",
       "part": "document"
     },
     {
       "kind": "ins",
       "id": 1019,
-      "author": "James Okonkwo",
+      "author": "Counsel review",
       "date": "2026-04-20T17:19:00Z",
-      "payload_text": "I hold the opinion that the concurrent-delay assertion advanced in the Rebuttal is not supported by the contemporaneous record. The evidence establishes that the piling interface was not released for construction until well after the planned start.",
-      "locator": "_LOC_ins_0050",
+      "payload_text": " ",
+      "locator": "text:__SYN_EMPTY_0108__",
       "part": "document"
     },
     {
       "kind": "ins",
       "id": 1020,
-      "author": "James Okonkwo",
+      "author": "Dr. Evelyn Marchetti",
       "date": "2026-04-21T08:20:00Z",
-      "payload_text": "In my opinion, and to a reasonable degree of professional certainty, the commissioning delay is excusable and compensable. The contemporaneous schedule updates demonstrate that the critical path ran through the piling works from data date June update.",
-      "locator": "_LOC_ins_0054",
+      "payload_text": "I hold the opinion that the concurrent-delay assertion advanced in the Rebuttal is not supported by the contemporaneous record. The contemporaneous schedule updates demonstrate that the critical path ran through the flare package works from data date May update.",
+      "locator": "_LOC_ins_0049",
       "part": "document"
     },
     {
       "kind": "ins",
       "id": 1021,
-      "author": "Priya Raman",
+      "author": "Counsel review",
       "date": "2026-04-22T09:21:00Z",
-      "payload_text": "The Project comprised the engineering, procurement, and construction of a two-train liquefaction facility with associated marine works. Progress on control building stalled during the window, and the as-built records show no compensating acceleration.",
-      "locator": "_LOC_ins_0056",
+      "payload_text": "A nested sub-item that started at level two.",
+      "locator": "_LOC_lvl_0051",
       "part": "document"
     },
     {
       "kind": "ins",
       "id": 1022,
-      "author": "T. Nakamura",
+      "author": "Priya Raman",
       "date": "2026-04-23T10:22:00Z",
-      "payload_text": "The Project comprised the engineering, procurement, and construction of a two-train liquefaction facility with associated marine works. My analysis indicates a net slippage of 57 working days to the Contract Completion Date attributable to the piling events.",
-      "locator": "_LOC_ins_0057",
+      "payload_text": "It is my opinion that the Contractor is entitled to an extension of time of 113 working days for the flare package events. My analysis indicates a net slippage of 178 working days to the Contract Completion Date attributable to the flare package events.",
+      "locator": "_LOC_ins_0055",
       "part": "document"
     },
     {
       "kind": "ins",
       "id": 1023,
-      "author": "T. Nakamura",
+      "author": "Priya Raman",
       "date": "2026-04-24T11:23:00Z",
-      "payload_text": "Notice to Proceed was issued and the planned duration was 209 calendar months to mechanical completion. As shown in the record, the jetty topsides activity absorbed its available float by the March update update and thereafter drove the forecast completion date.",
-      "locator": "_LOC_ins_0058",
+      "payload_text": "record, and that the relevant notice provisions had been substantially complied with.",
+      "locator": "text:In respect of matter number 35 ",
       "part": "document"
     },
     {
       "kind": "ins",
       "id": 1024,
-      "author": "James Okonkwo",
+      "author": "Dr. Evelyn Marchetti",
       "date": "2026-04-25T12:24:00Z",
-      "payload_text": "The parties are in dispute over responsibility for a delay of approximately 181 months to first production. The delay to piling was neither foreseeable at tender nor within the Contractor's control, based on the documents reviewed.",
-      "locator": "_LOC_ins_0060",
+      "payload_text": "The baseline programme was accepted by the Engineer subject to the qualifications recorded in the transmittal. The contemporaneous schedule updates demonstrate that the critical path ran through the flare package works from data date March update.",
+      "locator": "_LOC_ins_0059",
       "part": "document"
     },
     {
       "kind": "ins",
       "id": 1025,
-      "author": "Counsel review",
+      "author": "Dr. Evelyn Marchetti",
       "date": "2026-04-26T13:25:00Z",
-      "payload_text": "The delay to commissioning was neither foreseeable at tender nor within the Contractor's control, based on the documents reviewed. The contemporaneous schedule updates demonstrate that the critical path ran through the piling works from data date May update.",
-      "locator": "_LOC_ins_0063",
+      "payload_text": "The Project comprised the engineering, procurement, and construction of a two-train liquefaction facility with associated marine works. My analysis indicates a net slippage of 227 working days to the Contract Completion Date attributable to the compressor foundation events.",
+      "locator": "_LOC_ins_0061",
       "part": "document"
     },
     {
@@ -272,52 +274,52 @@
       "id": 1026,
       "author": "Dr. Evelyn Marchetti",
       "date": "2026-04-27T14:26:00Z",
-      "payload_text": "The evidence establishes that the pipe-rack interface was not released for construction until well after the planned start. As shown in the record, the pipe-rack activity absorbed its available float by the April update update and thereafter drove the forecast completion date.",
-      "locator": "_LOC_ins_0064",
+      "payload_text": "The delay to piling was neither foreseeable at tender nor within the Contractor's control, based on the documents reviewed. Progress on pipe-rack stalled during the window, and the as-built records show no compensating acceleration.",
+      "locator": "_LOC_ins_0063",
       "part": "document"
     },
     {
       "kind": "ins",
       "id": 1027,
-      "author": "Priya Raman",
+      "author": "James Okonkwo",
       "date": "2026-04-01T15:27:00Z",
-      "payload_text": "For each window I validated the schedule update, identified the controlling path, and quantified movement of the completion milestone. The delay to compressor foundation was neither foreseeable at tender nor within the Contractor's control, based on the documents reviewed.",
-      "locator": "_LOC_ins_0066",
+      "payload_text": "Progress on electrical building stalled during the window, and the as-built records show no compensating acceleration. The delay to piling was neither foreseeable at tender nor within the Contractor's control, based on the documents reviewed.",
+      "locator": "_LOC_ins_0065",
       "part": "document"
     },
     {
       "kind": "ins",
       "id": 1028,
-      "author": "T. Nakamura",
+      "author": "Dr. Evelyn Marchetti",
       "date": "2026-04-02T16:28:00Z",
-      "payload_text": "Float ownership was assessed in accordance with the governing Subcontract and the Society of Construction Law Delay and Disruption Protocol. The delay to commissioning was neither foreseeable at tender nor within the Contractor's control, based on the documents reviewed.",
-      "locator": "_LOC_ins_0067",
+      "payload_text": "Progress on flare package stalled during the window, and the as-built records show no compensating acceleration. The evidence establishes that the piling interface was not released for construction until well after the planned start.",
+      "locator": "_LOC_ins_0066",
       "part": "document"
     },
     {
       "kind": "ins",
       "id": 1029,
-      "author": "T. Nakamura",
+      "author": "Dr. Evelyn Marchetti",
       "date": "2026-04-03T17:29:00Z",
-      "payload_text": "I applied a windows-based analysis consistent with AACE International Recommended Practice 29R-03, measuring loss or gain of time update to update. As shown in the record, the jetty topsides activity absorbed its available float by the May update update and thereafter drove the forecast completion date.",
+      "payload_text": "The evidence establishes that the flare package interface was not released for construction until well after the planned start. The delay to LNG tank was neither foreseeable at tender nor within the Contractor's control, based on the documents reviewed.",
       "locator": "_LOC_ins_0068",
       "part": "document"
     },
     {
       "kind": "ins",
       "id": 1030,
-      "author": "Counsel review",
+      "author": "James Okonkwo",
       "date": "2026-04-04T08:30:00Z",
-      "payload_text": "Progress on flare package stalled during the window, and the as-built records show no compensating acceleration. As shown in the record, the compressor foundation activity absorbed its available float by the April update update and thereafter drove the forecast completion date.",
-      "locator": "_LOC_ins_0070",
+      "payload_text": "Progress on jetty topsides stalled during the window, and the as-built records show no compensating acceleration. The contemporaneous schedule updates demonstrate that the critical path ran through the control building works from data date May update.",
+      "locator": "_LOC_ins_0069",
       "part": "document"
     },
     {
       "kind": "ins",
       "id": 1031,
-      "author": "Counsel review",
+      "author": "Dr. Evelyn Marchetti",
       "date": "2026-04-05T09:31:00Z",
-      "payload_text": "My analysis indicates a net slippage of 93 working days to the Contract Completion Date attributable to the jetty topsides events. The delay to electrical building was neither foreseeable at tender nor within the Contractor's control, based on the documents reviewed.",
+      "payload_text": "For each window I validated the schedule update, identified the controlling path, and quantified movement of teh completion milestone. My analysis indicates a net slippage of 64 working days to the Contract Completion Date attributable to the flare package events.",
       "locator": "_LOC_ins_0071",
       "part": "document"
     },
@@ -326,16 +328,16 @@
       "id": 1032,
       "author": "Dr. Evelyn Marchetti",
       "date": "2026-04-06T10:32:00Z",
-      "payload_text": "Progress on electrical building stalled during the window, and the as-built records show no compensating acceleration. Progress on control building stalled during the window, and the as-built records show no compensating acceleration.",
+      "payload_text": "As shown in the record, the jetty topsides activity absorbed its available float by the March update update and thereafter drove the forecast completion date. The contemporaneous schedule updates demonstrate that the critical path ran through the control building works from data date June update.",
       "locator": "_LOC_ins_0075",
       "part": "document"
     },
     {
       "kind": "ins",
       "id": 1033,
-      "author": "Priya Raman",
+      "author": "T. Nakamura",
       "date": "2026-04-07T11:33:00Z",
-      "payload_text": "My analysis indicates a net slippage of 118 working days to the Contract Completion Date attributable to the commissioning events. The delay to pipe-rack was neither foreseeable at tender nor within the Contractor's control, based on the documents reviewed.",
+      "payload_text": "My analysis indicates a net slippage of 50 working days to the Contract Completion Date attributable to the LNG tank events. Progress on substructure stalled during the window, and the as-built records show no compensating acceleration.",
       "locator": "_LOC_ins_0076",
       "part": "document"
     },
@@ -344,26 +346,26 @@
       "id": 1034,
       "author": "Counsel review",
       "date": "2026-04-08T12:34:00Z",
-      "payload_text": "My analysis indicates a net slippage of 138 working days to the Contract Completion Date attributable to the piling events. Progress on control building stalled during the window, and the as-built records show no compensating acceleration.",
-      "locator": "_LOC_ins_0077",
-      "part": "document"
-    },
-    {
-      "kind": "ins",
-      "id": 1035,
-      "author": "James Okonkwo",
-      "date": "2026-04-09T13:35:00Z",
-      "payload_text": "The delay to substructure was neither foreseeable at tender nor within the Contractor's control, based on the documents reviewed. My analysis indicates a net slippage of 177 working days to the Contract Completion Date attributable to the pipe-rack events.",
+      "payload_text": "The evidence establishes that the electrical building interface was not released for construction until well after the planned start. As shown in the record, the LNG tank activity absorbed its available float by the May update update and thereafter drove the forecast completion date.",
       "locator": "_LOC_ins_0078",
       "part": "document"
     },
     {
       "kind": "ins",
+      "id": 1035,
+      "author": "Dr. Evelyn Marchetti",
+      "date": "2026-04-09T13:35:00Z",
+      "payload_text": "The evidence establishes that the jetty topsides interface was not released for construction until well after the planned start. The contemporaneous schedule updates demonstrate that the critical path ran through the flare package works from data date June update.",
+      "locator": "_LOC_ins_0080",
+      "part": "document"
+    },
+    {
+      "kind": "ins",
       "id": 1036,
-      "author": "Counsel review",
+      "author": "Dr. Evelyn Marchetti",
       "date": "2026-04-10T14:36:00Z",
-      "payload_text": "As shown in the record, the electrical building activity absorbed its available float by the June update update and thereafter drove the forecast completion date. The delay to pipe-rack was neither foreseeable at tender nor within the Contractor's control, based on the documents reviewed.",
-      "locator": "_LOC_ins_0079",
+      "payload_text": "Progress on electrical building stalled during the window, and the as-built records show no compensating acceleration. Progress on control building stalled during the window, and the as-built records show no compensating acceleration.",
+      "locator": "_LOC_ins_0082",
       "part": "document"
     },
     {
@@ -372,7 +374,7 @@
       "author": "T. Nakamura",
       "date": "2026-04-11T15:37:00Z",
       "payload_text": "My analysis indicates a net slippage of 39 working days to the Contract Completion Date attributable to the control building events. The delay to compressor foundation was neither foreseeable at tender nor within the Contractor's control, based on the documents reviewed.",
-      "locator": "_LOC_ins_0080",
+      "locator": "_LOC_ins_0083",
       "part": "document"
     },
     {
@@ -381,16 +383,16 @@
       "author": "Priya Raman",
       "date": "2026-04-12T16:38:00Z",
       "payload_text": "The evidence establishes that the piling interface was not released for construction until well after the planned start. The delay to substructure was neither foreseeable at tender nor within the Contractor's control, based on the documents reviewed.",
-      "locator": "_LOC_ins_0081",
+      "locator": "_LOC_ins_0084",
       "part": "document"
     },
     {
       "kind": "ins",
       "id": 1039,
-      "author": "T. Nakamura",
+      "author": "Dr. Evelyn Marchetti",
       "date": "2026-04-13T17:39:00Z",
-      "payload_text": "The contemporaneous schedule updates demonstrate that the critical path ran through the flare package works from data date June update. My analysis indicates a net slippage of 145 working days to the Contract Completion Date attributable to the flare package events.",
-      "locator": "_LOC_ins_0083",
+      "payload_text": "Progress on compressor foundation stalled during the window, and the as-built records show no compensating acceleration. The delay to pipe-rack was neither foreseeable at tender nor within the Contractor's control, based on the documents reviewed.",
+      "locator": "_LOC_ins_0085",
       "part": "document"
     },
     {
@@ -398,8 +400,8 @@
       "id": 1040,
       "author": "Dr. Evelyn Marchetti",
       "date": "2026-04-14T08:40:00Z",
-      "payload_text": "Progress on control building stalled during the window, and the as-built records show no compensating acceleration. Progress on piling stalled during the window, and the as-built records show no compensating acceleration.",
-      "locator": "_LOC_ins_0084",
+      "payload_text": "The delay to substructure was neither foreseeable at tender nor within the Contractor's control, based on the documents reviewed. My analysis indicates a net slippage of 127 working days to the Contract Completion Date attributable to the flare package events.",
+      "locator": "_LOC_ins_0086",
       "part": "document"
     },
     {
@@ -407,52 +409,52 @@
       "id": 1041,
       "author": "T. Nakamura",
       "date": "2026-04-15T09:41:00Z",
-      "payload_text": "The delay to pipe-rack was neither foreseeable at tender nor within the Contractor's control, based on the documents reviewed. Progress on substructure stalled during the window, and the as-built records show no compensating acceleration.",
-      "locator": "_LOC_ins_0085",
+      "payload_text": "My analysis indicates a net slippage of 92 working days to the Contract Completion Date attributable to the compressor foundation events. The delay to electrical building was neither foreseeable at tender nor within the Contractor's control, based on the documents reviewed.",
+      "locator": "_LOC_ins_0087",
       "part": "document"
     },
     {
       "kind": "ins",
       "id": 1042,
-      "author": "Priya Raman",
+      "author": "T. Nakamura",
       "date": "2026-04-16T10:42:00Z",
-      "payload_text": "The delay to flare package was neither foreseeable at tender nor within the Contractor's control, based on the documents reviewed. The delay to flare package was neither foreseeable at tender nor within the Contractor's control, based on the documents reviewed.",
-      "locator": "_LOC_ins_0086",
-      "part": "document"
-    },
-    {
-      "kind": "ins",
-      "id": 1043,
-      "author": "Counsel review",
-      "date": "2026-04-17T11:43:00Z",
-      "payload_text": "It is my opinion that the Contractor is entitled to an extension of time of 234 working days for the LNG tank events. The contemporaneous schedule updates demonstrate that the critical path ran through the LNG tank works from data date May update.",
+      "payload_text": "Progress on compressor foundation stalled during the window, and the as-built records show no compensating acceleration. The delay to electrical building was neither foreseeable at tender nor within the Contractor's control, based on the documents reviewed.",
       "locator": "_LOC_ins_0088",
       "part": "document"
     },
     {
       "kind": "ins",
-      "id": 1044,
-      "author": "Dr. Evelyn Marchetti",
-      "date": "2026-04-18T12:44:00Z",
-      "payload_text": "It is my opinion that the Contractor is entitled to an extension of time of 178 working days for the substructure events. The delay to control building was neither foreseeable at tender nor within the Contractor's control, based on the documents reviewed.",
+      "id": 1043,
+      "author": "Priya Raman",
+      "date": "2026-04-17T11:43:00Z",
+      "payload_text": "The delay to flare package was neither foreseeable at tender nor within the Contractor's control, based on the documents reviewed. The delay to flare package was neither foreseeable at tender nor within the Contractor's control, based on the documents reviewed.",
       "locator": "_LOC_ins_0089",
       "part": "document"
     },
     {
       "kind": "ins",
+      "id": 1044,
+      "author": "James Okonkwo",
+      "date": "2026-04-18T12:44:00Z",
+      "payload_text": "The contemporaneous schedule updates demonstrate that the critical path ran through the electrical building works from data date March update. The contemporaneous schedule updates demonstrate that the critical path ran through the LNG tank works from data date May update.",
+      "locator": "_LOC_ins_0091",
+      "part": "document"
+    },
+    {
+      "kind": "ins",
       "id": 1045,
-      "author": "Dr. Evelyn Marchetti",
+      "author": "Counsel review",
       "date": "2026-04-19T13:45:00Z",
-      "payload_text": "In my opinion, and to a reasonable degree of professional certainty, the pipe-rack delay is excusable and compensable. The evidence establishes that the substructure interface was not released for construction until well after the planned start.",
-      "locator": "_LOC_ins_0090",
+      "payload_text": "My analysis indicates a net slippage of 61 working days to the Contract Completion Date attributable to the jetty topsides events. The evidence establishes that the control building interface was not released for construction until well after the planned start.",
+      "locator": "_LOC_ins_0092",
       "part": "document"
     },
     {
       "kind": "ins",
       "id": 1046,
-      "author": "James Okonkwo",
+      "author": "Counsel review",
       "date": "2026-04-20T14:46:00Z",
-      "payload_text": "In my opinion, and to a reasonable degree of professional certainty, the substructure delay is excusable and compensable. Progress on commissioning stalled during the window, and the as-built records show no compensating acceleration.",
+      "payload_text": "Progress on pipe-rack stalled during the window, and the as-built records show no compensating acceleration. The contemporaneous schedule updates demonstrate that the critical path ran through the piling works from data date May update.",
       "locator": "_LOC_ins_0093",
       "part": "document"
     },
@@ -461,93 +463,165 @@
       "id": 1047,
       "author": "Counsel review",
       "date": "2026-04-21T15:47:00Z",
-      "payload_text": " Monthly Progress Report No. 35, narrative section, page reference omitted for brevity.",
-      "locator": "_LOC_fn_0023",
+      "payload_text": "I hold the opinion that the concurrent-delay assertion advanced in the Rebuttal is not supported by the contemporaneous record. The delay to substructure was neither foreseeable at tender nor within the Contractor's control, based on the documents reviewed.",
+      "locator": "_LOC_ins_0096",
+      "part": "document"
+    },
+    {
+      "kind": "ins",
+      "id": 1048,
+      "author": "Priya Raman",
+      "date": "2026-04-22T16:48:00Z",
+      "payload_text": "It is my opinion that the Contractor is entitled to an extension of time of 191 working days for the LNG tank events. As shown in the record, the piling activity absorbed its available float by the June update update and thereafter drove the forecast completion date.",
+      "locator": "_LOC_ins_0097",
+      "part": "document"
+    },
+    {
+      "kind": "ins",
+      "id": 1049,
+      "author": "T. Nakamura",
+      "date": "2026-04-23T17:49:00Z",
+      "payload_text": "It is my opinion that the Contractor is entitled to an extension of time of 155 working days for the electrical building events. The evidence establishes that the substructure interface was not released for construction until well after the planned start.",
+      "locator": "_LOC_ins_0098",
+      "part": "document"
+    },
+    {
+      "kind": "ins",
+      "id": 1050,
+      "author": "Dr. Evelyn Marchetti",
+      "date": "2026-04-24T08:50:00Z",
+      "payload_text": " AACE International, Recommended Practice No. 29R-03, Forensic Schedule Analysis (rev. 2011), \u00a73.",
+      "locator": "_LOC_fn_0054",
       "part": "footnotes"
     }
   ],
   "tracked_by_kind": {
-    "ins": 47
+    "ins": 50
   },
-  "tracked_total": 47,
+  "tracked_total": 50,
   "comments": [
     {
-      "author": "Priya Raman",
-      "anchor_locator": "_LOC_cm_0019",
+      "author": "James Okonkwo",
+      "anchor_locator": "_LOC_cm_0006",
+      "text_sha": "d2d81a8c2643"
+    },
+    {
+      "author": "James Okonkwo",
+      "anchor_locator": "_LOC_cm_0008",
+      "text_sha": "52174fec75b9"
+    },
+    {
+      "author": "Counsel review",
+      "anchor_locator": "_LOC_cm_0029",
+      "text_sha": "d2d81a8c2643"
+    },
+    {
+      "author": "T. Nakamura",
+      "anchor_locator": "_LOC_cm_0036",
+      "text_sha": "52174fec75b9"
+    },
+    {
+      "author": "Counsel review",
+      "anchor_locator": "_LOC_cm_0036",
       "text_sha": "d2d81a8c2643"
     },
     {
       "author": "Dr. Evelyn Marchetti",
-      "anchor_locator": "_LOC_cm_0021",
-      "text_sha": "15768ac18550"
-    },
-    {
-      "author": "James Okonkwo",
-      "anchor_locator": "_LOC_cm_0025",
-      "text_sha": "d2d81a8c2643"
-    },
-    {
-      "author": "Counsel review",
-      "anchor_locator": "_LOC_cm_0027",
-      "text_sha": "d2d81a8c2643"
-    },
-    {
-      "author": "T. Nakamura",
-      "anchor_locator": "_LOC_cm_0039",
-      "text_sha": "52174fec75b9"
-    },
-    {
-      "author": "T. Nakamura",
       "anchor_locator": "_LOC_cm_0055",
-      "text_sha": "15768ac18550"
-    },
-    {
-      "author": "Priya Raman",
-      "anchor_locator": "_LOC_cm_0056",
-      "text_sha": "15768ac18550"
-    },
-    {
-      "author": "James Okonkwo",
-      "anchor_locator": "_LOC_cm_0056",
       "text_sha": "52174fec75b9"
     },
     {
       "author": "James Okonkwo",
-      "anchor_locator": "_LOC_cm_0059",
-      "text_sha": "15768ac18550"
+      "anchor_locator": "_LOC_cm_0060",
+      "text_sha": "d2d81a8c2643"
+    },
+    {
+      "author": "Dr. Evelyn Marchetti",
+      "anchor_locator": "_LOC_cm_0061",
+      "text_sha": "52174fec75b9"
     },
     {
       "author": "Counsel review",
-      "anchor_locator": "_LOC_cm_0078",
+      "anchor_locator": "_LOC_cm_0069",
+      "text_sha": "b95c2335d207"
+    },
+    {
+      "author": "T. Nakamura",
+      "anchor_locator": "_LOC_cm_0070",
+      "text_sha": "b95c2335d207"
+    },
+    {
+      "author": "James Okonkwo",
+      "anchor_locator": "_LOC_cm_0071",
+      "text_sha": "b95c2335d207"
+    },
+    {
+      "author": "Priya Raman",
+      "anchor_locator": "_LOC_cm_0077",
+      "text_sha": "d2d81a8c2643"
+    },
+    {
+      "author": "Priya Raman",
+      "anchor_locator": "_LOC_cm_0079",
+      "text_sha": "15768ac18550"
+    },
+    {
+      "author": "James Okonkwo",
+      "anchor_locator": "_LOC_cm_0079",
       "text_sha": "52174fec75b9"
     },
     {
       "author": "Dr. Evelyn Marchetti",
+      "anchor_locator": "_LOC_cm_0082",
+      "text_sha": "b95c2335d207"
+    },
+    {
+      "author": "Priya Raman",
       "anchor_locator": "_LOC_cm_0083",
       "text_sha": "52174fec75b9"
     },
     {
-      "author": "Counsel review",
-      "anchor_locator": "_LOC_cm_0086",
+      "author": "James Okonkwo",
+      "anchor_locator": "_LOC_cm_0083",
+      "text_sha": "d2d81a8c2643"
+    },
+    {
+      "author": "Dr. Evelyn Marchetti",
+      "anchor_locator": "_LOC_cm_0085",
       "text_sha": "15768ac18550"
     },
     {
       "author": "Priya Raman",
+      "anchor_locator": "_LOC_cm_0087",
+      "text_sha": "d2d81a8c2643"
+    },
+    {
+      "author": "Priya Raman",
       "anchor_locator": "_LOC_cm_0088",
-      "text_sha": "15768ac18550"
+      "text_sha": "52174fec75b9"
     },
     {
       "author": "Dr. Evelyn Marchetti",
       "anchor_locator": "_LOC_cm_0088",
-      "text_sha": "b95c2335d207"
+      "text_sha": "d2d81a8c2643"
     },
     {
-      "author": "Counsel review",
-      "anchor_locator": "_LOC_cm_0092",
+      "author": "Priya Raman",
+      "anchor_locator": "_LOC_cm_0091",
       "text_sha": "15768ac18550"
+    },
+    {
+      "author": "Priya Raman",
+      "anchor_locator": "_LOC_cm_0091",
+      "text_sha": "52174fec75b9"
+    },
+    {
+      "author": "James Okonkwo",
+      "anchor_locator": "_LOC_cm_0096",
+      "text_sha": "52174fec75b9"
     }
   ],
-  "comment_count": 15,
+  "comment_count": 24,
   "authors": [
     "Counsel review",
     "Dr. Evelyn Marchetti",
@@ -555,10 +629,10 @@
     "Priya Raman",
     "T. Nakamura"
   ],
-  "spelling_errors": 6,
+  "spelling_errors": 8,
   "grammar_errors": 0,
-  "figures": 30,
-  "tables": 17,
+  "figures": 32,
+  "tables": 20,
   "expected_preservation": "clean",
   "defects": [
     {
@@ -572,44 +646,37 @@
     },
     {
       "id": "D002",
+      "cls": "xref_literal",
+      "locator": "_LOC_xref_0003",
+      "revision_relation": "unrelated",
+      "expected_disposition": "xref_fielded",
+      "note": "literal cross-reference -> REF field",
+      "data": {
+        "label": "Figure 1-1"
+      }
+    },
+    {
+      "id": "D003",
+      "cls": "table_empty_col",
+      "locator": "_LOC_tbl_0004",
+      "revision_relation": "unrelated",
+      "expected_disposition": "columns_dropped",
+      "note": "empty column",
+      "data": {}
+    },
+    {
+      "id": "D004",
       "cls": "page_break",
-      "locator": "_LOC_pb_0003",
+      "locator": "text:__SYN_PAGE_BREAK_0014__",
       "revision_relation": "unrelated",
       "expected_disposition": "removed",
       "note": "manual page-break paragraph",
       "data": {}
     },
     {
-      "id": "D003",
-      "cls": "caption_literal",
-      "locator": "_Ref_F11392",
-      "revision_relation": "unrelated",
-      "expected_disposition": "fielded",
-      "note": "literal caption",
-      "data": {}
-    },
-    {
-      "id": "D004",
-      "cls": "heading_body_merge",
-      "locator": "_LOC_hbm_0005",
-      "revision_relation": "inside_revision",
-      "expected_disposition": "hold",
-      "note": "merged heading whose body text is a tracked insertion -> not split",
-      "data": {}
-    },
-    {
       "id": "D005",
-      "cls": "page_break",
-      "locator": "_LOC_pb_0007",
-      "revision_relation": "inside_revision",
-      "expected_disposition": "hold",
-      "note": "a tracked manual page break must not be pruned",
-      "data": {}
-    },
-    {
-      "id": "D006",
       "cls": "typography",
-      "locator": "_LOC_typo_0009",
+      "locator": "_LOC_typo_0008",
       "revision_relation": "unrelated",
       "expected_disposition": "typography_applied",
       "note": "straight quotes/dashes",
@@ -618,54 +685,45 @@
       }
     },
     {
-      "id": "D007",
-      "cls": "table_style",
-      "locator": "_LOC_tbl_0010",
-      "revision_relation": "adjacent_to_revision",
-      "expected_disposition": "set_LITable",
-      "note": "unstyled table with a cell revision -> styled, edit preserved",
-      "data": {}
-    },
-    {
-      "id": "D008",
+      "id": "D006",
       "cls": "caption_literal",
-      "locator": "_Ref_F14151",
+      "locator": "_Ref_F13217",
       "revision_relation": "inside_revision",
       "expected_disposition": "hold",
       "note": "literal caption whose text is a revision -> fielding would drop the insertion, so it is held for individual review",
       "data": {}
     },
     {
-      "id": "D009",
-      "cls": "figure_numbering",
-      "locator": "_LOC_fnum_0014",
-      "revision_relation": "unrelated",
-      "expected_disposition": "audit_flag",
-      "note": "caption section number does not match its section",
+      "id": "D007",
+      "cls": "xref_literal",
+      "locator": "_LOC_xref_0011",
+      "revision_relation": "inside_revision",
+      "expected_disposition": "hold",
+      "note": "the cross-reference is inside a tracked insertion (masked) -> stays literal",
       "data": {}
     },
     {
-      "id": "D010",
+      "id": "D008",
       "cls": "classify_body",
-      "locator": "_LOC_cb_0015",
+      "locator": "_LOC_cb_0013",
       "revision_relation": "inside_revision",
       "expected_disposition": "restyle_to_LI",
       "note": "foreign style, run inserted; restyle AND preserve edit",
       "data": {}
     },
     {
-      "id": "D011",
-      "cls": "table_empty_col",
-      "locator": "_LOC_tbl_0017",
-      "revision_relation": "unrelated",
-      "expected_disposition": "columns_dropped",
-      "note": "empty column",
+      "id": "D009",
+      "cls": "page_break",
+      "locator": "text:__SYN_PAGE_BREAK_0044__",
+      "revision_relation": "inside_revision",
+      "expected_disposition": "hold",
+      "note": "a tracked manual page break must not be pruned",
       "data": {}
     },
     {
-      "id": "D012",
+      "id": "D010",
       "cls": "heading_body_merge",
-      "locator": "_LOC_hbm_0018",
+      "locator": "_LOC_hbm_0017",
       "revision_relation": "unrelated",
       "expected_disposition": "split",
       "note": "heading+body merged",
@@ -674,132 +732,157 @@
       }
     },
     {
-      "id": "D013",
-      "cls": "floating_image",
-      "locator": "_LOC_fig_0021",
-      "revision_relation": "inside_revision",
-      "expected_disposition": "inline",
-      "note": "floating image is inlined (a layout change); the inserted object is preserved. Flagged for individual review.",
+      "id": "D011",
+      "cls": "table_style",
+      "locator": "_LOC_tbl_0018",
+      "revision_relation": "adjacent_to_revision",
+      "expected_disposition": "set_LITable",
+      "note": "unstyled table with a cell revision -> styled, edit preserved",
       "data": {}
     },
     {
-      "id": "D014",
-      "cls": "footnote_style",
-      "locator": "_LOC_fn_0023",
-      "revision_relation": "inside_revision",
-      "expected_disposition": "hold",
-      "note": "footnote 5 style",
-      "data": {
-        "fid": 5
-      }
-    },
-    {
-      "id": "D015",
-      "cls": "wrapper_table",
-      "locator": "_LOC_wrap_0024",
-      "revision_relation": "unrelated",
-      "expected_disposition": "unwrapped",
-      "note": "single-cell wrapper",
-      "data": {}
-    },
-    {
-      "id": "D016",
-      "cls": "strip_direct",
-      "locator": "_LOC_sd_0025",
-      "revision_relation": "unrelated",
-      "expected_disposition": "strip_direct_formatting",
-      "note": "As shown in the record, the substructure",
-      "data": {
-        "gone_marker": "FF0000"
-      }
-    },
-    {
-      "id": "D017",
-      "cls": "classify_body",
-      "locator": "_LOC_cb_0026",
-      "revision_relation": "unrelated",
-      "expected_disposition": "restyle_to_LI",
-      "note": "The evidence establishes that the electr",
-      "data": {}
-    },
-    {
-      "id": "D018",
-      "cls": "empty_para",
-      "locator": "_LOC_empty_0027",
-      "revision_relation": "unrelated",
-      "expected_disposition": "removed",
-      "note": "stray empty numbered paragraph",
-      "data": {}
-    },
-    {
-      "id": "D019",
-      "cls": "classify_bullet",
-      "locator": "_LOC_cbul_0028",
-      "revision_relation": "inside_revision",
-      "expected_disposition": "restyle_to_LI",
-      "note": "bullet, inserted",
-      "data": {}
-    },
-    {
-      "id": "D020",
-      "cls": "floating_image",
-      "locator": "_LOC_fig_0030",
-      "revision_relation": "unrelated",
-      "expected_disposition": "inline",
-      "note": "floating picture",
-      "data": {}
-    },
-    {
-      "id": "D021",
-      "cls": "classify_body",
-      "locator": "_LOC_cb_0031",
-      "revision_relation": "unrelated",
-      "expected_disposition": "restyle_to_LI",
-      "note": "The contemporaneous schedule updates dem",
-      "data": {}
-    },
-    {
-      "id": "D022",
-      "cls": "typography",
-      "locator": "_LOC_typo_0032",
-      "revision_relation": "inside_revision",
-      "expected_disposition": "hold",
-      "note": "inserted text keeps its straight quotes (payload preserved)",
-      "data": {}
-    },
-    {
-      "id": "D023",
+      "id": "D012",
       "cls": "table_empty_col",
-      "locator": "_LOC_tbl_0034",
+      "locator": "_LOC_tbl_0020",
       "revision_relation": "adjacent_to_revision",
       "expected_disposition": "columns_dropped",
       "note": "the empty column has no tracked content; dropping it does not touch the cell revision. Flagged for individual review.",
       "data": {}
     },
     {
-      "id": "D024",
-      "cls": "pdf_linesplit",
-      "locator": "text:In respect of matter number 24 ",
-      "revision_relation": "adjacent_to_revision",
+      "id": "D013",
+      "cls": "wrapper_table",
+      "locator": "_LOC_wrap_0023",
+      "revision_relation": "unrelated",
+      "expected_disposition": "unwrapped",
+      "note": "single-cell wrapper",
+      "data": {}
+    },
+    {
+      "id": "D014",
+      "cls": "empty_para",
+      "locator": "text:__SYN_EMPTY_0061__",
+      "revision_relation": "unrelated",
+      "expected_disposition": "removed",
+      "note": "stray empty numbered paragraph",
+      "data": {}
+    },
+    {
+      "id": "D015",
+      "cls": "figure_numbering",
+      "locator": "_LOC_fnum_0025",
+      "revision_relation": "unrelated",
+      "expected_disposition": "audit_flag",
+      "note": "caption section number does not match its section",
+      "data": {}
+    },
+    {
+      "id": "D016",
+      "cls": "typography",
+      "locator": "_LOC_typo_0026",
+      "revision_relation": "inside_revision",
       "expected_disposition": "hold",
-      "note": "a split excerpt carries a revision -> not merged",
+      "note": "inserted text keeps its straight quotes (payload preserved)",
+      "data": {}
+    },
+    {
+      "id": "D017",
+      "cls": "strip_direct",
+      "locator": "_LOC_sd_0030",
+      "revision_relation": "unrelated",
+      "expected_disposition": "strip_direct_formatting",
+      "note": "The delay to jetty topsides was neither ",
       "data": {
-        "first_half_len": 141
+        "gone_marker": "FF0000"
       }
     },
     {
-      "id": "D025",
-      "cls": "classify_body",
-      "locator": "_LOC_cb_0038",
+      "id": "D018",
+      "cls": "heading_body_merge",
+      "locator": "_LOC_hbm_0031",
+      "revision_relation": "inside_revision",
+      "expected_disposition": "hold",
+      "note": "merged heading whose body text is a tracked insertion -> not split",
+      "data": {}
+    },
+    {
+      "id": "D019",
+      "cls": "footnote_style",
+      "locator": "_LOC_fn_0033",
+      "revision_relation": "unrelated",
+      "expected_disposition": "footnote_restyled",
+      "note": "footnote 5 style",
+      "data": {
+        "fid": 5
+      }
+    },
+    {
+      "id": "D020",
+      "cls": "caption_literal",
+      "locator": "_Ref_F23364",
+      "revision_relation": "unrelated",
+      "expected_disposition": "fielded",
+      "note": "literal caption",
+      "data": {}
+    },
+    {
+      "id": "D021",
+      "cls": "level_fix",
+      "locator": "_LOC_lvl_0035",
+      "revision_relation": "unrelated",
+      "expected_disposition": "level_fixed",
+      "note": "L2 under a numbered paragraph -> promote to L1",
+      "data": {}
+    },
+    {
+      "id": "D022",
+      "cls": "strip_direct",
+      "locator": "_LOC_sd_0036",
+      "revision_relation": "inside_revision",
+      "expected_disposition": "hold",
+      "note": "direct formatting on a revised paragraph is left to protect the edit",
+      "data": {}
+    },
+    {
+      "id": "D023",
+      "cls": "floating_image",
+      "locator": "_LOC_fig_0038",
+      "revision_relation": "inside_revision",
+      "expected_disposition": "inline",
+      "note": "floating image is inlined (a layout change); the inserted object is preserved. Flagged for individual review.",
+      "data": {}
+    },
+    {
+      "id": "D024",
+      "cls": "classify_bullet",
+      "locator": "_LOC_cbul_0040",
       "revision_relation": "unrelated",
       "expected_disposition": "restyle_to_LI",
-      "note": "It is my opinion that the Contractor is ",
+      "note": "ListParagraph bullet",
+      "data": {}
+    },
+    {
+      "id": "D025",
+      "cls": "wrapper_table",
+      "locator": "_LOC_wrap_0041",
+      "revision_relation": "inside_revision",
+      "expected_disposition": "unwrapped",
+      "note": "unwrapping moves the wrapped content (including the edit) to body text; words, tracked status and author are preserved. Flagged for review.",
       "data": {}
     },
     {
       "id": "D026",
+      "cls": "classify_body",
+      "locator": "_LOC_cb_0043",
+      "revision_relation": "unrelated",
+      "expected_disposition": "restyle_to_LI",
+      "note": "foreign style",
+      "data": {}
+    },
+    {
+      "id": "D027",
       "cls": "pdf_linesplit",
-      "locator": "text:In respect of matter number 26 ",
+      "locator": "text:In respect of matter number 27 ",
       "revision_relation": "unrelated",
       "expected_disposition": "merged",
       "note": "PDF line-split excerpt",
@@ -809,27 +892,18 @@
       }
     },
     {
-      "id": "D027",
-      "cls": "tof_mismatch",
-      "locator": "_LOC_tof_0040",
-      "revision_relation": "unrelated",
-      "expected_disposition": "audit_flag",
-      "note": "List-of-Figures title differs from the caption",
-      "data": {}
-    },
-    {
       "id": "D028",
       "cls": "classify_bullet",
-      "locator": "_LOC_cbul_0041",
-      "revision_relation": "unrelated",
+      "locator": "_LOC_cbul_0045",
+      "revision_relation": "inside_revision",
       "expected_disposition": "restyle_to_LI",
-      "note": "ListParagraph bullet",
+      "note": "bullet, inserted",
       "data": {}
     },
     {
       "id": "D029",
       "cls": "empty_para",
-      "locator": "_LOC_empty_0042",
+      "locator": "text:__SYN_EMPTY_0108__",
       "revision_relation": "inside_revision",
       "expected_disposition": "hold",
       "note": "a tracked empty paragraph must not be pruned",
@@ -837,26 +911,26 @@
     },
     {
       "id": "D030",
-      "cls": "wrapper_table",
-      "locator": "_LOC_wrap_0044",
-      "revision_relation": "inside_revision",
-      "expected_disposition": "unwrapped",
-      "note": "unwrapping moves the wrapped content (including the edit) to body text; words, tracked status and author are preserved. Flagged for review.",
+      "cls": "floating_image",
+      "locator": "_LOC_fig_0050",
+      "revision_relation": "unrelated",
+      "expected_disposition": "inline",
+      "note": "floating picture",
       "data": {}
     },
     {
       "id": "D031",
-      "cls": "strip_direct",
-      "locator": "_LOC_sd_0046",
+      "cls": "level_fix",
+      "locator": "_LOC_lvl_0051",
       "revision_relation": "inside_revision",
-      "expected_disposition": "hold",
-      "note": "direct formatting on a revised paragraph is left to protect the edit",
+      "expected_disposition": "level_fixed",
+      "note": "L2 promotion applies to a revised paragraph; the edit is preserved",
       "data": {}
     },
     {
       "id": "D032",
       "cls": "strip_direct",
-      "locator": "_LOC_sd_0051",
+      "locator": "_LOC_sd_0053",
       "revision_relation": "unrelated",
       "expected_disposition": "strip_direct_formatting",
       "note": "direct fmt",
@@ -866,40 +940,42 @@
     },
     {
       "id": "D033",
-      "cls": "classify_body",
-      "locator": "_LOC_cb_0052",
-      "revision_relation": "unrelated",
-      "expected_disposition": "restyle_to_LI",
-      "note": "foreign style",
-      "data": {}
-    },
-    {
-      "id": "D034",
       "cls": "footnote_style",
-      "locator": "_LOC_fn_0053",
-      "revision_relation": "unrelated",
-      "expected_disposition": "footnote_restyled",
-      "note": "footnote 11 style",
+      "locator": "_LOC_fn_0054",
+      "revision_relation": "inside_revision",
+      "expected_disposition": "hold",
+      "note": "footnote 9 style",
       "data": {
-        "fid": 11
+        "fid": 9
       }
     },
     {
-      "id": "D035",
-      "cls": "classify_body",
-      "locator": "_LOC_cb_0055",
+      "id": "D034",
+      "cls": "tof_mismatch",
+      "locator": "_LOC_tof_0056",
       "revision_relation": "unrelated",
-      "expected_disposition": "restyle_to_LI",
-      "note": "In my opinion, and to a reasonable degre",
+      "expected_disposition": "audit_flag",
+      "note": "List-of-Figures title differs from the caption",
       "data": {}
+    },
+    {
+      "id": "D035",
+      "cls": "pdf_linesplit",
+      "locator": "text:In respect of matter number 35 ",
+      "revision_relation": "adjacent_to_revision",
+      "expected_disposition": "hold",
+      "note": "a split excerpt carries a revision -> not merged",
+      "data": {
+        "first_half_len": 141
+      }
     },
     {
       "id": "D036",
       "cls": "strip_direct",
-      "locator": "_LOC_sd_0059",
+      "locator": "_LOC_sd_0060",
       "revision_relation": "unrelated",
       "expected_disposition": "strip_direct_formatting",
-      "note": "The Contract incorporated a lump-sum pri",
+      "note": "Notice to Proceed was issued and teh pla",
       "data": {
         "gone_marker": "FF0000"
       }
@@ -907,76 +983,18 @@
     {
       "id": "D037",
       "cls": "strip_direct",
-      "locator": "_LOC_sd_0061",
+      "locator": "_LOC_sd_0062",
       "revision_relation": "unrelated",
       "expected_disposition": "strip_direct_formatting",
-      "note": "Notice to Proceed was issued and the pla",
+      "note": "The Project comprised the engineering, p",
       "data": {
         "gone_marker": "FF0000"
       }
     },
     {
       "id": "D038",
-      "cls": "classify_body",
-      "locator": "_LOC_cb_0062",
-      "revision_relation": "unrelated",
-      "expected_disposition": "restyle_to_LI",
-      "note": "The contemporaneous schedule updates dem",
-      "data": {}
-    },
-    {
-      "id": "D039",
       "cls": "strip_direct",
-      "locator": "_LOC_sd_0065",
-      "revision_relation": "unrelated",
-      "expected_disposition": "strip_direct_formatting",
-      "note": "The delay to flare package was neither f",
-      "data": {
-        "gone_marker": "FF0000"
-      }
-    },
-    {
-      "id": "D040",
-      "cls": "classify_body",
-      "locator": "_LOC_cb_0069",
-      "revision_relation": "unrelated",
-      "expected_disposition": "restyle_to_LI",
-      "note": "Where the contemporaneous updates were u",
-      "data": {}
-    },
-    {
-      "id": "D041",
-      "cls": "classify_body",
-      "locator": "_LOC_cb_0072",
-      "revision_relation": "unrelated",
-      "expected_disposition": "restyle_to_LI",
-      "note": "As shown in the record, the substructure",
-      "data": {}
-    },
-    {
-      "id": "D042",
-      "cls": "classify_body",
-      "locator": "_LOC_cb_0073",
-      "revision_relation": "unrelated",
-      "expected_disposition": "restyle_to_LI",
-      "note": "The contemporaneous schedule updates dem",
-      "data": {}
-    },
-    {
-      "id": "D043",
-      "cls": "strip_direct",
-      "locator": "_LOC_sd_0074",
-      "revision_relation": "unrelated",
-      "expected_disposition": "strip_direct_formatting",
-      "note": "The contemporaneous schedule updates dem",
-      "data": {
-        "gone_marker": "FF0000"
-      }
-    },
-    {
-      "id": "D044",
-      "cls": "strip_direct",
-      "locator": "_LOC_sd_0082",
+      "locator": "_LOC_sd_0064",
       "revision_relation": "unrelated",
       "expected_disposition": "strip_direct_formatting",
       "note": "My analysis indicates a net slippage of ",
@@ -985,45 +1003,118 @@
       }
     },
     {
+      "id": "D039",
+      "cls": "classify_body",
+      "locator": "_LOC_cb_0067",
+      "revision_relation": "unrelated",
+      "expected_disposition": "restyle_to_LI",
+      "note": "The contemporaneous schedule updates dem",
+      "data": {}
+    },
+    {
+      "id": "D040",
+      "cls": "strip_direct",
+      "locator": "_LOC_sd_0070",
+      "revision_relation": "unrelated",
+      "expected_disposition": "strip_direct_formatting",
+      "note": "For each window I validated the schedule",
+      "data": {
+        "gone_marker": "FF0000"
+      }
+    },
+    {
+      "id": "D041",
+      "cls": "strip_direct",
+      "locator": "_LOC_sd_0072",
+      "revision_relation": "unrelated",
+      "expected_disposition": "strip_direct_formatting",
+      "note": "Concurrency was tested against the four ",
+      "data": {
+        "gone_marker": "FF0000"
+      }
+    },
+    {
+      "id": "D042",
+      "cls": "classify_body",
+      "locator": "_LOC_cb_0073",
+      "revision_relation": "unrelated",
+      "expected_disposition": "restyle_to_LI",
+      "note": "The evidence establishes that the jetty ",
+      "data": {}
+    },
+    {
+      "id": "D043",
+      "cls": "strip_direct",
+      "locator": "_LOC_sd_0074",
+      "revision_relation": "unrelated",
+      "expected_disposition": "strip_direct_formatting",
+      "note": "The evidence establishes that the jetty ",
+      "data": {
+        "gone_marker": "FF0000"
+      }
+    },
+    {
+      "id": "D044",
+      "cls": "classify_body",
+      "locator": "_LOC_cb_0077",
+      "revision_relation": "unrelated",
+      "expected_disposition": "restyle_to_LI",
+      "note": "As shown in the record, the substructure",
+      "data": {}
+    },
+    {
       "id": "D045",
       "cls": "classify_body",
-      "locator": "_LOC_cb_0087",
+      "locator": "_LOC_cb_0079",
+      "revision_relation": "unrelated",
+      "expected_disposition": "restyle_to_LI",
+      "note": "The evidence establishes that the contro",
+      "data": {}
+    },
+    {
+      "id": "D046",
+      "cls": "strip_direct",
+      "locator": "_LOC_sd_0081",
+      "revision_relation": "unrelated",
+      "expected_disposition": "strip_direct_formatting",
+      "note": "The contemporaneous schedule updates dem",
+      "data": {
+        "gone_marker": "FF0000"
+      }
+    },
+    {
+      "id": "D047",
+      "cls": "classify_body",
+      "locator": "_LOC_cb_0090",
       "revision_relation": "unrelated",
       "expected_disposition": "restyle_to_LI",
       "note": "Progress on compressor foundation stalle",
       "data": {}
     },
     {
-      "id": "D046",
-      "cls": "classify_body",
-      "locator": "_LOC_cb_0091",
-      "revision_relation": "unrelated",
-      "expected_disposition": "restyle_to_LI",
-      "note": "In my opinion, and to a reasonable degre",
-      "data": {}
-    },
-    {
-      "id": "D047",
-      "cls": "classify_body",
-      "locator": "_LOC_cb_0092",
-      "revision_relation": "unrelated",
-      "expected_disposition": "restyle_to_LI",
-      "note": "It is my opinion that the Contractor is ",
-      "data": {}
-    },
-    {
       "id": "D048",
-      "cls": "classify_body",
-      "locator": "_LOC_cb_0094",
+      "cls": "strip_direct",
+      "locator": "_LOC_sd_0094",
       "revision_relation": "unrelated",
-      "expected_disposition": "restyle_to_LI",
-      "note": "In my opinion, and to a reasonable degre",
-      "data": {}
+      "expected_disposition": "strip_direct_formatting",
+      "note": "As shown in the record, the jetty topsid",
+      "data": {
+        "gone_marker": "FF0000"
+      }
     },
     {
       "id": "D049",
+      "cls": "classify_body",
+      "locator": "_LOC_cb_0095",
+      "revision_relation": "unrelated",
+      "expected_disposition": "restyle_to_LI",
+      "note": "Progress on electrical building stalled ",
+      "data": {}
+    },
+    {
+      "id": "D050",
       "cls": "section_landscape",
-      "locator": "_LOC_land_0095",
+      "locator": "_LOC_land_0099",
       "revision_relation": "unrelated",
       "expected_disposition": "portrait_restored",
       "note": "landscape block needs the portrait section restored",
