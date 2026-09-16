@@ -1,0 +1,316 @@
+/* LI Report Conformer — FieldIQ visual language for Qt */
+
+/* ── Base ── */
+QMainWindow, QDialog {
+    background-color: #faf9f6;
+    color: #1c2733;
+}
+
+QWidget {
+    font-family: "Public Sans", "Segoe UI", system-ui, sans-serif;
+    font-size: 13px;
+    color: #1c2733;
+}
+
+/* ── Header / title bar area ── */
+#headerFrame {
+    background-color: #1f3a5f;
+    padding: 16px 20px;
+    border: none;
+}
+#headerFrame QLabel {
+    color: #ffffff;
+    font-family: "Source Serif 4", "Georgia", serif;
+    font-size: 20px;
+    font-weight: 600;
+}
+#headerSubtitle {
+    font-family: "Public Sans", "Segoe UI", sans-serif;
+    font-size: 12px;
+    font-weight: 400;
+    color: rgba(255, 255, 255, 0.7);
+}
+
+/* ── Sections ── */
+#sectionLabel {
+    font-family: "Public Sans", "Segoe UI", sans-serif;
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.5px;
+    color: #66707a;
+    text-transform: uppercase;
+    padding: 12px 0 6px 0;
+}
+
+/* ── Cards / panels ── */
+QFrame#card {
+    background-color: #f4f2ec;
+    border: 1px solid #e3e0d8;
+    border-radius: 3px;
+    padding: 12px;
+}
+
+/* ── File info ── */
+#fileInfoLabel {
+    font-family: "IBM Plex Mono", "Consolas", monospace;
+    font-size: 12px;
+    color: #1c2733;
+}
+#fileInfoMeta {
+    font-family: "Public Sans", "Segoe UI", sans-serif;
+    font-size: 11px;
+    color: #66707a;
+}
+
+/* ── Buttons ── */
+QPushButton {
+    font-family: "Public Sans", "Segoe UI", sans-serif;
+    font-size: 13px;
+    font-weight: 600;
+    padding: 8px 20px;
+    border-radius: 3px;
+    border: 1px solid #e3e0d8;
+    background-color: #ffffff;
+    color: #1c2733;
+}
+QPushButton:hover {
+    background-color: #f4f2ec;
+    border-color: #1f3a5f;
+}
+QPushButton:pressed {
+    background-color: #e3e0d8;
+}
+QPushButton:disabled {
+    color: #7c8792;
+    background-color: #f4f2ec;
+    border-color: #e3e0d8;
+}
+
+QPushButton#primaryBtn {
+    background-color: #1f3a5f;
+    color: #ffffff;
+    border: 1px solid #1f3a5f;
+}
+QPushButton#primaryBtn:hover {
+    background-color: #2a4d7a;
+    border-color: #2a4d7a;
+}
+QPushButton#primaryBtn:pressed {
+    background-color: #162d4a;
+}
+QPushButton#primaryBtn:disabled {
+    background-color: #7c8792;
+    border-color: #7c8792;
+}
+
+/* ── Progress bar ── */
+QProgressBar {
+    border: 1px solid #e3e0d8;
+    border-radius: 2px;
+    background-color: #f4f2ec;
+    height: 6px;
+    text-align: center;
+    font-size: 0px;
+}
+QProgressBar::chunk {
+    background-color: #1f3a5f;
+    border-radius: 1px;
+}
+
+/* ── Judgment rows ── */
+#judgmentRow {
+    background-color: #ffffff;
+    border: 1px solid #e3e0d8;
+    border-radius: 2px;
+    padding: 8px 12px;
+    margin-bottom: 1px;
+}
+#judgmentRow:hover {
+    border-color: #1f3a5f;
+}
+
+#judgmentNum {
+    font-family: "IBM Plex Mono", "Consolas", monospace;
+    font-size: 12px;
+    font-weight: 600;
+    color: #1f3a5f;
+    min-width: 24px;
+}
+
+#judgmentText {
+    font-family: "IBM Plex Mono", "Consolas", monospace;
+    font-size: 12px;
+    color: #1c2733;
+}
+
+#judgmentReason {
+    font-size: 12px;
+    color: #66707a;
+    padding-left: 24px;
+}
+
+#judgmentFullText {
+    font-family: "IBM Plex Mono", "Consolas", monospace;
+    font-size: 11px;
+    color: #1c2733;
+    background-color: #f4f2ec;
+    border: 1px solid #e3e0d8;
+    border-radius: 2px;
+    padding: 8px;
+    margin: 4px 0 4px 24px;
+}
+
+/* ── Action buttons (Accept / Change / Skip) ── */
+QPushButton#acceptBtn {
+    font-size: 11px;
+    font-weight: 600;
+    padding: 3px 10px;
+    border-radius: 2px;
+    background-color: #ffffff;
+    border: 1px solid #e3e0d8;
+    color: #1c2733;
+}
+QPushButton#acceptBtn:checked, QPushButton#acceptBtn[selected="true"] {
+    background-color: #e8f5e9;
+    border-color: #2e7d32;
+    color: #2e7d32;
+}
+
+QPushButton#changeBtn {
+    font-size: 11px;
+    font-weight: 600;
+    padding: 3px 10px;
+    border-radius: 2px;
+    background-color: #ffffff;
+    border: 1px solid #e3e0d8;
+    color: #1c2733;
+}
+QPushButton#changeBtn:checked, QPushButton#changeBtn[selected="true"] {
+    background-color: #edf1f6;
+    border-color: #1f3a5f;
+    color: #1f3a5f;
+}
+
+QPushButton#skipBtn {
+    font-size: 11px;
+    font-weight: 600;
+    padding: 3px 10px;
+    border-radius: 2px;
+    background-color: #ffffff;
+    border: 1px solid #e3e0d8;
+    color: #7c8792;
+}
+QPushButton#skipBtn:checked, QPushButton#skipBtn[selected="true"] {
+    background-color: #f5f5f5;
+    border-color: #7c8792;
+    color: #7c8792;
+}
+
+/* ── Change dropdown ── */
+QComboBox {
+    font-size: 11px;
+    padding: 3px 8px;
+    border: 1px solid #e3e0d8;
+    border-radius: 2px;
+    background-color: #ffffff;
+    min-width: 140px;
+}
+QComboBox:hover {
+    border-color: #1f3a5f;
+}
+QComboBox::drop-down {
+    border: none;
+    width: 18px;
+}
+
+/* ── Tally / status bar ── */
+#tallyBar {
+    background-color: #f4f2ec;
+    border-top: 1px solid #e3e0d8;
+    padding: 10px 20px;
+}
+#tallyText {
+    font-size: 12px;
+    color: #66707a;
+}
+
+/* ── Scroll area ── */
+QScrollArea {
+    border: none;
+    background-color: #faf9f6;
+}
+QScrollBar:vertical {
+    background-color: #f4f2ec;
+    width: 8px;
+    border: none;
+}
+QScrollBar::handle:vertical {
+    background-color: #c0bdb5;
+    border-radius: 4px;
+    min-height: 30px;
+}
+QScrollBar::handle:vertical:hover {
+    background-color: #66707a;
+}
+QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {
+    height: 0px;
+}
+
+/* ── Status indicators ── */
+#statusAccepted {
+    color: #2e7d32;
+    font-size: 11px;
+    font-weight: 600;
+}
+#statusChanged {
+    color: #1f3a5f;
+    font-size: 11px;
+    font-weight: 600;
+}
+#statusSkipped {
+    color: #7c8792;
+    font-size: 11px;
+    font-weight: 600;
+}
+
+/* ── View buttons (Preview / Open in Word) ── */
+QPushButton#viewBtn {
+    font-size: 10px;
+    font-weight: 600;
+    color: #1f3a5f;
+    background: none;
+    border: none;
+    padding: 2px 0;
+    text-decoration: underline;
+}
+QPushButton#viewBtn:hover {
+    color: #2a4d7a;
+}
+
+/* ── Log / complete state ── */
+#logRow {
+    font-size: 12px;
+    padding: 4px 0;
+    border-bottom: 1px solid #e3e0d8;
+}
+
+/* ── Menu bar ── */
+QMenuBar {
+    background-color: #faf9f6;
+    border-bottom: 1px solid #e3e0d8;
+    font-size: 12px;
+}
+QMenuBar::item:selected {
+    background-color: #edf1f6;
+}
+QMenu {
+    background-color: #ffffff;
+    border: 1px solid #e3e0d8;
+    padding: 4px 0;
+}
+QMenu::item {
+    padding: 6px 24px;
+}
+QMenu::item:selected {
+    background-color: #edf1f6;
+}
