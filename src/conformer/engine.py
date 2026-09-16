@@ -915,6 +915,8 @@ class Conformer:
         # #8 first (Claire's explicit need): caption fielding then cross-reference rebuild.
         self._caption_fields_preserving()   # #8a
         self._xrefs_preserving()            # #8b
+        self._split_headings_preserving()   # #6
+        self._extract_images_preserving()   # #5
         self._drop_empty_columns_preserving()  # #7
         self.audit_figures()
 
@@ -1398,6 +1400,78 @@ class Conformer:
         if width:
             x = re.sub(r'<w:tblW [^>]*/>', f'<w:tblW w:w="{width}" w:type="dxa"/>', x)
         self.set(i, x); self.say('M', i, f'removed {len(empty)} empty column(s)')
+
+    # ---------------------------------------------------------------- #6 split caption/heading + body
+    _SPLIT_SEP_RE = re.compile(r'<w:r\b[^>]*>(?:<w:rPr>.*?</w:rPr>)?'
+                               r'<w:t xml:space="preserve">(?: {2,}|\t)</w:t></w:r>', re.S)
+
+    def _split_headings_preserving(self):
+        """#6: a heading or caption paragraph with body text mashed onto the end (separated by a
+        double space or tab run) is split into two paragraphs. Display-preserving: the separator run
+        is KEPT on the heading side (invisible trailing whitespace) so not a single character is
+        lost — the split only inserts a paragraph break where a run boundary already was. Skips /
+        flags tracked-adjacent instances."""
+        def detect():
+            out = []
+            for i in range(self.n()):
+                if not self.is_par(i) or self.style(i) not in (HEADINGS | {'Caption'}):
+                    continue
+                x = self.item(i)
+                m = self._SPLIT_SEP_RE.search(x)
+                if not m:
+                    continue
+                before = text_of(x[:m.start()]).strip()
+                after = text_of(x[m.end():]).strip()
+                if not before or not after:
+                    continue
+                body_style = 'BodyText' if self.style(i) == 'Caption' else 'NumberedParagraph'
+                out.append({'index': i, 'sep_end': m.end(), 'body_style': body_style,
+                            'apply': self._apply_split, 'span': 1,
+                            'recommended': 'Accept (separates merged heading and body text)',
+                            'tracked_adjacent': self._para_has_revision(i),
+                            'message': f'split body text off the {self.style(i)} paragraph {before[:35]!r}'})
+            return out
+        self._ask_pass('splitcap', detect)
+
+    def _apply_split(self, cand):
+        i = cand['index']; x = self.item(i)
+        head_x = x[:cand['sep_end']] + '</w:p>'            # keep the separator run on the heading
+        body_x = (f'<w:p><w:pPr><w:pStyle w:val="{cand["body_style"]}"/></w:pPr>'
+                  + x[cand['sep_end']:])
+        self.set(i, head_x)
+        self.items.insert(self.b0 + i + 1, body_x)
+        self.say('M', i, f'split merged {cand["body_style"]} body text into its own paragraph')
+
+    # ---------------------------------------------------------------- #5 extract floating image inline
+    def _extract_images_preserving(self):
+        """#5: a paragraph whose only content is a FLOATING (anchored) picture is converted to an
+        INLINE picture in the same paragraph (LI figures are inline). Display-preserving: the image
+        object stays in the same paragraph and stream position; only its float/anchor wrapper — never
+        visible to the reader as text — becomes inline. The mixed image+caption+body case (which
+        would relocate the object) is intentionally left to a future looser-gate op. Flags
+        tracked-adjacent instances."""
+        def detect():
+            out = []
+            for i in range(self.n()):
+                if not self.is_par(i):
+                    continue
+                x = self.item(i)
+                if '<wp:anchor' not in x or text_of(x).strip():
+                    continue
+                out.append({'index': i, 'apply': self._apply_extract_image, 'span': 1,
+                            'recommended': 'Accept (float -> inline; image unchanged)',
+                            'tracked_adjacent': self._para_has_revision(i),
+                            'message': 'convert floating picture to an inline figure'})
+            return out
+        self._ask_pass('imgextract', detect)
+
+    def _apply_extract_image(self, cand):
+        i = cand['index']
+        x = self._anchor_to_inline(self.item(i))
+        self.set(i, x)
+        if self.style(i) != 'SpacebehindafteraGraphic':
+            self.set_style(i, 'SpacebehindafteraGraphic')
+        self.say('M', i, 'converted floating picture to inline figure')
 
     def run(self):
         self._run_passes()

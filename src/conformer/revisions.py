@@ -497,13 +497,30 @@ def visible_violations(before, after):
     return viols
 
 
+# Namespaces a body fragment may reference (drawings, VML, compatibility) — declared on the synthetic
+# wrapper so region_display parses a fragment whose source declared them on the document ROOT (as real
+# Word packages do), including after an anchor->inline conversion drops an element-level declaration.
+_FRAG_NS = (
+    f'xmlns:w="{W}" xmlns:r="{RNS}" '
+    'xmlns:wp="http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing" '
+    'xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" '
+    'xmlns:pic="http://schemas.openxmlformats.org/drawingml/2006/picture" '
+    'xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006" '
+    'xmlns:wps="http://schemas.microsoft.com/office/word/2010/wordprocessingShape" '
+    'xmlns:wpg="http://schemas.microsoft.com/office/word/2010/wordprocessingGroup" '
+    'xmlns:w14="http://schemas.microsoft.com/office/word/2010/wordml" '
+    'xmlns:w15="http://schemas.microsoft.com/office/word/2012/wordml" '
+    'xmlns:v="urn:schemas-microsoft-com:vml" '
+    'xmlns:o="urn:schemas-microsoft-com:office:office"')
+
+
 def region_display(xml_fragment):
     """The display stream of a FRAGMENT of body items (one or more <w:p>/<w:tbl>/markers), for the
     fast LOCAL gate on a single structural edit — no whole-document ledger rebuild. Because the
     display stream carries visible text AND every revision / comment / bookmark boundary AND every
     object, an unchanged fragment display stream proves this one edit disturbed no tracked content,
     lost no object, and left the reader's text identical, in O(fragment) not O(document)."""
-    wrapped = (f'<w:document xmlns:w="{W}" xmlns:r="{RNS}"><w:body>'
+    wrapped = (f'<w:document {_FRAG_NS}><w:body>'
                f'{xml_fragment}</w:body></w:document>').encode('utf8')
     try:
         return _collapse_visible(content_stream({'word/document.xml': wrapped})

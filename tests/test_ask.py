@@ -22,6 +22,8 @@ W = 'http://schemas.openxmlformats.org/wordprocessingml/2006/main'
 # (a real Word doc declares this full Microsoft prefix set on every part).
 NS = (f'xmlns:w="{W}" '
       'xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" '
+      'xmlns:wp="http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing" '
+      'xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" '
       'xmlns:w14="http://schemas.microsoft.com/office/word/2010/wordml" '
       'xmlns:w15="http://schemas.microsoft.com/office/word/2012/wordml" '
       'xmlns:w16cid="http://schemas.microsoft.com/office/word/2016/wordml/cid" '
@@ -32,9 +34,10 @@ def _part(tag, inner=''):
     return f'<?xml version="1.0"?><w:{tag} {NS}>{inner}</w:{tag}>'.encode('utf8')
 
 
-def make_docx(path, body, styles_inner=''):
+def make_docx(path, body, styles_inner='', extra_parts=None):
     default_styles = (
         '<w:style w:type="paragraph" w:styleId="Heading1"><w:name w:val="heading 1"/></w:style>'
+        '<w:style w:type="paragraph" w:styleId="Heading2"><w:name w:val="heading 2"/></w:style>'
         '<w:style w:type="paragraph" w:styleId="Caption"><w:name w:val="caption"/></w:style>'
         '<w:style w:type="paragraph" w:styleId="BodyText"><w:name w:val="Body Text"/></w:style>')
     parts = {
@@ -53,6 +56,8 @@ def make_docx(path, body, styles_inner=''):
         'word/footnotes.xml': _part('footnotes'),
         'word/settings.xml': _part('settings'),
     }
+    if extra_parts:
+        parts.update(extra_parts)
     with zipfile.ZipFile(path, 'w', zipfile.ZIP_DEFLATED) as z:
         for n, b in parts.items():
             z.writestr(n, b)
@@ -283,3 +288,76 @@ def test_empty_column_with_bookmark_is_not_dropped():
         assert not any(jc.kind == 'dropcol' for jc in calls)     # detection skips it
         tbl = next(applied.item(i) for i in range(applied.n()) if applied.item(i).startswith('<w:tbl'))
         assert len(re.findall(r'<w:gridCol', tbl)) == 2 and '_KEEP' in tbl
+
+
+# ======================================================================== #6 split heading/body
+def test_split_heading_from_body():
+    merged = (HEAD.replace('<w:r><w:t>SECTION</w:t></w:r>',
+              '<w:r><w:t xml:space="preserve">SECTION TITLE</w:t></w:r>'
+              '<w:r><w:t xml:space="preserve">  </w:t></w:r>'
+              '<w:r><w:t xml:space="preserve">This body sentence was mashed into the heading.</w:t></w:r>'))
+    body = merged + INS.replace(HEAD, '') + '<w:sectPr><w:pgSz w:w="12240" w:h="15840"/></w:sectPr>'
+    with tempfile.TemporaryDirectory() as tmp:
+        p = os.path.join(tmp, 's.docx')
+        make_docx(p, body)
+        calls, applied = _accept_all(p)
+        assert any(jc.kind == 'splitcap' for jc in calls)
+        # heading and body are now separate paragraphs
+        h = next(i for i in range(applied.n()) if applied.style(i) == 'Heading1')
+        assert 'SECTION TITLE' in applied.text(h) and 'body sentence' not in applied.text(h)
+        b = next(i for i in range(applied.n()) if 'body sentence' in applied.text(i))
+        assert applied.style(b) == 'NumberedParagraph'
+        clean, disc = applied.verify_preservation()
+        assert clean, disc
+        ok, msg = applied.validate_output()
+        assert ok, msg
+
+
+def test_split_preserves_every_character():
+    # the separator whitespace is kept (on the heading), so concatenated visible text is unchanged
+    merged = (HEAD.replace('<w:r><w:t>SECTION</w:t></w:r>',
+              '<w:r><w:t xml:space="preserve">TITLE</w:t></w:r>'
+              '<w:r><w:t xml:space="preserve">  </w:t></w:r>'
+              '<w:r><w:t xml:space="preserve">Body text here.</w:t></w:r>'))
+    body = merged + INS.replace(HEAD, '') + '<w:sectPr><w:pgSz w:w="12240" w:h="15840"/></w:sectPr>'
+    with tempfile.TemporaryDirectory() as tmp:
+        p = os.path.join(tmp, 's2.docx')
+        make_docx(p, body)
+        before = R.visible_stream(Conformer(TEMPLATE, p)._output_parts())
+        calls, applied = _accept_all(p)
+        after = R.visible_stream(applied._output_parts())
+        assert not R.visible_violations(before, after)
+
+
+# ======================================================================== #5 extract floating image
+# wp/a are declared on the document root (via NS), as a real Word package declares them.
+FLOAT_IMG = (
+    '<w:p><w:pPr><w:pStyle w:val="BodyText"/></w:pPr><w:r><w:drawing>'
+    '<wp:anchor distT="0" distB="0" distL="0" distR="0" simplePos="0" relativeHeight="1" '
+    'behindDoc="0" locked="0" layoutInCell="1" allowOverlap="1">'
+    '<wp:simplePos x="0" y="0"/><wp:positionH relativeFrom="column"><wp:posOffset>0</wp:posOffset></wp:positionH>'
+    '<wp:positionV relativeFrom="paragraph"><wp:posOffset>0</wp:posOffset></wp:positionV>'
+    '<wp:extent cx="100" cy="100"/><wp:wrapNone/><wp:docPr id="1" name="Pic 1"/>'
+    '<a:graphic><a:graphicData uri="x"><a:blip r:embed="rId5"/></a:graphicData></a:graphic>'
+    '</wp:anchor></w:drawing></w:r></w:p>')
+
+IMG_RELS = (b'<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'
+            b'<Relationship Id="rId5" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="media/image1.png"/>'
+            b'</Relationships>')
+
+
+def test_extract_floating_image_to_inline():
+    body = INS + FLOAT_IMG + '<w:sectPr><w:pgSz w:w="12240" w:h="15840"/></w:sectPr>'
+    with tempfile.TemporaryDirectory() as tmp:
+        p = os.path.join(tmp, 'i.docx')
+        make_docx(p, body, extra_parts={'word/_rels/document.xml.rels': IMG_RELS,
+                                        'word/media/image1.png': b'PNGDATA'})
+        calls, applied = _accept_all(p)
+        assert any(jc.kind == 'imgextract' for jc in calls)
+        out = ''.join(applied.items)
+        assert '<wp:anchor' not in out and '<wp:inline' in out    # float -> inline
+        assert 'r:embed="rId5"' in out                            # the image object is preserved
+        img = next(i for i in range(applied.n()) if 'r:embed="rId5"' in applied.item(i))
+        assert applied.style(img) == 'SpacebehindafteraGraphic'
+        clean, disc = applied.verify_preservation()
+        assert clean, disc
