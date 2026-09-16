@@ -1,0 +1,1578 @@
+{
+  "tier": "70",
+  "quality_target": 0.7,
+  "defects": [
+    {
+      "id": "D001",
+      "cls": "classify_body",
+      "tracked": false,
+      "section": 1,
+      "note": "Progress on jetty topsides stalled durin",
+      "expect": "map foreign/Normal -> NumberedParagraph"
+    },
+    {
+      "id": "D002",
+      "cls": "strip_direct",
+      "tracked": false,
+      "section": 1,
+      "note": "Progress on jetty topsides stalled durin",
+      "expect": "remove direct run formatting"
+    },
+    {
+      "id": "D003",
+      "cls": "strip_direct",
+      "tracked": false,
+      "section": 1,
+      "note": "As shown in the record, the commissionin",
+      "expect": "remove direct run formatting"
+    },
+    {
+      "id": "D004",
+      "cls": "strip_direct",
+      "tracked": false,
+      "section": 1,
+      "note": "The contemporaneous schedual updates dem",
+      "expect": "remove direct run formatting"
+    },
+    {
+      "id": "D005",
+      "cls": "strip_direct",
+      "tracked": false,
+      "section": 1,
+      "note": "The contemporaneous schedule updates dem",
+      "expect": "remove direct run formatting"
+    },
+    {
+      "id": "D006",
+      "cls": "classify_bullet",
+      "tracked": false,
+      "section": 1,
+      "note": "My analysis indicates a net slippage of ",
+      "expect": "map ListParagraph bullet -> ListBullet*"
+    },
+    {
+      "id": "D007",
+      "cls": "strip_direct",
+      "tracked": false,
+      "section": 1,
+      "note": "The evidence establishes that the jetty ",
+      "expect": "remove direct run formatting"
+    },
+    {
+      "id": "D008",
+      "cls": "classify_body",
+      "tracked": false,
+      "section": 1,
+      "note": "My analsyis indicates a net slippage of ",
+      "expect": "map foreign/Normal -> NumberedParagraph"
+    },
+    {
+      "id": "D009",
+      "cls": "pdf_linesplit",
+      "tracked": false,
+      "section": 1,
+      "note": "Ownership of float shall reside with the",
+      "expect": "merge PDF line-split excerpts (#1)"
+    },
+    {
+      "id": "D010",
+      "cls": "table_style",
+      "tracked": false,
+      "section": 1,
+      "note": "window table",
+      "expect": "set table to LITable style"
+    },
+    {
+      "id": "D011",
+      "cls": "classify_body",
+      "tracked": false,
+      "section": 1,
+      "note": "Progress on control building stalled dur",
+      "expect": "map foreign/Normal -> NumberedParagraph"
+    },
+    {
+      "id": "D012",
+      "cls": "strip_direct",
+      "tracked": false,
+      "section": 1,
+      "note": "Progress on compressor foundation stalle",
+      "expect": "remove direct run formatting"
+    },
+    {
+      "id": "D013",
+      "cls": "classify_body",
+      "tracked": false,
+      "section": 1,
+      "note": "The delay to jetty topsides was neither ",
+      "expect": "map foreign/Normal -> NumberedParagraph"
+    },
+    {
+      "id": "D014",
+      "cls": "strip_direct",
+      "tracked": false,
+      "section": 1,
+      "note": "The delay to jetty topsides was neither ",
+      "expect": "remove direct run formatting"
+    },
+    {
+      "id": "D015",
+      "cls": "strip_direct",
+      "tracked": false,
+      "section": 2,
+      "note": "The evidance establishes that the substr",
+      "expect": "remove direct run formatting"
+    },
+    {
+      "id": "D016",
+      "cls": "classify_body",
+      "tracked": false,
+      "section": 2,
+      "note": "The delay to electrical building was nei",
+      "expect": "map foreign/Normal -> NumberedParagraph"
+    },
+    {
+      "id": "D017",
+      "cls": "classify_body",
+      "tracked": false,
+      "section": 2,
+      "note": "The delay to commissioning was neither f",
+      "expect": "map foreign/Normal -> NumberedParagraph"
+    },
+    {
+      "id": "D018",
+      "cls": "strip_direct",
+      "tracked": false,
+      "section": 2,
+      "note": "The contemporaneous schedule updates dem",
+      "expect": "remove direct run formatting"
+    },
+    {
+      "id": "D019",
+      "cls": "classify_bullet",
+      "tracked": false,
+      "section": 2,
+      "note": "The delay to substructure was neither fo",
+      "expect": "map ListParagraph bullet -> ListBullet*"
+    },
+    {
+      "id": "D020",
+      "cls": "strip_direct",
+      "tracked": false,
+      "section": 2,
+      "note": "The evidence establishes that the commis",
+      "expect": "remove direct run formatting"
+    },
+    {
+      "id": "D021",
+      "cls": "classify_body",
+      "tracked": false,
+      "section": 2,
+      "note": "As shown in the record, teh jetty topsid",
+      "expect": "map foreign/Normal -> NumberedParagraph"
+    },
+    {
+      "id": "D022",
+      "cls": "strip_direct",
+      "tracked": false,
+      "section": 2,
+      "note": "As shown in the record, teh jetty topsid",
+      "expect": "remove direct run formatting"
+    },
+    {
+      "id": "D023",
+      "cls": "classify_bullet",
+      "tracked": false,
+      "section": 2,
+      "note": "The evidence establishes that the contro",
+      "expect": "map ListParagraph bullet -> ListBullet*"
+    },
+    {
+      "id": "D024",
+      "cls": "classify_body",
+      "tracked": false,
+      "section": 3,
+      "note": "It is my opinion that the Contractor is ",
+      "expect": "map foreign/Normal -> NumberedParagraph"
+    },
+    {
+      "id": "D025",
+      "cls": "strip_direct",
+      "tracked": false,
+      "section": 3,
+      "note": "I hold the opinion that teh concurrent-d",
+      "expect": "remove direct run formatting"
+    },
+    {
+      "id": "D026",
+      "cls": "strip_direct",
+      "tracked": false,
+      "section": 3,
+      "note": "I hold the opinion that the concurrent-d",
+      "expect": "remove direct run formatting"
+    },
+    {
+      "id": "D027",
+      "cls": "strip_direct",
+      "tracked": false,
+      "section": 3,
+      "note": "I hold the opinion that the concurrent-d",
+      "expect": "remove direct run formatting"
+    },
+    {
+      "id": "D028",
+      "cls": "strip_direct",
+      "tracked": false,
+      "section": 3,
+      "note": "In my opinion, and to a reasonable degre",
+      "expect": "remove direct run formatting"
+    },
+    {
+      "id": "D029",
+      "cls": "classify_bullet",
+      "tracked": false,
+      "section": 3,
+      "note": "As shown in the record, the commissionin",
+      "expect": "map ListParagraph bullet -> ListBullet*"
+    },
+    {
+      "id": "D030",
+      "cls": "classify_body",
+      "tracked": false,
+      "section": 3,
+      "note": "It is my opinion that the Contractor is ",
+      "expect": "map foreign/Normal -> NumberedParagraph"
+    },
+    {
+      "id": "D031",
+      "cls": "strip_direct",
+      "tracked": false,
+      "section": 3,
+      "note": "It is my opinion that the Contractor is ",
+      "expect": "remove direct run formatting"
+    },
+    {
+      "id": "D032",
+      "cls": "footnote_style",
+      "tracked": false,
+      "section": 3,
+      "note": "Engineer's Determination Lette",
+      "expect": "set footnote to FootnoteText style"
+    },
+    {
+      "id": "D033",
+      "cls": "classify_body",
+      "tracked": false,
+      "section": 3,
+      "note": "In my opinion, and to a reasonable degre",
+      "expect": "map foreign/Normal -> NumberedParagraph"
+    },
+    {
+      "id": "D034",
+      "cls": "strip_direct",
+      "tracked": false,
+      "section": 3,
+      "note": "In my opinion, and to a reasonable degre",
+      "expect": "remove direct run formatting"
+    },
+    {
+      "id": "D035",
+      "cls": "classify_body",
+      "tracked": false,
+      "section": 3,
+      "note": "I hold the opinion that the concurrent-d",
+      "expect": "map foreign/Normal -> NumberedParagraph"
+    },
+    {
+      "id": "D036",
+      "cls": "classify_body",
+      "tracked": false,
+      "section": 3,
+      "note": "I hold the opinion that the concurrent-d",
+      "expect": "map foreign/Normal -> NumberedParagraph"
+    },
+    {
+      "id": "D037",
+      "cls": "classify_body",
+      "tracked": false,
+      "section": 3,
+      "note": "In my opinion, and to a reasonable degre",
+      "expect": "map foreign/Normal -> NumberedParagraph"
+    },
+    {
+      "id": "D038",
+      "cls": "classify_body",
+      "tracked": false,
+      "section": 3,
+      "note": "I hold teh opinion that the concurrent-d",
+      "expect": "map foreign/Normal -> NumberedParagraph"
+    },
+    {
+      "id": "D039",
+      "cls": "classify_body",
+      "tracked": false,
+      "section": 3,
+      "note": "I hold the opinion that the concurrent-d",
+      "expect": "map foreign/Normal -> NumberedParagraph"
+    },
+    {
+      "id": "D040",
+      "cls": "strip_direct",
+      "tracked": false,
+      "section": 3,
+      "note": "I hold the opinion that the concurrent-d",
+      "expect": "remove direct run formatting"
+    },
+    {
+      "id": "D041",
+      "cls": "pdf_linesplit",
+      "tracked": false,
+      "section": 3,
+      "note": "The Contractor shall be entitled to an e",
+      "expect": "merge PDF line-split excerpts (#1)"
+    },
+    {
+      "id": "D042",
+      "cls": "strip_direct",
+      "tracked": false,
+      "section": 4,
+      "note": "The Project comprised the engineering, p",
+      "expect": "remove direct run formatting"
+    },
+    {
+      "id": "D043",
+      "cls": "footnote_style",
+      "tracked": false,
+      "section": 4,
+      "note": "AACE International, Recommende",
+      "expect": "set footnote to FootnoteText style"
+    },
+    {
+      "id": "D044",
+      "cls": "classify_body",
+      "tracked": false,
+      "section": 4,
+      "note": "Notice to Proceed was issued and the pla",
+      "expect": "map foreign/Normal -> NumberedParagraph"
+    },
+    {
+      "id": "D045",
+      "cls": "strip_direct",
+      "tracked": false,
+      "section": 4,
+      "note": "Notice to Proceed was issued and the pla",
+      "expect": "remove direct run formatting"
+    },
+    {
+      "id": "D046",
+      "cls": "strip_direct",
+      "tracked": false,
+      "section": 4,
+      "note": "The Project comprised the engineering, p",
+      "expect": "remove direct run formatting"
+    },
+    {
+      "id": "D047",
+      "cls": "classify_body",
+      "tracked": false,
+      "section": 4,
+      "note": "The parties are in dispute over responsi",
+      "expect": "map foreign/Normal -> NumberedParagraph"
+    },
+    {
+      "id": "D048",
+      "cls": "strip_direct",
+      "tracked": false,
+      "section": 4,
+      "note": "The parties are in dispute over responsi",
+      "expect": "remove direct run formatting"
+    },
+    {
+      "id": "D049",
+      "cls": "footnote_style",
+      "tracked": false,
+      "section": 4,
+      "note": "Society of Construction Law, D",
+      "expect": "set footnote to FootnoteText style"
+    },
+    {
+      "id": "D050",
+      "cls": "table_style",
+      "tracked": false,
+      "section": 4,
+      "note": "window table",
+      "expect": "set table to LITable style"
+    },
+    {
+      "id": "D051",
+      "cls": "strip_direct",
+      "tracked": false,
+      "section": 4,
+      "note": "The Project comprised the engineering, p",
+      "expect": "remove direct run formatting"
+    },
+    {
+      "id": "D052",
+      "cls": "classify_bullet",
+      "tracked": false,
+      "section": 4,
+      "note": "The delay to commissioning was neither f",
+      "expect": "map ListParagraph bullet -> ListBullet*"
+    },
+    {
+      "id": "D053",
+      "cls": "classify_bullet",
+      "tracked": false,
+      "section": 4,
+      "note": "My analysis indicates a net slippage of ",
+      "expect": "map ListParagraph bullet -> ListBullet*"
+    },
+    {
+      "id": "D054",
+      "cls": "classify_body",
+      "tracked": false,
+      "section": 5,
+      "note": "The contemporaneous schedule updates dem",
+      "expect": "map foreign/Normal -> NumberedParagraph"
+    },
+    {
+      "id": "D055",
+      "cls": "strip_direct",
+      "tracked": false,
+      "section": 5,
+      "note": "The delay to jetty topsides was neither ",
+      "expect": "remove direct run formatting"
+    },
+    {
+      "id": "D056",
+      "cls": "classify_body",
+      "tracked": false,
+      "section": 5,
+      "note": "The delay to flare package was neither f",
+      "expect": "map foreign/Normal -> NumberedParagraph"
+    },
+    {
+      "id": "D057",
+      "cls": "strip_direct",
+      "tracked": false,
+      "section": 5,
+      "note": "My analysis indicates a net slippage of ",
+      "expect": "remove direct run formatting"
+    },
+    {
+      "id": "D058",
+      "cls": "strip_direct",
+      "tracked": false,
+      "section": 5,
+      "note": "Progress on jetty topsides stalled durin",
+      "expect": "remove direct run formatting"
+    },
+    {
+      "id": "D059",
+      "cls": "classify_body",
+      "tracked": false,
+      "section": 5,
+      "note": "My analsyis indicates a net slippage of ",
+      "expect": "map foreign/Normal -> NumberedParagraph"
+    },
+    {
+      "id": "D060",
+      "cls": "classify_bullet",
+      "tracked": false,
+      "section": 5,
+      "note": "As shown in the record, the flare packag",
+      "expect": "map ListParagraph bullet -> ListBullet*"
+    },
+    {
+      "id": "D061",
+      "cls": "pdf_linesplit",
+      "tracked": false,
+      "section": 5,
+      "note": "The Contractor shall be entitled to an e",
+      "expect": "merge PDF line-split excerpts (#1)"
+    },
+    {
+      "id": "D062",
+      "cls": "classify_body",
+      "tracked": false,
+      "section": 5,
+      "note": "The contemporaneous schedule updates dem",
+      "expect": "map foreign/Normal -> NumberedParagraph"
+    },
+    {
+      "id": "D063",
+      "cls": "classify_body",
+      "tracked": false,
+      "section": 5,
+      "note": "My analysis indicates a net slippage of ",
+      "expect": "map foreign/Normal -> NumberedParagraph"
+    },
+    {
+      "id": "D064",
+      "cls": "footnote_style",
+      "tracked": false,
+      "section": 5,
+      "note": "Society of Construction Law, D",
+      "expect": "set footnote to FootnoteText style"
+    },
+    {
+      "id": "D065",
+      "cls": "classify_body",
+      "tracked": false,
+      "section": 5,
+      "note": "The contemporaneous schedule updates dem",
+      "expect": "map foreign/Normal -> NumberedParagraph"
+    },
+    {
+      "id": "D066",
+      "cls": "classify_bullet",
+      "tracked": false,
+      "section": 5,
+      "note": "As shown in the record, the commissionin",
+      "expect": "map ListParagraph bullet -> ListBullet*"
+    },
+    {
+      "id": "D067",
+      "cls": "strip_direct",
+      "tracked": false,
+      "section": 6,
+      "note": "Float ownership was assessed in accordan",
+      "expect": "remove direct run formatting"
+    },
+    {
+      "id": "D068",
+      "cls": "classify_body",
+      "tracked": false,
+      "section": 6,
+      "note": "Where the contemporaneous updates were u",
+      "expect": "map foreign/Normal -> NumberedParagraph"
+    },
+    {
+      "id": "D069",
+      "cls": "strip_direct",
+      "tracked": false,
+      "section": 6,
+      "note": "Where the contemporaneous updates were u",
+      "expect": "remove direct run formatting"
+    },
+    {
+      "id": "D070",
+      "cls": "classify_body",
+      "tracked": false,
+      "section": 6,
+      "note": "Float ownership was assessed in accordan",
+      "expect": "map foreign/Normal -> NumberedParagraph"
+    },
+    {
+      "id": "D071",
+      "cls": "footnote_style",
+      "tracked": true,
+      "section": 6,
+      "note": "Witness Statement of the Proje",
+      "expect": "set footnote to FootnoteText style"
+    },
+    {
+      "id": "D072",
+      "cls": "classify_bullet",
+      "tracked": false,
+      "section": 6,
+      "note": "The delay to LNG tank was neither forese",
+      "expect": "map ListParagraph bullet -> ListBullet*"
+    },
+    {
+      "id": "D073",
+      "cls": "classify_bullet",
+      "tracked": false,
+      "section": 6,
+      "note": "The contemporaneous schedual updates dem",
+      "expect": "map ListParagraph bullet -> ListBullet*"
+    },
+    {
+      "id": "D074",
+      "cls": "classify_bullet",
+      "tracked": false,
+      "section": 6,
+      "note": "The contemporaneous schedule updates dem",
+      "expect": "map ListParagraph bullet -> ListBullet*"
+    },
+    {
+      "id": "D075",
+      "cls": "classify_body",
+      "tracked": false,
+      "section": 6,
+      "note": "Where the contemporaneous updates were u",
+      "expect": "map foreign/Normal -> NumberedParagraph"
+    },
+    {
+      "id": "D076",
+      "cls": "strip_direct",
+      "tracked": false,
+      "section": 6,
+      "note": "Where the contemporaneous updates were u",
+      "expect": "remove direct run formatting"
+    },
+    {
+      "id": "D077",
+      "cls": "footnote_style",
+      "tracked": false,
+      "section": 6,
+      "note": "Engineer's Determination Lette",
+      "expect": "set footnote to FootnoteText style"
+    },
+    {
+      "id": "D078",
+      "cls": "table_style",
+      "tracked": false,
+      "section": 6,
+      "note": "window table",
+      "expect": "set table to LITable style"
+    },
+    {
+      "id": "D079",
+      "cls": "classify_body",
+      "tracked": false,
+      "section": 7,
+      "note": "My analysis indicates a net slippage of ",
+      "expect": "map foreign/Normal -> NumberedParagraph"
+    },
+    {
+      "id": "D080",
+      "cls": "classify_body",
+      "tracked": false,
+      "section": 7,
+      "note": "Progress on electrical building stalled ",
+      "expect": "map foreign/Normal -> NumberedParagraph"
+    },
+    {
+      "id": "D081",
+      "cls": "strip_direct",
+      "tracked": false,
+      "section": 7,
+      "note": "My analysis indicates a net slippage of ",
+      "expect": "remove direct run formatting"
+    },
+    {
+      "id": "D082",
+      "cls": "classify_body",
+      "tracked": false,
+      "section": 7,
+      "note": "Progress on substructure stalled during ",
+      "expect": "map foreign/Normal -> NumberedParagraph"
+    },
+    {
+      "id": "D083",
+      "cls": "footnote_style",
+      "tracked": false,
+      "section": 7,
+      "note": "AACE International, Recommende",
+      "expect": "set footnote to FootnoteText style"
+    },
+    {
+      "id": "D084",
+      "cls": "classify_bullet",
+      "tracked": false,
+      "section": 7,
+      "note": "The contemporaneous schedule updates dem",
+      "expect": "map ListParagraph bullet -> ListBullet*"
+    },
+    {
+      "id": "D085",
+      "cls": "table_style",
+      "tracked": false,
+      "section": 7,
+      "note": "window table",
+      "expect": "set table to LITable style"
+    },
+    {
+      "id": "D086",
+      "cls": "strip_direct",
+      "tracked": false,
+      "section": 7,
+      "note": "The contemporaneous schedule updates dem",
+      "expect": "remove direct run formatting"
+    },
+    {
+      "id": "D087",
+      "cls": "classify_body",
+      "tracked": false,
+      "section": 7,
+      "note": "The delay to commissioning was neither f",
+      "expect": "map foreign/Normal -> NumberedParagraph"
+    },
+    {
+      "id": "D088",
+      "cls": "classify_body",
+      "tracked": false,
+      "section": 7,
+      "note": "My analysis indicates a net slippage of ",
+      "expect": "map foreign/Normal -> NumberedParagraph"
+    },
+    {
+      "id": "D089",
+      "cls": "strip_direct",
+      "tracked": false,
+      "section": 7,
+      "note": "My analysis indicates a net slippage of ",
+      "expect": "remove direct run formatting"
+    },
+    {
+      "id": "D090",
+      "cls": "classify_bullet",
+      "tracked": false,
+      "section": 7,
+      "note": "The contemporaneous schedule updates dem",
+      "expect": "map ListParagraph bullet -> ListBullet*"
+    },
+    {
+      "id": "D091",
+      "cls": "classify_bullet",
+      "tracked": false,
+      "section": 7,
+      "note": "The contemporaneous schedule updates dem",
+      "expect": "map ListParagraph bullet -> ListBullet*"
+    },
+    {
+      "id": "D092",
+      "cls": "strip_direct",
+      "tracked": false,
+      "section": 7,
+      "note": "The evidence establishes that the flare ",
+      "expect": "remove direct run formatting"
+    },
+    {
+      "id": "D093",
+      "cls": "classify_body",
+      "tracked": false,
+      "section": 7,
+      "note": "The contemporaneous schedule updates dem",
+      "expect": "map foreign/Normal -> NumberedParagraph"
+    },
+    {
+      "id": "D094",
+      "cls": "strip_direct",
+      "tracked": false,
+      "section": 7,
+      "note": "The contemporaneous schedule updates dem",
+      "expect": "remove direct run formatting"
+    },
+    {
+      "id": "D095",
+      "cls": "strip_direct",
+      "tracked": false,
+      "section": 7,
+      "note": "Progress on pipe-rack stalled during the",
+      "expect": "remove direct run formatting"
+    },
+    {
+      "id": "D096",
+      "cls": "strip_direct",
+      "tracked": false,
+      "section": 8,
+      "note": "The evidence establishes that the jetty ",
+      "expect": "remove direct run formatting"
+    },
+    {
+      "id": "D097",
+      "cls": "classify_body",
+      "tracked": false,
+      "section": 8,
+      "note": "As shown in the record, the pipe-rack ac",
+      "expect": "map foreign/Normal -> NumberedParagraph"
+    },
+    {
+      "id": "D098",
+      "cls": "strip_direct",
+      "tracked": false,
+      "section": 8,
+      "note": "As shown in the record, the pipe-rack ac",
+      "expect": "remove direct run formatting"
+    },
+    {
+      "id": "D099",
+      "cls": "classify_body",
+      "tracked": false,
+      "section": 8,
+      "note": "The evidence establishes that the commis",
+      "expect": "map foreign/Normal -> NumberedParagraph"
+    },
+    {
+      "id": "D100",
+      "cls": "footnote_style",
+      "tracked": false,
+      "section": 8,
+      "note": "AACE International, Recommende",
+      "expect": "set footnote to FootnoteText style"
+    },
+    {
+      "id": "D101",
+      "cls": "classify_body",
+      "tracked": false,
+      "section": 8,
+      "note": "The delay to substructure was neither fo",
+      "expect": "map foreign/Normal -> NumberedParagraph"
+    },
+    {
+      "id": "D102",
+      "cls": "classify_body",
+      "tracked": false,
+      "section": 8,
+      "note": "Progress on jetty topsides stalled durin",
+      "expect": "map foreign/Normal -> NumberedParagraph"
+    },
+    {
+      "id": "D103",
+      "cls": "classify_bullet",
+      "tracked": false,
+      "section": 8,
+      "note": "The delay to control building was neithe",
+      "expect": "map ListParagraph bullet -> ListBullet*"
+    },
+    {
+      "id": "D104",
+      "cls": "classify_bullet",
+      "tracked": false,
+      "section": 8,
+      "note": "The contemporaneous schedule updates dem",
+      "expect": "map ListParagraph bullet -> ListBullet*"
+    },
+    {
+      "id": "D105",
+      "cls": "strip_direct",
+      "tracked": false,
+      "section": 8,
+      "note": "The evidence establishes that the compre",
+      "expect": "remove direct run formatting"
+    },
+    {
+      "id": "D106",
+      "cls": "strip_direct",
+      "tracked": false,
+      "section": 8,
+      "note": "The delay to piling was neither foreseea",
+      "expect": "remove direct run formatting"
+    },
+    {
+      "id": "D107",
+      "cls": "strip_direct",
+      "tracked": false,
+      "section": 8,
+      "note": "My analysis indicates a net slippage of ",
+      "expect": "remove direct run formatting"
+    },
+    {
+      "id": "D108",
+      "cls": "footnote_style",
+      "tracked": false,
+      "section": 8,
+      "note": "Monthly Progress Report No. 17",
+      "expect": "set footnote to FootnoteText style"
+    },
+    {
+      "id": "D109",
+      "cls": "classify_bullet",
+      "tracked": false,
+      "section": 8,
+      "note": "The contemporaneous schedule updates dem",
+      "expect": "map ListParagraph bullet -> ListBullet*"
+    },
+    {
+      "id": "D110",
+      "cls": "footnote_style",
+      "tracked": false,
+      "section": 9,
+      "note": "AACE International, Recommende",
+      "expect": "set footnote to FootnoteText style"
+    },
+    {
+      "id": "D111",
+      "cls": "strip_direct",
+      "tracked": false,
+      "section": 9,
+      "note": "As shown in the record, the compressor f",
+      "expect": "remove direct run formatting"
+    },
+    {
+      "id": "D112",
+      "cls": "classify_bullet",
+      "tracked": false,
+      "section": 9,
+      "note": "Progress on compressor foundation stalle",
+      "expect": "map ListParagraph bullet -> ListBullet*"
+    },
+    {
+      "id": "D113",
+      "cls": "classify_bullet",
+      "tracked": false,
+      "section": 9,
+      "note": "My analysis indicates a net slippage of ",
+      "expect": "map ListParagraph bullet -> ListBullet*"
+    },
+    {
+      "id": "D114",
+      "cls": "strip_direct",
+      "tracked": false,
+      "section": 9,
+      "note": "The contemporaneous schedule updates dem",
+      "expect": "remove direct run formatting"
+    },
+    {
+      "id": "D115",
+      "cls": "footnote_style",
+      "tracked": false,
+      "section": 9,
+      "note": "Monthly Progress Report No. 14",
+      "expect": "set footnote to FootnoteText style"
+    },
+    {
+      "id": "D116",
+      "cls": "classify_body",
+      "tracked": false,
+      "section": 9,
+      "note": "The evidence establishes that the substr",
+      "expect": "map foreign/Normal -> NumberedParagraph"
+    },
+    {
+      "id": "D117",
+      "cls": "strip_direct",
+      "tracked": false,
+      "section": 9,
+      "note": "The evidence establishes that the substr",
+      "expect": "remove direct run formatting"
+    },
+    {
+      "id": "D118",
+      "cls": "classify_bullet",
+      "tracked": false,
+      "section": 9,
+      "note": "Progress on compressor foundation stalle",
+      "expect": "map ListParagraph bullet -> ListBullet*"
+    },
+    {
+      "id": "D119",
+      "cls": "strip_direct",
+      "tracked": false,
+      "section": 9,
+      "note": "The evidance establishes that the commis",
+      "expect": "remove direct run formatting"
+    },
+    {
+      "id": "D120",
+      "cls": "classify_body",
+      "tracked": false,
+      "section": 9,
+      "note": "The contemporaneous schedule updates dem",
+      "expect": "map foreign/Normal -> NumberedParagraph"
+    },
+    {
+      "id": "D121",
+      "cls": "strip_direct",
+      "tracked": false,
+      "section": 9,
+      "note": "The contemporaneous schedule updates dem",
+      "expect": "remove direct run formatting"
+    },
+    {
+      "id": "D122",
+      "cls": "classify_body",
+      "tracked": false,
+      "section": 9,
+      "note": "As shown in the record, the jetty topsid",
+      "expect": "map foreign/Normal -> NumberedParagraph"
+    },
+    {
+      "id": "D123",
+      "cls": "strip_direct",
+      "tracked": false,
+      "section": 10,
+      "note": "The contemporaneous schedule updates dem",
+      "expect": "remove direct run formatting"
+    },
+    {
+      "id": "D124",
+      "cls": "classify_body",
+      "tracked": false,
+      "section": 10,
+      "note": "My analysis indicates a net slippage of ",
+      "expect": "map foreign/Normal -> NumberedParagraph"
+    },
+    {
+      "id": "D125",
+      "cls": "footnote_style",
+      "tracked": false,
+      "section": 10,
+      "note": "Engineer's Determination Lette",
+      "expect": "set footnote to FootnoteText style"
+    },
+    {
+      "id": "D126",
+      "cls": "classify_body",
+      "tracked": false,
+      "section": 10,
+      "note": "The evidence establishes that the pipe-r",
+      "expect": "map foreign/Normal -> NumberedParagraph"
+    },
+    {
+      "id": "D127",
+      "cls": "classify_body",
+      "tracked": false,
+      "section": 10,
+      "note": "Progress on piling stalled during the wi",
+      "expect": "map foreign/Normal -> NumberedParagraph"
+    },
+    {
+      "id": "D128",
+      "cls": "footnote_style",
+      "tracked": false,
+      "section": 10,
+      "note": "Society of Construction Law, D",
+      "expect": "set footnote to FootnoteText style"
+    },
+    {
+      "id": "D129",
+      "cls": "classify_body",
+      "tracked": false,
+      "section": 10,
+      "note": "The dealy to electrical building was nei",
+      "expect": "map foreign/Normal -> NumberedParagraph"
+    },
+    {
+      "id": "D130",
+      "cls": "footnote_style",
+      "tracked": false,
+      "section": 10,
+      "note": "Engineer's Determination Lette",
+      "expect": "set footnote to FootnoteText style"
+    },
+    {
+      "id": "D131",
+      "cls": "classify_body",
+      "tracked": false,
+      "section": 10,
+      "note": "As shown in the record, the commissionin",
+      "expect": "map foreign/Normal -> NumberedParagraph"
+    },
+    {
+      "id": "D132",
+      "cls": "classify_bullet",
+      "tracked": false,
+      "section": 10,
+      "note": "The evidence establishes that the contro",
+      "expect": "map ListParagraph bullet -> ListBullet*"
+    },
+    {
+      "id": "D133",
+      "cls": "classify_bullet",
+      "tracked": false,
+      "section": 10,
+      "note": "The evidence establishes that the substr",
+      "expect": "map ListParagraph bullet -> ListBullet*"
+    },
+    {
+      "id": "D134",
+      "cls": "classify_bullet",
+      "tracked": false,
+      "section": 10,
+      "note": "The contemporaneous schedule updates dem",
+      "expect": "map ListParagraph bullet -> ListBullet*"
+    },
+    {
+      "id": "D135",
+      "cls": "pdf_linesplit",
+      "tracked": false,
+      "section": 10,
+      "note": "Ownership of float shall reside with the",
+      "expect": "merge PDF line-split excerpts (#1)"
+    },
+    {
+      "id": "D136",
+      "cls": "strip_direct",
+      "tracked": false,
+      "section": 10,
+      "note": "As shown in the record, the electrical b",
+      "expect": "remove direct run formatting"
+    },
+    {
+      "id": "D137",
+      "cls": "footnote_style",
+      "tracked": true,
+      "section": 10,
+      "note": "Engineer's Determination Lette",
+      "expect": "set footnote to FootnoteText style"
+    },
+    {
+      "id": "D138",
+      "cls": "strip_direct",
+      "tracked": false,
+      "section": 10,
+      "note": "The evidence establishes that the contro",
+      "expect": "remove direct run formatting"
+    },
+    {
+      "id": "D139",
+      "cls": "footnote_style",
+      "tracked": false,
+      "section": 10,
+      "note": "Engineer's Determination Lette",
+      "expect": "set footnote to FootnoteText style"
+    },
+    {
+      "id": "D140",
+      "cls": "classify_body",
+      "tracked": false,
+      "section": 10,
+      "note": "The delay to control building was neithe",
+      "expect": "map foreign/Normal -> NumberedParagraph"
+    },
+    {
+      "id": "D141",
+      "cls": "pdf_linesplit",
+      "tracked": false,
+      "section": 10,
+      "note": "Ownership of float shall reside with the",
+      "expect": "merge PDF line-split excerpts (#1)"
+    },
+    {
+      "id": "D142",
+      "cls": "classify_body",
+      "tracked": false,
+      "section": 11,
+      "note": "My analysis indicates a net slippage of ",
+      "expect": "map foreign/Normal -> NumberedParagraph"
+    },
+    {
+      "id": "D143",
+      "cls": "classify_body",
+      "tracked": false,
+      "section": 11,
+      "note": "The evidence establishes that the compre",
+      "expect": "map foreign/Normal -> NumberedParagraph"
+    },
+    {
+      "id": "D144",
+      "cls": "classify_body",
+      "tracked": false,
+      "section": 11,
+      "note": "Progress on commissioning stalled during",
+      "expect": "map foreign/Normal -> NumberedParagraph"
+    },
+    {
+      "id": "D145",
+      "cls": "classify_body",
+      "tracked": false,
+      "section": 11,
+      "note": "The delay to LNG tank was neither forese",
+      "expect": "map foreign/Normal -> NumberedParagraph"
+    },
+    {
+      "id": "D146",
+      "cls": "pdf_linesplit",
+      "tracked": false,
+      "section": 11,
+      "note": "The Contractor shall be entitled to an e",
+      "expect": "merge PDF line-split excerpts (#1)"
+    },
+    {
+      "id": "D147",
+      "cls": "strip_direct",
+      "tracked": false,
+      "section": 11,
+      "note": "My analysis indicates a net slippage of ",
+      "expect": "remove direct run formatting"
+    },
+    {
+      "id": "D148",
+      "cls": "classify_body",
+      "tracked": false,
+      "section": 11,
+      "note": "The evidence establishes that the electr",
+      "expect": "map foreign/Normal -> NumberedParagraph"
+    },
+    {
+      "id": "D149",
+      "cls": "strip_direct",
+      "tracked": false,
+      "section": 11,
+      "note": "My analysis indicates a net slippage of ",
+      "expect": "remove direct run formatting"
+    },
+    {
+      "id": "D150",
+      "cls": "classify_bullet",
+      "tracked": false,
+      "section": 11,
+      "note": "The evidence establishes that the pipe-r",
+      "expect": "map ListParagraph bullet -> ListBullet*"
+    },
+    {
+      "id": "D151",
+      "cls": "pdf_linesplit",
+      "tracked": false,
+      "section": 11,
+      "note": "The Contractor shall be entitled to an e",
+      "expect": "merge PDF line-split excerpts (#1)"
+    },
+    {
+      "id": "D152",
+      "cls": "footnote_style",
+      "tracked": false,
+      "section": 12,
+      "note": "Baseline Programme Rev. 0, act",
+      "expect": "set footnote to FootnoteText style"
+    },
+    {
+      "id": "D153",
+      "cls": "classify_body",
+      "tracked": false,
+      "section": 12,
+      "note": "In my opinion, and to a reasonable degre",
+      "expect": "map foreign/Normal -> NumberedParagraph"
+    },
+    {
+      "id": "D154",
+      "cls": "classify_body",
+      "tracked": false,
+      "section": 12,
+      "note": "In my opinion, and to a reasonable degre",
+      "expect": "map foreign/Normal -> NumberedParagraph"
+    },
+    {
+      "id": "D155",
+      "cls": "footnote_style",
+      "tracked": false,
+      "section": 12,
+      "note": "Monthly Progress Report No. 15",
+      "expect": "set footnote to FootnoteText style"
+    },
+    {
+      "id": "D156",
+      "cls": "classify_body",
+      "tracked": false,
+      "section": 12,
+      "note": "In my opinion, and to a reasonable degre",
+      "expect": "map foreign/Normal -> NumberedParagraph"
+    },
+    {
+      "id": "D157",
+      "cls": "strip_direct",
+      "tracked": false,
+      "section": 12,
+      "note": "In my opinion, and to a reasonable degre",
+      "expect": "remove direct run formatting"
+    },
+    {
+      "id": "D158",
+      "cls": "footnote_style",
+      "tracked": true,
+      "section": 12,
+      "note": "Society of Construction Law, D",
+      "expect": "set footnote to FootnoteText style"
+    },
+    {
+      "id": "D159",
+      "cls": "classify_bullet",
+      "tracked": false,
+      "section": 12,
+      "note": "As shown in the record, the pipe-rack ac",
+      "expect": "map ListParagraph bullet -> ListBullet*"
+    },
+    {
+      "id": "D160",
+      "cls": "classify_bullet",
+      "tracked": false,
+      "section": 12,
+      "note": "Progress on compressor foundation stalle",
+      "expect": "map ListParagraph bullet -> ListBullet*"
+    },
+    {
+      "id": "D161",
+      "cls": "pdf_linesplit",
+      "tracked": false,
+      "section": 12,
+      "note": "The Contractor shall be entitled to an e",
+      "expect": "merge PDF line-split excerpts (#1)"
+    },
+    {
+      "id": "D162",
+      "cls": "classify_body",
+      "tracked": false,
+      "section": 12,
+      "note": "In my opinion, and to a reasonable degre",
+      "expect": "map foreign/Normal -> NumberedParagraph"
+    },
+    {
+      "id": "D163",
+      "cls": "strip_direct",
+      "tracked": false,
+      "section": 12,
+      "note": "In my opinion, and to a reasonable degre",
+      "expect": "remove direct run formatting"
+    },
+    {
+      "id": "D164",
+      "cls": "classify_body",
+      "tracked": false,
+      "section": 12,
+      "note": "In my opinion, and to a reasonable degre",
+      "expect": "map foreign/Normal -> NumberedParagraph"
+    },
+    {
+      "id": "D165",
+      "cls": "footnote_style",
+      "tracked": false,
+      "section": 12,
+      "note": "Baseline Programme Rev. 0, act",
+      "expect": "set footnote to FootnoteText style"
+    },
+    {
+      "id": "D166",
+      "cls": "classify_body",
+      "tracked": false,
+      "section": 12,
+      "note": "It is my opinion that the Contractor is ",
+      "expect": "map foreign/Normal -> NumberedParagraph"
+    },
+    {
+      "id": "D167",
+      "cls": "strip_direct",
+      "tracked": false,
+      "section": 12,
+      "note": "It is my opinion that the Contractor is ",
+      "expect": "remove direct run formatting"
+    },
+    {
+      "id": "D168",
+      "cls": "classify_bullet",
+      "tracked": false,
+      "section": 12,
+      "note": "The contemporaneous schedule updates dem",
+      "expect": "map ListParagraph bullet -> ListBullet*"
+    },
+    {
+      "id": "D169",
+      "cls": "pdf_linesplit",
+      "tracked": false,
+      "section": 12,
+      "note": "Neither party shall be liable to the oth",
+      "expect": "merge PDF line-split excerpts (#1)"
+    },
+    {
+      "id": "D170",
+      "cls": "classify_body",
+      "tracked": true,
+      "section": 13,
+      "note": "foreign+tracked",
+      "expect": "map to NumberedParagraph, preserve edit"
+    },
+    {
+      "id": "D171",
+      "cls": "strip_direct",
+      "tracked": true,
+      "section": 13,
+      "note": "direct+tracked",
+      "expect": "strip direct formatting, preserve edit"
+    },
+    {
+      "id": "D172",
+      "cls": "classify_bullet",
+      "tracked": false,
+      "section": 13,
+      "note": "A bulleted item on a foreign list style.",
+      "expect": "map ListParagraph bullet -> ListBullet*"
+    },
+    {
+      "id": "D173",
+      "cls": "level_fix",
+      "tracked": false,
+      "section": 13,
+      "note": "A sub-item that started at level two und",
+      "expect": "promote L2 under numbered para -> L1"
+    },
+    {
+      "id": "D174",
+      "cls": "typography",
+      "tracked": false,
+      "section": 13,
+      "note": "The Engineer stated that the works were ",
+      "expect": "smart quotes, en dash, date, inch mark"
+    },
+    {
+      "id": "D175",
+      "cls": "typography",
+      "tracked": true,
+      "section": 13,
+      "note": "The Engineer stated that the works were ",
+      "expect": "smart quotes, en dash, date, inch mark"
+    },
+    {
+      "id": "D176",
+      "cls": "pdf_linesplit",
+      "tracked": false,
+      "section": 13,
+      "note": "The tribunal held that the extension of ",
+      "expect": "merge PDF line-split excerpts (#1)"
+    },
+    {
+      "id": "D177",
+      "cls": "empty_para",
+      "tracked": false,
+      "section": 13,
+      "note": "(empty)",
+      "expect": "delete empty numbered paragraph (#2)"
+    },
+    {
+      "id": "D178",
+      "cls": "page_break",
+      "tracked": false,
+      "section": 13,
+      "note": "(page break)",
+      "expect": "remove manual page-break paragraph (#4)"
+    },
+    {
+      "id": "D179",
+      "cls": "heading_body_merge",
+      "tracked": false,
+      "section": 13,
+      "note": "Basis of the Delay",
+      "expect": "split heading from body (#6)"
+    },
+    {
+      "id": "D180",
+      "cls": "table_style",
+      "tracked": false,
+      "section": 13,
+      "note": "window table",
+      "expect": "set table to LITable style"
+    },
+    {
+      "id": "D181",
+      "cls": "table_style",
+      "tracked": false,
+      "section": 13,
+      "note": "window table",
+      "expect": "set table to LITable style"
+    },
+    {
+      "id": "D182",
+      "cls": "table_empty_col",
+      "tracked": false,
+      "section": 13,
+      "note": "window table",
+      "expect": "drop empty column (#7)"
+    },
+    {
+      "id": "D183",
+      "cls": "wrapper_table",
+      "tracked": false,
+      "section": 13,
+      "note": "single-cell wrapper",
+      "expect": "unwrap wrapper table (#3)"
+    },
+    {
+      "id": "D184",
+      "cls": "floating_image",
+      "tracked": true,
+      "section": 13,
+      "note": "As-planned versus as-built sch",
+      "expect": "convert floating image to inline (#5)"
+    },
+    {
+      "id": "D185",
+      "cls": "caption_literal",
+      "tracked": true,
+      "section": 13,
+      "note": "Figure 13-2: Planned versus actual cumul",
+      "expect": "rebuild caption as fields (#8a)"
+    },
+    {
+      "id": "D186",
+      "cls": "figure_numbering",
+      "tracked": false,
+      "section": 13,
+      "note": "Delay days by causal category",
+      "expect": "audit flags caption numbering drift"
+    },
+    {
+      "id": "D187",
+      "cls": "tof_mismatch",
+      "tracked": false,
+      "section": 13,
+      "note": "Distribution of total float",
+      "expect": "audit flags ToF title mismatch"
+    },
+    {
+      "id": "D188",
+      "cls": "xref_literal",
+      "tracked": false,
+      "section": 13,
+      "note": "literal xref",
+      "expect": "rebuild literal cross-reference as REF (#8b)"
+    },
+    {
+      "id": "D189",
+      "cls": "xref_literal",
+      "tracked": true,
+      "section": 13,
+      "note": "literal xref tracked-adjacent",
+      "expect": "rebuild REF (#8b), flag review"
+    },
+    {
+      "id": "D190",
+      "cls": "footnote_style",
+      "tracked": true,
+      "section": 13,
+      "note": "Engineer's Determination Lette",
+      "expect": "set footnote to FootnoteText style"
+    },
+    {
+      "id": "D191",
+      "cls": "section_landscape",
+      "tracked": false,
+      "section": 13,
+      "note": "Appendix A",
+      "expect": "restore portrait section after landscape"
+    }
+  ],
+  "tracked": {
+    "ins": 36,
+    "del": 1,
+    "ppr_change": 1,
+    "rpr_change": 1,
+    "para_inserted": 1
+  },
+  "comments": 6,
+  "authors": [
+    "Counsel review",
+    "Dr. Evelyn Marchetti",
+    "James Okonkwo",
+    "Priya Raman",
+    "T. Nakamura"
+  ],
+  "counts": {
+    "classify_body": 57,
+    "strip_direct": 54,
+    "classify_bullet": 28,
+    "pdf_linesplit": 10,
+    "table_style": 6,
+    "footnote_style": 21,
+    "level_fix": 1,
+    "typography": 2,
+    "empty_para": 1,
+    "page_break": 1,
+    "heading_body_merge": 1,
+    "table_empty_col": 1,
+    "wrapper_table": 1,
+    "floating_image": 1,
+    "caption_literal": 1,
+    "figure_numbering": 1,
+    "tof_mismatch": 1,
+    "xref_literal": 2,
+    "section_landscape": 1
+  },
+  "spelling": 149,
+  "grammar": 8,
+  "total_defects": 191,
+  "tracked_total": 40,
+  "spelling_errors": 149,
+  "grammar_errors": 8,
+  "figures": 24,
+  "expected_preservation": "clean"
+}
