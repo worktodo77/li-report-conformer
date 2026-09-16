@@ -385,7 +385,9 @@ def _stream_emit(elem, out, part, rels, parts):
         out.append((f'<{lt}', elem.get(_w('id'), '')))
     if lt in _SIMPLE_TEXT and elem.text is not None:
         out.append((_SIMPLE_TEXT[lt], elem.text))
-    elif lt == 'tab': out.append(('TAB',))
+    elif lt == 'tab' and not elem.attrib: out.append(('TAB',))   # run content tab, NOT a tab-STOP
+    # a <w:tab w:val=".." w:pos=".."/> inside <w:tabs> is pPr FORMATTING, not content — skip it, so
+    # stripping direct tab-stop formatting is not mistaken for deleting a content tab.
     elif lt in ('br', 'cr'): out.append(('BR', elem.get(_w('type')) or ''))
     elif lt == 'noBreakHyphen': out.append(('NBH',))
     elif lt == 'footnoteReference': out.append(('FN', elem.get(_w('id'))))

@@ -240,6 +240,19 @@ def test_stream_allows_current_formatting_change_under_revision():
     assert not R.stream_violations(*_streams(BODY, after))
 
 
+def test_content_stream_ignores_tab_stops_keeps_content_tabs():
+    # A run-level content <w:tab/> IS in the stream; a <w:tabs> tab-STOP definition (pPr formatting)
+    # is NOT — so stripping direct tab-stop formatting must not look like deleting a content tab.
+    with_stops = ('<w:p><w:pPr><w:tabs><w:tab w:val="left" w:pos="900"/>'
+                  '<w:tab w:val="left" w:pos="4500"/></w:tabs></w:pPr>'
+                  '<w:r><w:tab/><w:t>Signed:</w:t></w:r></w:p>')
+    stripped = '<w:p><w:pPr></w:pPr><w:r><w:tab/><w:t>Signed:</w:t></w:r></w:p>'
+    assert not R.stream_violations(*_streams(with_stops, stripped))   # tab-stops removed -> allowed
+    # but deleting the run-level content tab IS caught
+    no_tab = '<w:p><w:pPr></w:pPr><w:r><w:t>Signed:</w:t></w:r></w:p>'
+    assert R.stream_violations(*_streams(with_stops, no_tab))
+
+
 def test_unsupported_revision_is_surfaced_not_dropped():
     body = ('<w:tbl><w:tr><w:tc><w:tcPr>'
             '<w:cellDel w:id="4" w:author="Ann" w:date="D"/></w:tcPr>'

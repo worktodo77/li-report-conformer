@@ -610,8 +610,13 @@ class Conformer:
             if preserve and (self._REV_CONTENT_RE.search(f) or self._CHANGE_RE.search(f)):
                 return f
             f = re.sub(r'<w:p\b[^>]*>(<w:pPr>.*?</w:pPr>)?', '<w:p><w:pPr><w:pStyle w:val="FootnoteText"/></w:pPr>', f, count=1, flags=re.S)
-            f = re.sub(r'(<w:footnoteRef/></w:r>)<w:r>(?:<w:rPr>.*?</w:rPr>)?<w:t xml:space="preserve"> +</w:t></w:r>', r'\1<w:r><w:tab/></w:r>', f, flags=re.S)
-            if '<w:footnoteRef/></w:r><w:r><w:tab/>' not in f: f = f.replace('<w:footnoteRef/></w:r>', '<w:footnoteRef/></w:r><w:r><w:tab/></w:r>', 1)
+            if not preserve:
+                # Inserting / substituting a run-level <w:tab/> after the footnote number is a
+                # CONTENT change (a new tab token). In preserve mode we keep the footnote's original
+                # number->text separator and conform only its style + direct run formatting, so the
+                # content-stream gate stays green and footnote FORMATTING still gets fixed.
+                f = re.sub(r'(<w:footnoteRef/></w:r>)<w:r>(?:<w:rPr>.*?</w:rPr>)?<w:t xml:space="preserve"> +</w:t></w:r>', r'\1<w:r><w:tab/></w:r>', f, flags=re.S)
+                if '<w:footnoteRef/></w:r><w:r><w:tab/>' not in f: f = f.replace('<w:footnoteRef/></w:r>', '<w:footnoteRef/></w:r><w:r><w:tab/></w:r>', 1)
             f = re.sub(r'<w:rPr>(.*?)</w:rPr>', lambda r: '<w:rPr>' + ''.join(cx for t2, cx in children(r.group(1)) if t2 in ('rStyle', 'i', 'b')) + '</w:rPr>', f, flags=re.S)
             return f
         self.fn = re.sub(r'<w:footnote w:id="[1-9]\d*".*?</w:footnote>', fix, self.fn, flags=re.S)
