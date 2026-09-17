@@ -234,6 +234,10 @@ class Conformer:
         if 'w:styleId="LITable"' not in self.t_styles: self.t_styles = self.t_styles.replace('</w:styles>', LITABLE + '</w:styles>')
         self.doc = self.parts['word/document.xml'].decode('utf8')
         self.styles = self.parts['word/styles.xml'].decode('utf8'); self.num = self.parts['word/numbering.xml'].decode('utf8')
+        # Pristine numbering/styles captured for resolution-based verification (numbering_report): passes
+        # reassign self.num/self.styles, so holding the original strings costs nothing and lets us prove
+        # no list's MEANING (number<->bullet, level) flipped except where a repair rule intended it.
+        self._orig_num0 = self.num; self._orig_styles0 = self.styles
         self.fn = self.parts['word/footnotes.xml'].decode('utf8'); self.settings = self.parts['word/settings.xml'].decode('utf8')
         self.head, body, self.tail = re.search(r'(.*<w:body>)(.*)(</w:body>.*)', self.doc, re.S).groups()
         self.items = split_body(body)
@@ -1237,6 +1241,8 @@ class Conformer:
         styles.xml only — orthogonal to every tracked change in the body."""
         if self._skip('styles-repair'):
             return
+        from conformer.numbering import NumberingGraph
+        tgraph = NumberingGraph(self.t_num, self.t_styles)
         tmpl = {m.group(1): m.group(0) for m in
                 re.finditer(r'<w:style\b[^>]*w:styleId="([^"]+)".*?</w:style>', self.t_styles, re.S)}
         fixed = [0]
@@ -1245,30 +1251,87 @@ class Conformer:
             sid = re.search(r'w:styleId="([^"]+)"', orig).group(1)
             if sid in tmpl and tmpl[sid] != orig:
                 fixed[0] += 1
-                # Repair the style's formatting from the template, but KEEP the document's own numbering
-                # association: the template's <w:numId> values index the TEMPLATE's numbering.xml, and
-                # reusing them against the document's numbering silently reformats decimal lists as
-                # bullets (numId collision). Preserving the doc's numPr keeps every list's format intact.
+                # Repair the style's FORMATTING from the template, but keep the document's own numbering
+                # association (containment): template numIds index the template's numbering.xml.
                 return self._keep_numpr(orig, tmpl[sid])
             return orig
         self.styles = re.sub(r'<w:style\b[^>]*w:styleId="([^"]+)".*?</w:style>', repl,
                              self.styles, flags=re.S)
+
+        # Graph-aware numbering IMPORT (replaces the old "append every template def whose numeric id is
+        # missing" merge — the collision that reformatted decimal lists as bullets). We import a template
+        # list ONLY as a dependency of a style we are adding, and we import its COMPLETE definition under
+        # FRESHLY ALLOCATED ids, rewriting exactly that import's references. Existing document lists keep
+        # their own ids and meaning untouched.
+        dgraph = NumberingGraph(self.num, self.styles)
+        alloc = {'num': max(dgraph.used_num_ids() | {0}) + 1,
+                 'abs': max(dgraph.used_abstract_ids() | {0}) + 1}
+        imported = {}          # template numId -> new document numId (import each list once)
+        new_defs = []
+        def _import_tpl_list(tpl_nid):
+            if tpl_nid in imported:
+                return imported[tpl_nid]
+            raw_num = tgraph.raw_num(tpl_nid)
+            if not raw_num:
+                return None
+            new_nid = str(alloc['num']); alloc['num'] += 1
+            tpl_aid = tgraph.abstract_of(tpl_nid)
+            raw_abs = tgraph.raw_abstract(tpl_aid) if tpl_aid else None
+            new_aid = None
+            if raw_abs:
+                new_aid = str(alloc['abs']); alloc['abs'] += 1
+                new_defs.append(re.sub(r'(<w:abstractNum\b[^>]*w:abstractNumId=")[^"]+(")',
+                                       lambda mm: mm.group(1) + new_aid + mm.group(2), raw_abs, count=1))
+            nn = re.sub(r'(<w:num\b[^>]*w:numId=")[^"]+(")',
+                        lambda mm: mm.group(1) + new_nid + mm.group(2), raw_num, count=1)
+            if new_aid is not None:
+                nn = re.sub(r'(<w:abstractNumId w:val=")[^"]+(")',
+                            lambda mm: mm.group(1) + new_aid + mm.group(2), nn, count=1)
+            new_defs.append(nn)
+            imported[tpl_nid] = new_nid
+            return new_nid
+
         existing = set(re.findall(r'<w:style [^>]*w:styleId="([^"]+)"', self.styles))
-        add = [d for sid, d in tmpl.items() if sid not in existing]
-        if add:
-            self.styles = self.styles.replace('</w:styles>', ''.join(add) + '</w:styles>', 1)
-        # add numbering definitions the doc lacks so repaired list styles resolve
-        have_abs = set(re.findall(r'<w:abstractNum w:abstractNumId="(\d+)"', self.num))
-        have_num = set(re.findall(r'<w:num w:numId="(\d+)"', self.num))
-        addnum = [m.group(0) for m in re.finditer(r'<w:abstractNum w:abstractNumId="(\d+)".*?</w:abstractNum>',
-                                                  self.t_num, re.S) if m.group(1) not in have_abs]
-        addnum += [m.group(0) for m in re.finditer(r'<w:num w:numId="(\d+)"[^>]*>.*?</w:num>',
-                                                   self.t_num, re.S) if m.group(1) not in have_num]
-        if addnum:
-            self.num = self.num.replace('</w:numbering>', ''.join(addnum) + '</w:numbering>', 1)
+        added = []
+        for sid, d in tmpl.items():
+            if sid in existing:
+                continue
+            tpl_np = tgraph.style_numpr(sid)      # the (numId, ilvl) the template gives this style
+            if tpl_np and '<w:numPr>' in d:
+                new_nid = _import_tpl_list(tpl_np[0])
+                if new_nid:
+                    d = re.sub(r'(<w:numPr>.*?<w:numId w:val=")[^"]+(")',
+                               lambda mm: mm.group(1) + new_nid + mm.group(2), d, count=1, flags=re.S)
+            added.append(d)
+        if added:
+            self.styles = self.styles.replace('</w:styles>', ''.join(added) + '</w:styles>', 1)
+        if new_defs:
+            self.num = self.num.replace('</w:numbering>', ''.join(new_defs) + '</w:numbering>', 1)
         self.say('M', -1, f'preserve mode: repaired {fixed[0]} corrupt style definitions + added '
-                          f'{len(add)} missing styles / {len(addnum)} numbering defs (docDefaults untouched)',
-                 'styles-repair')
+                          f'{len(added)} missing styles / imported {len(imported)} numbering defs with fresh '
+                          f'ids (existing lists untouched; docDefaults untouched)', 'styles-repair')
+
+    def numbering_report(self):
+        """Resolution-based numbering verification (the gate is blind to numbering.xml/styles.xml). For
+        every paragraph style, RESOLVE the list it uses before vs after conforming and compare the level
+        FORMAT (decimal/bullet/lowerLetter/…). A changed format with no explicit repair rule is a
+        conformance defect — this is what catches the Warhoe decimal↔bullet failure. Returns a list of
+        {style, before, after, meaning_flip} for every style whose resolved format changed."""
+        from conformer.numbering import NumberingGraph
+        before = NumberingGraph(self._orig_num0, self._orig_styles0)
+        after = NumberingGraph(self.num, self.styles)
+        changes = []
+        for sid in before.styles:
+            bp = before.style_numpr(sid)
+            ap = after.style_numpr(sid)
+            if not (bp and ap):
+                continue
+            bf = before.effective_format(*bp)
+            af = after.effective_format(*ap)
+            if bf and af and bf != af:
+                changes.append({'style': sid, 'before': bf, 'after': af,
+                                'meaning_flip': (bf == 'bullet') != (af == 'bullet')})
+        return changes
 
     _CHANGE_RE = re.compile(
         r'<w:(tblPrChange|trPrChange|tcPrChange|pPrChange|rPrChange|sectPrChange|tblPrExChange'
