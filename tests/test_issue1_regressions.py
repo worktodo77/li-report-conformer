@@ -10,6 +10,29 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
 W = 'xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"'
 
 
+# ---------------------------------------------------------------- R6: colour redundancy must be real
+def _scmap(**styles):
+    # styleId -> {'color', 'basedOn'} like the engine's _style_color_map()
+    return {sid: {'color': c, 'basedOn': b} for sid, (c, b) in styles.items()}
+
+
+def test_r6_black_over_red_char_style_is_not_redundant():
+    from conformer.engine import Conformer
+    c = Conformer.__new__(Conformer)
+    sc = _scmap(BodyText=(None, None), RedChar=('FF0000', None))
+    # explicit black run colour + a red CHARACTER style: removing the black would reveal red -> NOT redundant
+    assert c._color_is_redundant('<w:color w:val="000000"/>', 'RedChar', 'BodyText', sc) is False
+    # plain black on a black paragraph with no char style -> genuinely redundant
+    assert c._color_is_redundant('<w:color w:val="000000"/>', None, 'BodyText', sc) is True
+
+
+def test_r6_theme_colour_is_never_silently_stripped():
+    from conformer.engine import Conformer
+    c = Conformer.__new__(Conformer)
+    sc = _scmap(BodyText=(None, None))
+    assert c._color_is_redundant('<w:color w:val="000000" w:themeColor="text1"/>', None, 'BodyText', sc) is False
+
+
 # ---------------------------------------------------------------- R7: highlight decision honesty
 def test_r7_per_item_keep_survives_remove_all():
     import os as _os

@@ -632,12 +632,27 @@ class Conformer:
             sid = s['basedOn']
         return None
 
+    def _color_is_redundant(self, color_xml, rstyle, para_style, scmap):
+        """A direct run colour is redundant only if removing it leaves the SAME effective colour \u2014 the
+        character style's colour when the run carries one, otherwise the paragraph style's colour. So an
+        explicit black over a red character style is NOT redundant (removing it would reveal red). Theme
+        colours are never silently stripped (theme/tint/shade resolution is out of scope for a safe
+        no-visible-change removal)."""
+        if 'themeColor' in color_xml or 'themeTint' in color_xml or 'themeShade' in color_xml:
+            return False
+        m = re.search(r'w:val="([^"]+)"', color_xml)
+        direct = m.group(1) if m else None
+        eff_without = self._effective_style_color(rstyle, scmap) if rstyle else None
+        if eff_without is None:
+            eff_without = self._effective_style_color(para_style, scmap)
+        return self._norm_color(direct) == self._norm_color(eff_without)
+
     def _color_highlight_calls(self):
-        """Colour that MATCHES its paragraph style (e.g. the navy heading colour) is redundant \u2192 strip it
-        silently (no visible change). Colour that DEVIATES from the style (body text that should be black
-        but is blue) becomes a JUDGMENT CALL: accept \u2192 normalise to the style colour, skip/keep \u2192 leave.
-        Each HIGHLIGHT is a judgment call: accept \u2192 remove, skip \u2192 keep. Formatting only (the content
-        stream is unchanged); revised paragraphs and table cells are left to their own handling."""
+        """Colour that leaves the SAME effective colour when removed (redundant) is stripped silently (no
+        visible change \u2014 character style and theme dependencies considered). Colour that DEVIATES becomes
+        a JUDGMENT CALL: accept \u2192 normalise to the effective style colour, skip/keep \u2192 leave. Each
+        HIGHLIGHT is a judgment call: accept \u2192 remove, skip \u2192 keep. Formatting only (the content stream is
+        unchanged); revised paragraphs and table cells are left to their own handling."""
         preserve = self.disposition == 'preserve'
         scmap = self._style_color_map()
         for i in range(self.n()):
@@ -661,16 +676,20 @@ class Conformer:
                     return r
                 inner = rp.group(1)
                 new_inner = inner
+                rsm = re.search(r'<w:rStyle w:val="([^"]+)"', inner)
+                rstyle = rsm.group(1) if rsm else None
                 cm = re.search(r'<w:color\b[^>]*/>', new_inner)
                 if cm:
                     cv = re.search(r'w:val="([^"]+)"', cm.group(0))
                     cv = cv.group(1) if cv else None
-                    if self._norm_color(cv) == self._norm_color(style_col):
+                    if self._color_is_redundant(cm.group(0), rstyle, st, scmap):
                         new_inner = new_inner.replace(cm.group(0), '', 1)         # redundant \u2192 silent strip
                     else:
+                        # the colour the run would show if the direct one were removed (char style or para)
+                        eff = (self._effective_style_color(rstyle, scmap) if rstyle else None) or style_col
                         jc = self._jcall('color', i,
                                          f'Text colour is #{cv}; the {sname} style is '
-                                         f'{("#" + style_col) if style_col else "black"}.',
+                                         f'{("#" + eff) if eff else "black"}.',
                                          'Normalise to the style colour', alternatives=['Keep this colour'])
                         if self._decision_for(jc) == 'accept':
                             new_inner = new_inner.replace(cm.group(0), '', 1)
@@ -1200,9 +1219,11 @@ class Conformer:
         self._emit('structure')
         self.classify(); self.merge_pdf_lines()
         self.fix_headings(); self.fix_levels(); self.strip_direct(); self.fix_tables(); self.fix_figures()
-        self.fix_footnotes(); self.rebuild_fields(); self._color_highlight_calls()
+        self.fix_footnotes(); self.rebuild_fields()
         self._emit('type')
         self.typography(); self.house_style(); self.fix_sections(); self.replace_parts()
+        # colour/highlight AFTER replace_parts so redundancy is judged against the FINAL (template) styles
+        self._color_highlight_calls()
         self.audit_figures(); self.force_field_update()
 
     # ---------------------------------------------------------------- review-preserving pipeline
