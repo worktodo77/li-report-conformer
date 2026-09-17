@@ -98,6 +98,29 @@ def _border_is_house(borders_el):
     return True
 
 
+_GRID_SIDES = ('top', 'left', 'bottom', 'right', 'insideH', 'insideV')
+
+
+def _borders_form_house_grid(borders_el):
+    """The house grid is a grey ½pt line on ALL SIX sides — the four outer edges plus insideH/insideV —
+    each ENABLED (val='single', not nil/none), sized ½pt (sz 4) and coloured 808080. One grey side does
+    not establish the grid (issue #1 R5): a definition must resolve the whole grid, not merely mention the
+    colour somewhere."""
+    if borders_el is None:
+        return False
+    for name in _GRID_SIDES:
+        side = borders_el.find(_w(name))
+        if side is None:
+            return False
+        if (side.get(_w('val')) or '').lower() != 'single':
+            return False
+        if side.get(_w('sz')) not in ('4', None):
+            return False
+        if (side.get(_w('color')) or '').upper() not in (HOUSE['grid_color'], 'AUTO'):
+            return False
+    return True
+
+
 def _style_defines_house_table(styles_xml):
     """Verify the LITable style DEFINITION resolves the house appearance by its actual PROPERTIES (a grey
     grid on tblBorders sides; a navy fill on the firstRow conditional's cell shading) — not by a substring
@@ -116,17 +139,25 @@ def _style_defines_house_table(styles_xml):
     bad = []
     tblPr = el.find(_w('tblPr'))
     borders = tblPr.find(_w('tblBorders')) if tblPr is not None else None
-    if borders is None or not any((s.get(_w('color')) or '').upper() == HOUSE['grid_color'] for s in borders):
-        bad.append('grey grid on the table borders')
-    navy = False
+    if not _borders_form_house_grid(borders):
+        bad.append('grey ½pt grid on all six borders')
+    # the firstRow conditional must establish BOTH the navy fill AND the white header text — a fill alone
+    # is not a conformant header definition (issue #1 R5).
+    navy = white = False
     for sp in el.findall(_w('tblStylePr')):
-        if sp.get(_w('type')) == 'firstRow':
-            tcpr = sp.find(_w('tcPr'))
-            shd = tcpr.find(_w('shd')) if tcpr is not None else None
-            if shd is not None and (shd.get(_w('fill')) or '').upper() == HOUSE['header_fill']:
-                navy = True
+        if sp.get(_w('type')) != 'firstRow':
+            continue
+        tcpr = sp.find(_w('tcPr'))
+        shd = tcpr.find(_w('shd')) if tcpr is not None else None
+        if shd is not None and (shd.get(_w('fill')) or '').upper() == HOUSE['header_fill']:
+            navy = True
+        rpr = sp.find(_w('rPr'))
+        if rpr is not None and (_val(rpr, 'color') or '').upper() == HOUSE['header_text']:
+            white = True
     if not navy:
         bad.append('navy fill on the first-row header')
+    if not white:
+        bad.append('white header text on the first-row header')
     if bad:
         return [{'kind': 'style-corrupt', 'detail': 'LITable style definition is missing ' + '; '.join(bad),
                  'severity': 'fail'}]

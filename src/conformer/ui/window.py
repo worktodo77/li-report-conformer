@@ -1197,21 +1197,24 @@ class MainWindow(QMainWindow):
                 nrev = (len(unres.get('tables_needing_review', []) or []) + len(unres.get('tables_unresolved', []) or [])
                         + nreview)
                 nroll = len(unres.get('rolled_back_passes', []) or [])
-                # the SAME authoritative verdict the audit uses (includes unadjudicated review deviations)
+                # the SAME authoritative verdict the audit uses (includes unadjudicated review deviations).
+                # An exception is UNKNOWN, never an inferred pass — the older count-based predicate would
+                # fail open when the verdict itself could not be computed (issue #1 R3).
                 try:
                     formatting_ok = fresh.conformance_clean()
                 except Exception:
-                    formatting_ok = not (nflip or ninteg or ntbl)
+                    formatting_ok = None                         # UNKNOWN — verification did not complete
                 oc = QFrame(); oc.setObjectName('card')
                 ol = QVBoxLayout(oc)
                 for label, ok, detail in (
                     ('Review history preserved', rep.get('preservation', {}).get('clean') is True,
                      'Every tracked change and comment intact'),
-                    ('Formatting conforms', formatting_ok,
-                     'Numbering, definitions and table formatting resolve as intended'
-                     if formatting_ok
-                     else f'{nflip} list-meaning flip(s), {ninteg} definition issue(s), {ntbl} table(s) off, '
-                          f'{nreview} table(s) with unadjudicated review deviations'),
+                    ('Formatting conforms', formatting_ok is True,
+                     'Numbering, definitions and table formatting resolve as intended' if formatting_ok
+                     else ('Conformance could not be verified — treat this as an unverified review copy'
+                           if formatting_ok is None
+                           else f'{nflip} list-meaning flip(s), {ninteg} definition issue(s), {ntbl} table(s) '
+                                f'off, {nreview} table(s) with unadjudicated review deviations')),
                     ('Nothing left unresolved', not (nrev or nroll),
                      'No exceptions' if not (nrev or nroll)
                      else f'{nroll} pass(es) held back, {nrev} table(s) need a manual look')):
@@ -1505,6 +1508,32 @@ class MainWindow(QMainWindow):
         self.apply_worker.error.connect(self._on_analysis_error)
         self.apply_worker.start()
 
+    def _confirm_unverified_save(self, kind, detail):
+        """The save-boundary decision for a copy that is NOT verified clean. Returns True only on an
+        EXPLICIT choice to save a clearly-labelled review copy; the default is Cancel for damage/unknown so
+        an exception or unauthorized change never slips through silently (issue #1 R3). This is a seam so
+        the branch behaviour can be tested without a live dialog."""
+        if kind == 'unknown':
+            title = 'Conformance could not be verified'
+            body = ('Verification did not complete (an internal check failed), so this copy could NOT be '
+                    'confirmed as a clean conformed document.\n\nInternal detail: %s\n\nSave it anyway as '
+                    'an UNVERIFIED review copy?' % detail)
+            default = QMessageBox.Cancel
+        elif kind == 'blocking':
+            title = 'Conformance not verified clean'
+            body = ('The conformed copy contains formatting changes that could not be verified as '
+                    'authorized (numbering, paragraph references, definitions, or effective table '
+                    'formatting). It is a review copy, not a clean conformed document.\n\nSave the review '
+                    'copy anyway?')
+            default = QMessageBox.Cancel
+        else:   # review — non-blocking, but something is unadjudicated/unresolved
+            title = 'Unresolved items remain'
+            body = ('The copy conforms, but some deviations or tables need a manual look and were not '
+                    'adjudicated. Save it as a review copy?')
+            default = QMessageBox.Save
+        r = QMessageBox.warning(self, title, body, QMessageBox.Save | QMessageBox.Cancel, default)
+        return r == QMessageBox.Save
+
     def _on_apply_done(self, fresh, decisions):
         valid, msg = fresh.validate_output()
         if not valid:
@@ -1515,20 +1544,27 @@ class MainWindow(QMainWindow):
             )
             return
 
-        # Authoritative semantic verdict at the save boundary (not just ZIP/XML validity): if there is
-        # unauthorized semantic damage, identify it before saving and never present it as clean.
+        # Authoritative semantic verdict at the save boundary (not just ZIP/XML validity). This FAILS
+        # CLOSED (issue #1 R3): a verifier that raises is treated as UNKNOWN, never as permission to save.
+        # Ordinary (silent, clean) saving happens only when the verdict is computed AND clean; every other
+        # outcome — blocking semantic damage, unadjudicated deviations, or an exception — needs an explicit
+        # decision to write a clearly-unverified review copy.
         try:
             status = fresh.conformance_status()
-        except Exception:
-            status = {'blocking': False}
-        if status.get('blocking'):
-            r = QMessageBox.warning(
-                self, 'Conformance not verified clean',
-                'The conformed copy contains formatting changes that could not be verified as authorized '
-                '(numbering, definitions, or effective table formatting). It is a review copy, not a '
-                'clean conformed document.\n\nSave the review copy anyway?',
-                QMessageBox.Save | QMessageBox.Cancel, QMessageBox.Save)
-            if r == QMessageBox.Cancel:
+            status_error = None
+        except Exception as e:
+            status, status_error = None, e
+
+        if status_error is not None:
+            if not self._confirm_unverified_save('unknown', str(status_error)):
+                self._build_review_state()
+                return
+        elif status.get('blocking'):
+            if not self._confirm_unverified_save('blocking', status):
+                self._build_review_state()
+                return
+        elif not status.get('clean', False):
+            if not self._confirm_unverified_save('review', status):
                 self._build_review_state()
                 return
 

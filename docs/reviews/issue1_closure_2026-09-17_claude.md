@@ -1,5 +1,32 @@
 # Closure record — corrective-work review (GitHub issue #1)
 
+## Round 3 (this round) — failure-safety and actual-reference verification
+
+Round-2 improvements are retained; the reviewer accepted R4/R7 and confirmed several concrete fixes but
+kept R1/R2/R3/R5/R6 open with new P1 reproductions. Round 3 closes those reproductions with boundary /
+output tests (not source-string checks). All reproductions live in `tests/test_issue1_regressions.py`
+(watched RED before each fix, GREEN after). Fast suite **170 passed**; local real-report suite **3 passed**
+(`tests/test_warhoe_integration.py`, ~5m).
+
+| Finding | Round-3 P1 reproduction | Fix |
+|---|---|---|
+| R2 | failed import hidden; dependent style retained template numId and rebound to an unrelated destination list; `_unresolved_imports` had no consumer | import is now ATOMIC — a style whose dependency does not resolve is **not added/rewired**; the failure is recorded with a style+numId locator and propagated through `conformance_status()` (not clean). `engine.py _repair_styles` |
+| R1 | intended label repair also reset an unauthorized list `start`; `intended=True` merely because the style reached a recorded repair | house repair now **preserves the original instance start/lvlRestart** (imports a dedicated copy and copies them back per level); `numbering_report` marks a change intended **only when the actual after-level equals the recorded expected delta** — a start reset under a repair is an unauthorized flip. `engine.py _emit_import`, `_repair_styles`, `numbering_report` |
+| R3 (references) | a paragraph's own numId reassigned (900→901) with unchanged text/definitions was **not** caught; definition-only checks cannot prove unchanged use | new `paragraph_reference_report()` resolves each body paragraph's ACTUAL numbering (direct numPr else style) before vs after with same-style stable correspondence, authorizing only recorded house-repair deltas; wired into the blocking verdict. On real Warhoe it surfaces 51 genuine reference changes (heading auto-numbering removed by a pre-existing pass) that the prior style-only check missed |
+| R3 (save boundary) | `_on_apply_done` caught every verdict exception and substituted `{'blocking': False}`, so an exception SAVED; completion view fell back to a count-based predicate | the save boundary now **fails closed**: a raised/unknown verdict stops ordinary saving and needs an explicit unverified-review-copy decision; completion view reports UNKNOWN, never an inferred pass. Branch behaviour is covered by save-call assertions (clean/blocking/review/unknown/exception/cancel) |
+| R5 | the grid check passed on ANY single 808080 border child; no enabled/width/grid requirement, no header-text check | the style-definition check now requires the full grey ½pt grid on all six sides (enabled, sized, coloured) AND both navy fill and white header text on the firstRow conditional. `tablespec.py _borders_form_house_grid`, `_style_defines_house_table` |
+| R6 | `docDefaults/rPrDefault/color=FF0000` + explicit black override → black treated as redundant, exposing the red default | effective-colour resolution now includes `docDefaults`; a colour is redundant only if removal leaves the same effective colour, and absence of a style colour is no longer equated to black. `engine.py _doc_default_color_el`, `_color_is_redundant` |
+| validation | the carrier regex could not distinguish subscript/superscript values, used a set, and pooled stories | replaced with a STRUCTURAL, per-occurrence, per-story, value-sensitive extractor (`meaning_carriers`) proven by negative unit tests (drop one repeated carrier; flip subscript→superscript; a footnote carrier cannot satisfy a document loss) and used by the real-report test |
+
+Authoritative Warhoe verdict this round: **not clean / blocking** — 0 unintended style-numbering flips, 3
+dysfunctional list styles repaired (start preserved), definition integrity clean, 0 unresolved imports,
+meaning-bearing formatting preserved per-occurrence, **but** 51 paragraph-reference changes (heading
+auto-numbering removed by a pre-existing pass) and residual table conflicts remain surfaced, never
+claimed clean. The heading-numbering behaviour is a pre-existing engine pass now made VISIBLE by the new
+verification; it is reported as an open item, not silently accepted or suppressed.
+
+---
+
 Branch: `feat/tracked-changes-judgment`. Round-1 HEAD `489531c`; round-2 HEAD `a37f0aa`.
 Acceptance target: Claire's requirements — actually repair dysfunctional bullets and achieve effective
 house table formatting while preserving meaningful content and review history. Simply reporting a defect,

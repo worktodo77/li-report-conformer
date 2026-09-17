@@ -306,6 +306,10 @@ class Conformer:
         self.head, body, self.tail = re.search(r'(.*<w:body>)(.*)(</w:body>.*)', self.doc, re.S).groups()
         self.items = split_body(body)
         self.b0 = next(i for i, it in enumerate(self.items) if 'w:val="Heading1"' in it)
+        # Pristine BODY snapshot for paragraph-reference verification (issue #1 R3): the definitions being
+        # unchanged does not prove a paragraph still USES the same list, so we compare each paragraph's
+        # actually-resolved numbering before vs after. Holding the original item strings costs nothing.
+        self._orig_items0 = list(self.items); self._orig_b0 = self.b0
         self.log = []; self.judgment = []; self.audit = []
         self._table_notes = []       # tables the table pass could not conform reliably (nested/complex)
         self._house_repaired = {}    # styleId -> (before_fmt, after_fmt) for INTENDED house list repairs
@@ -644,6 +648,17 @@ class Conformer:
         m = re.search(r'w:val="([^"]+)"', el) if el else None
         return m.group(1) if m else None
 
+    def _doc_default_color_el(self):
+        """The FULL <w:color/> from docDefaults/rPrDefault — the lowest-priority inherited run colour. None
+        only when docDefaults sets no colour; ONLY then is the effective default Word black. The absence of
+        a colour on a style is NOT evidence of black when docDefaults defines one (issue #1 R6)."""
+        styles = getattr(self, 'styles', '') or ''
+        m = re.search(r'<w:docDefaults>.*?<w:rPrDefault>.*?<w:rPr>(.*?)</w:rPr>', styles, re.S)
+        if not m:
+            return None
+        c = re.search(r'<w:color\b[^>]*/>', m.group(1))
+        return c.group(0) if c else None
+
     @staticmethod
     def _is_theme_color(color_xml):
         return bool(color_xml) and ('themeColor' in color_xml or 'themeTint' in color_xml
@@ -662,6 +677,8 @@ class Conformer:
         eff_el = self._effective_style_color_el(rstyle, scmap) if rstyle else None
         if eff_el is None:
             eff_el = self._effective_style_color_el(para_style, scmap)
+        if eff_el is None:
+            eff_el = self._doc_default_color_el()      # docDefaults default colour (issue #1 R6)
         if self._is_theme_color(eff_el):
             return False
         ev = re.search(r'w:val="([^"]+)"', eff_el) if eff_el else None
@@ -1481,29 +1498,72 @@ class Conformer:
                  'abs': max(dgraph.used_abstract_ids() | {0}) + 1}
         imported = {}          # template numId -> new document numId (import each list once)
         new_defs = []
-        def _import_tpl_list(tpl_nid):
-            if tpl_nid in imported:
-                return imported[tpl_nid]
-            raw_num = tgraph.raw_num(tpl_nid)
-            if not raw_num:
-                return None
-            tpl_aid = tgraph.abstract_of(tpl_nid)
-            # resolve the numStyleLink chain to concrete levels (dependency closure). If it cannot be
-            # resolved, DO NOT import a dangling/empty definition — treat it as unresolved (R2).
-            raw_abs = tgraph.resolved_abstract_xml(tpl_aid) if tpl_aid else None
-            if not raw_abs:
-                self._unresolved_imports.append(tpl_nid)
+
+        def _lvl_set(lvl, tag, value):
+            """Set/replace/remove a simple <w:tag w:val=…/> child inside one <w:lvl>. Used to carry an
+            ORIGINAL list-instance property (start/lvlRestart) onto an imported house definition."""
+            cur = re.search(r'<w:%s\b[^>]*/>' % tag, lvl)
+            if value is None:
+                return lvl.replace(cur.group(0), '', 1) if cur else lvl
+            el = f'<w:{tag} w:val="{value}"/>'
+            if cur:
+                return lvl.replace(cur.group(0), el, 1)
+            if tag == 'start':          # start is the first lvl child
+                m = re.search(r'<w:lvl\b[^>]*>', lvl)
+            else:                        # lvlRestart follows numFmt/start
+                m = (re.search(r'<w:numFmt\b[^>]*/>', lvl) or re.search(r'<w:start\b[^>]*/>', lvl)
+                     or re.search(r'<w:lvl\b[^>]*>', lvl))
+            return lvl[:m.end()] + el + lvl[m.end():] if m else lvl
+
+        def _emit_import(raw_num, raw_abs, preserve=None):
+            """Emit a fresh dedicated copy of a template list under newly allocated ids, returning the new
+            numId. `preserve`=(graph, numId) copies that original list's per-level start/lvlRestart onto the
+            imported definition so a house repair fixes format/glyph WITHOUT resetting the instance's
+            start/restart (issue #1 R1). Returns None if the template blocks are missing."""
+            if not raw_num or not raw_abs:
                 return None
             new_nid = str(alloc['num']); alloc['num'] += 1
             new_aid = str(alloc['abs']); alloc['abs'] += 1
-            new_defs.append(re.sub(r'(<w:abstractNum\b[^>]*w:abstractNumId=")[^"]+(")',
-                                   lambda mm: mm.group(1) + new_aid + mm.group(2), raw_abs, count=1))
+            abs_xml = re.sub(r'(<w:abstractNum\b[^>]*w:abstractNumId=")[^"]+(")',
+                             lambda mm: mm.group(1) + new_aid + mm.group(2), raw_abs, count=1)
+            if preserve:
+                og, onid = preserve
+                def _fix_lvl(lm):
+                    lvl = lm.group(0)
+                    ilm = re.search(r'w:ilvl="([^"]+)"', lvl)
+                    o_lv = og.resolve_level(onid, ilm.group(1) if ilm else '0')
+                    if not o_lv:
+                        return lvl
+                    lvl = _lvl_set(lvl, 'start', o_lv.get('start'))
+                    return _lvl_set(lvl, 'lvlRestart', o_lv.get('lvlRestart'))
+                abs_xml = re.sub(r'<w:lvl\b.*?</w:lvl>', _fix_lvl, abs_xml, flags=re.S)
+            new_defs.append(abs_xml)
             nn = re.sub(r'(<w:num\b[^>]*w:numId=")[^"]+(")',
                         lambda mm: mm.group(1) + new_nid + mm.group(2), raw_num, count=1)
             nn = re.sub(r'(<w:abstractNumId w:val=")[^"]+(")',
                         lambda mm: mm.group(1) + new_aid + mm.group(2), nn, count=1)
             new_defs.append(nn)
-            imported[tpl_nid] = new_nid
+            return new_nid
+
+        def _resolved_tpl_blocks(tpl_nid):
+            """(raw_num, resolved_abstract) for a template list, or (raw_num, None) when the dependency
+            chain cannot be resolved — an unresolvable import is NEVER emitted as an empty definition (R2)."""
+            raw_num = tgraph.raw_num(tpl_nid)
+            tpl_aid = tgraph.abstract_of(tpl_nid)
+            raw_abs = tgraph.resolved_abstract_xml(tpl_aid) if tpl_aid else None
+            return raw_num, raw_abs
+
+        def _import_tpl_list(tpl_nid):
+            """Import a shared (cached) copy of a template list for an ADDED style. Returns the new numId,
+            or None if unresolved (caller must then refuse to add/rewire the dependent style — R2)."""
+            if tpl_nid in imported:
+                return imported[tpl_nid]
+            raw_num, raw_abs = _resolved_tpl_blocks(tpl_nid)
+            if not raw_num or not raw_abs:
+                return None
+            new_nid = _emit_import(raw_num, raw_abs)
+            if new_nid:
+                imported[tpl_nid] = new_nid
             return new_nid
 
         existing = set(re.findall(r'<w:style [^>]*w:styleId="([^"]+)"', self.styles))
@@ -1514,9 +1574,17 @@ class Conformer:
             tpl_np = tgraph.style_numpr(sid)      # the (numId, ilvl) the template gives this style
             if tpl_np and '<w:numPr>' in d:
                 new_nid = _import_tpl_list(tpl_np[0])
-                if new_nid:
-                    d = re.sub(r'(<w:numPr>.*?<w:numId w:val=")[^"]+(")',
-                               lambda mm: mm.group(1) + new_nid + mm.group(2), d, count=1, flags=re.S)
+                if not new_nid:
+                    # ATOMIC import (R2): the dependency could not be resolved, so we must NOT add the style
+                    # carrying the template's numId — that id names an unrelated list in THIS document and
+                    # would silently rebind the style to it. Skip the style and surface it as unresolved.
+                    self._unresolved_imports.append(
+                        {'style': sid, 'numId': tpl_np[0], 'context': 'add-missing-style',
+                         'detail': f'template style {sid} needs numbering {tpl_np[0]} whose definition '
+                                   f'could not be resolved; style not added rather than rebound'})
+                    continue
+                d = re.sub(r'(<w:numPr>.*?<w:numId w:val=")[^"]+(")',
+                           lambda mm: mm.group(1) + new_nid + mm.group(2), d, count=1, flags=re.S)
             added.append(d)
         if added:
             self.styles = self.styles.replace('</w:styles>', ''.join(added) + '</w:styles>', 1)
@@ -1549,19 +1617,36 @@ class Conformer:
             o_np = ograph.style_numpr(sid); t_np = tgraph.style_numpr(sid)
             if not t_np:
                 continue
-            t_lv = tgraph.resolve_level(*t_np)
+            ilvl = t_np[1] or '0'
+            t_lv = tgraph.resolve_level(t_np[0], ilvl)
             if not t_lv:
                 continue
-            o_lv = ograph.resolve_level(*o_np) if o_np else None
+            o_lv = ograph.resolve_level(o_np[0], ilvl) if o_np else None
             o_house = tuple((o_lv or {}).get(k) for k in _HOUSE_LEVEL_KEYS)
             t_house = tuple(t_lv.get(k) for k in _HOUSE_LEVEL_KEYS)
             if o_house != t_house:      # wrong format OR wrong glyph OR missing -> dysfunctional
-                new_nid = _import_tpl_list(t_np[0])
-                if new_nid:
-                    self._set_style_numpr(sid, new_nid, t_np[1] or '0')
-                    self._house_repaired[sid] = {
-                        'before': {'numFmt': o_house[0], 'lvlText': o_house[1]},
-                        'after': {'numFmt': t_house[0], 'lvlText': t_house[1]}}
+                raw_num, raw_abs = _resolved_tpl_blocks(t_np[0])
+                # Import the template's HOUSE-CONTROLLED format/glyph but PRESERVE the original instance's
+                # start/lvlRestart (issue #1 R1): repairing a corrupt label must not also silently reset a
+                # list that legitimately starts at 9.
+                new_nid = _emit_import(raw_num, raw_abs, preserve=(ograph, o_np[0]) if o_np else None)
+                if not new_nid:
+                    self._unresolved_imports.append(
+                        {'style': sid, 'numId': t_np[0], 'context': 'house-repair',
+                         'detail': f'dysfunctional house list style {sid} could not be repaired: template '
+                                   f'numbering {t_np[0]} did not resolve; left unchanged'})
+                    continue
+                self._set_style_numpr(sid, new_nid, ilvl)
+                # The FULL expected before->after level, so verification authorizes ONLY the house-property
+                # change (format/glyph) and the preserved start/restart — not any other numbering change.
+                after_expected = {'numFmt': t_lv.get('numFmt'), 'lvlText': t_lv.get('lvlText'),
+                                  'isLgl': t_lv.get('isLgl'),
+                                  'start': (o_lv or t_lv).get('start'),
+                                  'lvlRestart': (o_lv or t_lv).get('lvlRestart')}
+                self._house_repaired[sid] = {
+                    'ilvl': ilvl,
+                    'before': {k: (o_lv or {}).get(k) for k in self._LEVEL_KEYS},
+                    'after_expected': after_expected}
 
         if new_defs:
             self.num = self.num.replace('</w:numbering>', ''.join(new_defs) + '</w:numbering>', 1)
@@ -1635,19 +1720,23 @@ class Conformer:
         after = NumberingGraph(self.num, self.styles)
         repaired = getattr(self, '_house_repaired', {})
 
-        def _reaches_repair(sid):
-            """A style is an INTENDED change if it, or a basedOn ancestor it inherits numbering from, was
-            house-repaired (it correctly follows that repair)."""
+        def _repair_expected(sid):
+            """The FULL level a style is AUTHORIZED to resolve to after a house repair — its own recorded
+            expected delta, or (through basedOn) the repaired ancestor's, since it inherits that same
+            imported list. None if no repair authorizes this style. Membership in a repair is NOT itself
+            permission for an arbitrary numbering change (issue #1 R1): the actual after-state must equal
+            this expected delta."""
             seen = set(); s = sid
             while s and s not in seen:
                 seen.add(s)
                 if s in repaired:
-                    return True
+                    ae = repaired[s].get('after_expected')
+                    return tuple(ae.get(k) for k in self._LEVEL_KEYS) if ae else None
                 st = before.styles.get(s)
                 if not st or st.get('numId'):     # local numbering ends the inheritance chain
-                    return False
+                    return None
                 s = st.get('basedOn')
-            return False
+            return None
 
         changes = []
         for sid in before.styles:
@@ -1658,10 +1747,15 @@ class Conformer:
             if bool(bp) != bool(ap) or (bp and ap and bsig != asig):
                 bf = before.effective_format(*bp) if bp else None
                 af = after.effective_format(*ap) if ap else None
+                exp = _repair_expected(sid)
+                # INTENDED only when a repair authorized this style AND the actual resolved after-level
+                # matches exactly the recorded expected delta (so a repair that also reset start/restart is
+                # caught as an unauthorized flip, not rubber-stamped by mere repair membership).
+                intended = exp is not None and asig == exp
                 changes.append({'style': sid, 'before': bf, 'after': af,
-                                'before_level': bsig, 'after_level': asig,
+                                'before_level': bsig, 'after_level': asig, 'expected_level': exp,
                                 'meaning_flip': (bf == 'bullet') != (af == 'bullet'),
-                                'intended': _reaches_repair(sid)})
+                                'intended': intended})
         return changes
 
     def definition_integrity_report(self):
@@ -1691,6 +1785,100 @@ class Conformer:
                                  'before': {k: b.get(k) for k in _keys}, 'after': {k: a.get(k) for k in _keys}})
         return viol
 
+    def paragraph_reference_report(self):
+        """Verify each paragraph still USES the numbering it used before (issue #1 R3). Unchanged
+        DEFINITIONS do not prove unchanged REFERENCES: a paragraph's own numId/pStyle can be reassigned to
+        a different list while every definition stays byte-identical. For every body paragraph matched by
+        its run text between the pristine input and the conformed output, resolve the numbering it actually
+        uses (direct numPr, else its style) and compare the level MEANING. A change is authorized only when
+        the paragraph's style follows a recorded house repair to exactly its expected delta; any other
+        change is an unauthorized reference flip. Returns a list of unauthorized changes."""
+        from conformer.numbering import NumberingGraph
+        before = NumberingGraph(self._orig_num0, self._orig_styles0)
+        after = NumberingGraph(self.num, self.styles)
+        repaired = getattr(self, '_house_repaired', {})
+
+        def _repair_expected(sid):
+            seen = set(); s = sid
+            while s and s not in seen:
+                seen.add(s)
+                if s in repaired:
+                    ae = repaired[s].get('after_expected')
+                    return tuple(ae.get(k) for k in self._LEVEL_KEYS) if ae else None
+                st = before.styles.get(s)
+                if not st or st.get('numId'):
+                    return None
+                s = st.get('basedOn')
+            return None
+
+        def _info(item):
+            ppr = re.search(r'<w:pPr>.*?</w:pPr>', item, re.S)
+            pxml = ppr.group(0) if ppr else ''
+            st = re.search(r'<w:pStyle w:val="([^"]+)"', pxml)
+            npr = re.search(r'<w:numPr>.*?</w:numPr>', pxml, re.S)
+            d_nid = d_il = None
+            if npr:
+                nm = re.search(r'<w:numId w:val="([^"]+)"', npr.group(0))
+                im = re.search(r'<w:ilvl w:val="([^"]+)"', npr.group(0))
+                d_nid = nm.group(1) if nm else None
+                d_il = im.group(1) if im else None
+            text = ''.join(re.findall(r'<w:t[^>]*>([^<]*)</w:t>', item))
+            return (st.group(1) if st else None, d_nid, d_il, ' '.join(text.split()))
+
+        def _sig(graph, info):
+            pn = graph.paragraph_numbering(info[1], info[2], info[0])
+            if not pn:
+                return None
+            lv = graph.resolve_level(*pn)
+            return tuple(lv.get(k) for k in self._LEVEL_KEYS) if lv else 'UNRESOLVED'
+
+        from collections import defaultdict
+
+        def _by_text(items, b0):
+            buckets = defaultdict(list)
+            for it in items[b0:]:
+                if not it.startswith('<w:p'):
+                    continue
+                info = _info(it)
+                if not info[3]:                  # only paragraphs with real text can be corresponded
+                    continue
+                buckets[info[3]].append(info)
+            return buckets
+
+        bb = _by_text(self._orig_items0, self._orig_b0)
+        ab = _by_text(self.items, self.b0)
+        flips = []
+        for text, binfos in bb.items():
+            ainfos = ab.get(text)
+            if not ainfos:
+                continue                          # paragraph deleted/edited — no stable correspondence
+            # Stable correspondence within identical text: pair SAME-style occurrences first (so a TOC
+            # entry is never matched against a like-named heading), then pair any residue in order — which
+            # is where a genuine pStyle reassignment shows up.
+            b_by = defaultdict(list); a_by = defaultdict(list)
+            for i in binfos:
+                b_by[i[0]].append(i)
+            for i in ainfos:
+                a_by[i[0]].append(i)
+            pairs, b_res, a_res = [], [], []
+            for st in set(b_by) | set(a_by):
+                bl, al = b_by[st], a_by[st]
+                m = min(len(bl), len(al))
+                pairs += list(zip(bl[:m], al[:m]))
+                b_res += bl[m:]; a_res += al[m:]
+            pairs += list(zip(b_res, a_res))      # residue: likely a pStyle change on the same text
+            for bi, ai in pairs:
+                bsig = _sig(before, bi)
+                asig = _sig(after, ai)
+                if bsig == asig:
+                    continue
+                exp = _repair_expected(ai[0])
+                if exp is not None and asig == exp:
+                    continue                      # authorized: follows a recorded house repair exactly
+                flips.append({'text': text[:60], 'before_style': bi[0], 'style': ai[0],
+                              'before_level': bsig, 'after_level': asig})
+        return flips
+
     def conformance_status(self):
         """The single authoritative verdict consumed by production save, UI and audit (issue #1 R3).
         - blocking = unauthorized SEMANTIC damage that must not pass as normal output (unintended
@@ -1703,12 +1891,14 @@ class Conformer:
         blocking_reasons = {
             'numbering_flips': conf['numbering_flips'],
             'definition_integrity_violations': conf['definition_integrity_violations'],
+            'paragraph_reference_flips': conf.get('paragraph_reference_flips') or [],
             'tables_failing_effective_format': conf['tables_failing_effective_format'],
         }
         review_reasons = {
             'tables_review': conf.get('tables_review') or [],
             'tables_unresolved': unres.get('tables_unresolved') or [],
             'tables_needing_review': unres.get('tables_needing_review') or [],
+            'unresolved_imports': unres.get('unresolved_imports') or [],
             'rolled_back_passes': unres.get('rolled_back_passes') or [],
         }
         blocking = any(blocking_reasons.values())
@@ -1756,11 +1946,13 @@ class Conformer:
         conformance = {'numbering_flips': [c for c in num_changes if not c.get('intended')],
                        'numbering_intended_repairs': [c for c in num_changes if c.get('intended')],
                        'definition_integrity_violations': self.definition_integrity_report(),
+                       'paragraph_reference_flips': self.paragraph_reference_report(),
                        'tables_failing_effective_format': table_fails,
                        'tables_review': table_review}
 
         unresolved = {'rolled_back_passes': list(getattr(self, 'exceptions', []) or []),
                       'tables_needing_review': list(getattr(self, '_table_notes', []) or []),
+                      'unresolved_imports': list(getattr(self, '_unresolved_imports', []) or []),
                       'tables_unresolved': table_unresolved}
         return {'preservation': preservation, 'conformance': conformance, 'unresolved': unresolved}
 

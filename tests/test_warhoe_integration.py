@@ -53,26 +53,24 @@ def test_warhoe_numbering_and_integrity():
 
 
 def test_warhoe_preserves_meaning_bearing_formatting():
-    # Per-carrier invariant across the DOCUMENT AND FOOTNOTES, comparing the property VALUE (subscript vs
-    # superscript, single vs double strike), not merely the presence of a property type on some text. Every
-    # (text, value) carrier in the source must still be present in the output — no subscript/superscript/
-    # strike is silently normalised away, and none is silently changed to a different value.
+    # STRUCTURAL, per-occurrence, per-story invariant (issue #1). Using the same value- and location-
+    # sensitive extractor whose sensitivity is proven by unit tests in test_issue1_regressions
+    # (test_carrier_extractor_is_value_and_occurrence_sensitive): every (story, prop, value, text) carrier
+    # in the source — document AND footnotes, counted, not a pooled set — must still be present in the
+    # output, so no subscript/superscript/strike is silently dropped, changed to another value, or
+    # satisfied by a carrier in a different story.
     import zipfile
+    sys.path.insert(0, os.path.dirname(__file__))
+    from test_issue1_regressions import meaning_carriers
     orig = _warhoe()
     zin = zipfile.ZipFile(orig)
-    src = zin.read('word/document.xml').decode('utf8') + zin.read('word/footnotes.xml').decode('utf8')
+    src = meaning_carriers({'document': zin.read('word/document.xml').decode('utf8'),
+                            'footnotes': zin.read('word/footnotes.xml').decode('utf8')})
     c = _conform(orig)
-    out = (c.head + ''.join(c.items) + c.tail) + c.fn      # conformed document + footnotes
-
-    def carriers(doc, prop):
-        # (text, value) for every run bearing the property, so the VALUE is compared, footnotes included
-        pat = (r'<w:r\b[^>]*>(?:(?!</w:r>).)*?<w:%s\b[^>]*?(?:w:val="([^"]*)")?[^>]*/>'
-               r'(?:(?!</w:r>).)*?<w:t[^>]*>([^<]+)</w:t>' % prop)
-        return {(txt.strip(), (val or '')) for val, txt in re.findall(pat, doc, re.S) if txt.strip()}
-
-    for prop in ('vertAlign', 'strike', 'dstrike'):
-        lost = carriers(src, prop) - carriers(out, prop)
-        assert lost == set(), f"{prop}: carrier(s) lost/changed after conforming: {sorted(lost)[:5]}"
+    out = meaning_carriers({'document': c.head + ''.join(c.items) + c.tail,
+                            'footnotes': c.fn})
+    lost = src - out
+    assert not lost, f"meaning-bearing carrier(s) lost/changed after conforming: {list(lost)[:5]}"
 
 
 def test_warhoe_idempotent_numbering():

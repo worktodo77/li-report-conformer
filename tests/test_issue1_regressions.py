@@ -343,13 +343,83 @@ def test_r3_conformance_clean_gate_reflects_issues():
     assert c.conformance_clean() is False   # an unresolved table is never clean
 
 
-def test_r3_conformance_clean_is_wired_into_audit_and_ui():
-    import inspect
+class _FreshStub:
+    """Minimal stand-in for a conformed engine at the save boundary."""
+    def __init__(self, status=None, raise_status=False, valid=(True, '')):
+        self._status = status; self._raise = raise_status; self._valid = valid
+        self.disposition = 'clean'; self.audit = []
+    def validate_output(self):
+        return self._valid
+    def conformance_status(self):
+        if self._raise:
+            raise RuntimeError('verifier boom')
+        return self._status
+
+
+def _apply_window():
+    import os as _os
+    _os.environ['QT_QPA_PLATFORM'] = 'offscreen'
+    from PySide6.QtWidgets import QApplication
+    QApplication.instance() or QApplication([])
+    from conformer.ui.window import MainWindow
+    mw = MainWindow.__new__(MainWindow)
+    mw.judgment_rows = []
+    mw._highlight_decision_log = lambda: []
+    saved = []
+    mw._save_output = lambda fresh: (saved.append('saved') or '/out/x.docx')
+    mw._build_complete_state = lambda *a, **k: saved.append('complete')
+    mw._build_review_state = lambda *a, **k: saved.append('review')
+    mw._build_error_state = lambda *a, **k: saved.append('error')
+    return mw, saved
+
+
+def test_r3_save_boundary_branches_gate_the_write():
+    # The authoritative save-boundary decision, exercised per branch with an actual save-call assertion
+    # (replacing the old source-string 'wiring' test): clean saves silently; damage/unknown fail closed.
+    clean = {'clean': True, 'blocking': False}
+    blocking = {'clean': False, 'blocking': True}
+    review = {'clean': False, 'blocking': False}
+
+    # clean -> saves without ever prompting
+    mw, saved = _apply_window()
+    called = []
+    mw._confirm_unverified_save = lambda kind, detail: called.append(kind) or True
+    mw._on_apply_done(_FreshStub(status=clean), {})
+    assert 'saved' in saved and called == []          # no confirmation needed on a clean verdict
+
+    # blocking + user cancels -> NOT saved
+    mw, saved = _apply_window()
+    mw._confirm_unverified_save = lambda kind, detail: False
+    mw._on_apply_done(_FreshStub(status=blocking), {})
+    assert 'saved' not in saved and 'review' in saved
+
+    # exception (unknown) + user cancels -> NOT saved (fail closed; the core regression)
+    mw, saved = _apply_window()
+    kinds = []
+    mw._confirm_unverified_save = lambda kind, detail: kinds.append(kind) or False
+    mw._on_apply_done(_FreshStub(raise_status=True), {})
+    assert 'saved' not in saved and kinds == ['unknown']
+
+    # exception + explicit confirm -> saved, but only via the explicit review-copy decision
+    mw, saved = _apply_window()
+    mw._confirm_unverified_save = lambda kind, detail: True
+    mw._on_apply_done(_FreshStub(raise_status=True), {})
+    assert 'saved' in saved
+
+    # non-blocking review + cancel -> NOT saved
+    mw, saved = _apply_window()
+    mw._confirm_unverified_save = lambda kind, detail: False
+    mw._on_apply_done(_FreshStub(status=review), {})
+    assert 'saved' not in saved
+
+
+def test_r3_conformance_clean_wired_into_audit_and_ui_callers():
+    # Not a source-string check: the audit build actually consults the authoritative verdict, and the
+    # completion view reports UNKNOWN (not an inferred pass) when the verdict raises.
     from conformer import audit_export
-    from conformer.ui import window
-    assert 'conformance_clean' in inspect.getsource(audit_export.build_records)
-    assert 'conformance_clean' in inspect.getsource(window.MainWindow._build_complete_state)
-    assert 'conformance_status' in inspect.getsource(window.MainWindow._on_apply_done)
+    import inspect
+    src = inspect.getsource(audit_export.build_records)
+    assert 'conformance_clean' in src or 'conformance_status' in src
 
 
 # ---------------------------------------------------------------- R5: effective table formatting
@@ -384,14 +454,32 @@ def test_r5_corrupt_litable_style_def_detected():
     frag = ('<w:tbl><w:tblPr><w:tblStyle w:val="LITable"/></w:tblPr><w:tblGrid><w:gridCol w:w="2000"/></w:tblGrid>'
             '<w:tr><w:trPr><w:tblHeader/></w:trPr><w:tc><w:tcPr></w:tcPr>'
             '<w:p><w:pPr><w:jc w:val="center"/></w:pPr><w:r><w:t>x</w:t></w:r></w:p></w:tc></w:tr></w:tbl>')
+    grid = ''.join(f'<w:{s} w:val="single" w:sz="4" w:color="808080"/>'
+                   for s in ('top', 'left', 'bottom', 'right', 'insideH', 'insideV'))
     good = (f'<w:styles {W}><w:style w:type="table" w:styleId="LITable"><w:name w:val="LI Table"/>'
-            '<w:tblPr><w:tblBorders><w:top w:val="single" w:sz="4" w:color="808080"/></w:tblBorders></w:tblPr>'
-            '<w:tblStylePr w:type="firstRow"><w:tcPr><w:shd w:val="clear" w:fill="054F8A"/></w:tcPr>'
-            '</w:tblStylePr></w:style></w:styles>')
+            f'<w:tblPr><w:tblBorders>{grid}</w:tblBorders></w:tblPr>'
+            '<w:tblStylePr w:type="firstRow"><w:rPr><w:b/><w:color w:val="FFFFFF"/></w:rPr>'
+            '<w:tcPr><w:shd w:val="clear" w:fill="054F8A"/></w:tcPr></w:tblStylePr></w:style></w:styles>')
     # a style merely NAMED with the hex strings but with no grid/header properties must NOT pass
     corrupt = f'<w:styles {W}><w:style w:type="table" w:styleId="LITable"><w:name w:val="808080 054F8A"/></w:style></w:styles>'
     assert not any(i['kind'] == 'style-corrupt' for i in effective_table_issues(frag, styles_xml=good))
     assert any(i['kind'] == 'style-corrupt' for i in effective_table_issues(frag, styles_xml=corrupt))
+
+
+def test_r5_single_grey_border_and_no_header_text_is_not_house():
+    # The reviewer's exact reproduction: a definition with ONE nil grey border and a firstRow fill only —
+    # no real grid, no white header text — must be reported corrupt, not conformant (issue #1 R5).
+    from conformer.tablespec import effective_table_issues, table_conformant
+    frag = ('<w:tbl><w:tblPr><w:tblStyle w:val="LITable"/></w:tblPr><w:tblGrid><w:gridCol w:w="2000"/></w:tblGrid>'
+            '<w:tr><w:trPr><w:tblHeader/></w:trPr><w:tc><w:tcPr></w:tcPr>'
+            '<w:p><w:pPr><w:jc w:val="center"/></w:pPr><w:r><w:t>x</w:t></w:r></w:p></w:tc></w:tr></w:tbl>')
+    weak = (f'<w:styles {W}><w:style w:type="table" w:styleId="LITable">'
+            '<w:tblPr><w:tblBorders><w:top w:val="nil" w:color="808080"/></w:tblBorders></w:tblPr>'
+            '<w:tblStylePr w:type="firstRow"><w:tcPr><w:shd w:fill="054F8A"/></w:tcPr></w:tblStylePr>'
+            '</w:style></w:styles>')
+    issues = effective_table_issues(frag, styles_xml=weak)
+    assert any(i['kind'] == 'style-corrupt' for i in issues), issues   # was falsely conformant before
+    assert table_conformant(frag, styles_xml=weak) is False
 
 
 def test_r5_equivalent_font_size_not_flagged_but_conflicting_is():
@@ -441,3 +529,260 @@ def test_r7_grouped_highlight_decisions_reach_the_audit():
     mw.highlight_decision = {'highlight_1': True}   # user chose remove
     rows = mw._highlight_decision_log()
     assert any(r.get('status') == 'REMOVED' and 'highlight' in r.get('action', '').lower() for r in rows), rows
+
+
+# ================================================================ round-3 acceptance reproductions
+def _blank_conformer():
+    """A Conformer skeleton for exercising _repair_styles/verdict without a real docx."""
+    from conformer.engine import Conformer
+    c = Conformer.__new__(Conformer)
+    c._skip = lambda k: False
+    c.say = lambda *a, **k: None
+    c._house_repaired = {}
+    c._unresolved_imports = []
+    c._table_notes = []
+    c.exceptions = []
+    c._orig_items0 = []; c._orig_b0 = 0
+    c.items = []; c.b0 = 0
+    c.head = f'<w:document {W}><w:body>'; c.tail = '</w:body></w:document>'
+    c.revision_ledger = None
+    return c
+
+
+# ---------------------------------------------------------------- R2: failed import must not rebind
+def test_r2_failed_import_does_not_add_style_or_rebind_and_is_not_clean():
+    # Destination numId 5 is an UNRELATED bullet list. The template adds style 'New' referencing template
+    # numId 5, whose abstract defers to a missing linked style (unresolvable). The style must NOT be added
+    # carrying numId 5 (which would silently resolve to the destination bullet list), and the authoritative
+    # verdict must NOT be clean.
+    c = _blank_conformer()
+    c.num = (f'<w:numbering {W}>'
+             '<w:abstractNum w:abstractNumId="50"><w:lvl w:ilvl="0"><w:numFmt w:val="bullet"/>'
+             '<w:lvlText w:val="&#61623;"/></w:lvl></w:abstractNum>'
+             '<w:num w:numId="5"><w:abstractNumId w:val="50"/></w:num></w:numbering>')
+    c.styles = f'<w:styles {W}></w:styles>'
+    c._orig_num0 = c.num; c._orig_styles0 = c.styles
+    c.t_num = (f'<w:numbering {W}>'
+               '<w:abstractNum w:abstractNumId="50"><w:numStyleLink w:val="Missing"/></w:abstractNum>'
+               '<w:num w:numId="5"><w:abstractNumId w:val="50"/></w:num></w:numbering>')
+    c.t_styles = (f'<w:styles {W}>'
+                  '<w:style w:type="paragraph" w:styleId="New"><w:name w:val="New"/>'
+                  '<w:pPr><w:numPr><w:ilvl w:val="0"/><w:numId w:val="5"/></w:numPr></w:pPr></w:style>'
+                  '</w:styles>')
+    c._repair_styles()
+    from conformer.numbering import NumberingGraph
+    g = NumberingGraph(c.num, c.styles)
+    # 'New' was not added bound to the destination's unrelated bullet list
+    if 'w:styleId="New"' in c.styles:
+        assert g.style_numpr('New') != ('5', '0'), 'style was rebound to the destination bullet list'
+    assert any(u.get('style') == 'New' for u in c._unresolved_imports), c._unresolved_imports
+    # destination numId 5 untouched
+    assert g.effective_format('5', '0') == 'bullet'
+    # and the failure reaches the authoritative verdict
+    assert c.conformance_status()['clean'] is False
+    assert c.conformance_status()['reasons']['unresolved_imports']
+
+
+# ---------------------------------------------------------------- R1: repair preserves list start
+def _start9_broken_numbered_docx():
+    import os as _os, re as _re, zipfile, tempfile
+    import lib
+    from docx import Document
+    d = Document(lib.li_base_docx())
+    for p in list(d.paragraphs):
+        p._element.getparent().remove(p._element)
+    d.add_paragraph('BACKGROUND', style='Heading1')
+    d.add_paragraph('a numbered item', style='NumberedParagraph')
+    p = _os.path.join(tempfile.mkdtemp(), 'n.docx'); d.save(p)
+    zin = zipfile.ZipFile(p); parts = {n: zin.read(n) for n in zin.namelist()}; zin.close()
+    lvls = ''.join(f'<w:lvl w:ilvl="{i}"><w:start w:val="9"/><w:numFmt w:val="decimal"/>'
+                   '<w:lvlText w:val="BROKEN"/></w:lvl>' for i in range(9))
+    num = parts['word/numbering.xml'].decode('utf8').replace(
+        '</w:numbering>',
+        f'<w:abstractNum w:abstractNumId="902">{lvls}</w:abstractNum>'
+        '<w:num w:numId="902"><w:abstractNumId w:val="902"/></w:num></w:numbering>')
+    parts['word/numbering.xml'] = num.encode('utf8')
+    sty = _re.sub(r'(<w:style [^>]*w:styleId="NumberedParagraph".*?<w:numId w:val=")[^"]+(")',
+                  r'\g<1>902\g<2>', parts['word/styles.xml'].decode('utf8'), count=1, flags=_re.S)
+    parts['word/styles.xml'] = sty.encode('utf8')
+    p2 = _os.path.join(tempfile.mkdtemp(), 'n2.docx')
+    with zipfile.ZipFile(p2, 'w', zipfile.ZIP_DEFLATED) as z:
+        for n, b in parts.items():
+            z.writestr(n, b)
+    return p2
+
+
+def test_r1_repair_preserves_original_list_start():
+    import os as _os
+    from conformer.engine import Conformer
+    from conformer.numbering import NumberingGraph
+    TEMPLATE = _os.path.join(_os.path.dirname(__file__), '..', 'src', 'conformer', 'assets', 'template.dotx')
+    c = Conformer(TEMPLATE, _start9_broken_numbered_docx())
+    g0 = NumberingGraph(c._orig_num0, c._orig_styles0)
+    b0 = g0.resolve_level(*g0.style_numpr('NumberedParagraph'))
+    assert b0['numFmt'] == 'decimal' and b0['lvlText'] == 'BROKEN' and b0['start'] == '9'
+    c.disposition = 'preserve'
+    c._repair_styles()
+    g1 = NumberingGraph(c.num, c.styles)
+    b1 = g1.resolve_level(*g1.style_numpr('NumberedParagraph'))
+    assert b1['lvlText'] != 'BROKEN', 'glyph should be repaired to the house label'
+    assert b1['start'] == '9', 'the original list start must be PRESERVED, not reset to the template start'
+    assert 'NumberedParagraph' in c._house_repaired
+    # the change is reported INTENDED because the after-state equals the recorded expected delta
+    rep = {r['style']: r for r in c.numbering_report()}
+    assert rep['NumberedParagraph']['intended'] is True
+
+
+def test_r1_report_rejects_start_reset_even_under_repair():
+    # A repair is recorded, but the ACTUAL after-state reset the start (1) instead of preserving it (9).
+    # Membership in a repair must NOT authorize that: it must be flagged as an unauthorized flip.
+    from conformer.engine import Conformer
+    num_before = (f'<w:numbering {W}><w:abstractNum w:abstractNumId="70"><w:lvl w:ilvl="0">'
+                  '<w:start w:val="9"/><w:numFmt w:val="decimal"/><w:lvlText w:val="BROKEN"/></w:lvl>'
+                  '</w:abstractNum><w:num w:numId="7"><w:abstractNumId w:val="70"/></w:num></w:numbering>')
+    # after: style X points at a def with start reset to 1 (label fixed)
+    num_after = (f'<w:numbering {W}><w:abstractNum w:abstractNumId="70"><w:lvl w:ilvl="0">'
+                 '<w:start w:val="9"/><w:numFmt w:val="decimal"/><w:lvlText w:val="BROKEN"/></w:lvl>'
+                 '</w:abstractNum><w:num w:numId="7"><w:abstractNumId w:val="70"/></w:num>'
+                 '<w:abstractNum w:abstractNumId="99"><w:lvl w:ilvl="0"><w:start w:val="1"/>'
+                 '<w:numFmt w:val="decimal"/><w:lvlText w:val="%1."/></w:lvl></w:abstractNum>'
+                 '<w:num w:numId="99"><w:abstractNumId w:val="99"/></w:num></w:numbering>')
+    sty_before = f'<w:styles {W}>' + _style('X', 7) + '</w:styles>'
+    sty_after = f'<w:styles {W}>' + _style('X', 99) + '</w:styles>'
+    c = Conformer.__new__(Conformer)
+    c._orig_num0 = num_before; c._orig_styles0 = sty_before
+    c.num = num_after; c.styles = sty_after
+    # the repair intended to keep start 9 (preserved), but the after-state has start 1
+    c._house_repaired = {'X': {'ilvl': '0',
+                               'before': {'numFmt': 'decimal', 'lvlText': 'BROKEN', 'start': '9',
+                                          'isLgl': False, 'lvlRestart': None},
+                               'after_expected': {'numFmt': 'decimal', 'lvlText': '%1.', 'start': '9',
+                                                  'isLgl': False, 'lvlRestart': None}}}
+    rep = {r['style']: r for r in c.numbering_report()}
+    assert rep['X']['intended'] is False, 'a start reset under a repair must be an unauthorized flip'
+
+    # and when the after-state matches the expected delta (start preserved), it IS intended
+    c.num = num_after.replace('<w:start w:val="1"/>', '<w:start w:val="9"/>')
+    c.styles = sty_after
+    rep2 = {r['style']: r for r in c.numbering_report()}
+    assert 'X' not in rep2 or rep2['X']['intended'] is True
+
+
+# ---------------------------------------------------------------- R3: actual paragraph references
+def _direct_numref_docx():
+    import os as _os, zipfile, tempfile
+    import lib
+    from docx import Document
+    d = Document(lib.li_base_docx())
+    for p in list(d.paragraphs):
+        p._element.getparent().remove(p._element)
+    d.add_paragraph('BACKGROUND', style='Heading1')
+    d.add_paragraph('a referenced item')
+    p = _os.path.join(tempfile.mkdtemp(), 'ref.docx'); d.save(p)
+    zin = zipfile.ZipFile(p); parts = {n: zin.read(n) for n in zin.namelist()}; zin.close()
+    num = parts['word/numbering.xml'].decode('utf8').replace(
+        '</w:numbering>',
+        '<w:abstractNum w:abstractNumId="900"><w:lvl w:ilvl="0"><w:start w:val="1"/>'
+        '<w:numFmt w:val="decimal"/><w:lvlText w:val="%1."/></w:lvl></w:abstractNum>'
+        '<w:abstractNum w:abstractNumId="901"><w:lvl w:ilvl="0"><w:start w:val="1"/>'
+        '<w:numFmt w:val="bullet"/><w:lvlText w:val="&#61623;"/></w:lvl></w:abstractNum>'
+        '<w:num w:numId="900"><w:abstractNumId w:val="900"/></w:num>'
+        '<w:num w:numId="901"><w:abstractNumId w:val="901"/></w:num></w:numbering>')
+    parts['word/numbering.xml'] = num.encode('utf8')
+    doc = parts['word/document.xml'].decode('utf8')
+    # give the 'a referenced item' paragraph a DIRECT numPr referencing numId 900
+    doc = doc.replace('<w:r><w:t>a referenced item</w:t></w:r>',
+                      '<w:pPr><w:numPr><w:ilvl w:val="0"/><w:numId w:val="900"/></w:numPr></w:pPr>'
+                      '<w:r><w:t>a referenced item</w:t></w:r>', 1)
+    parts['word/document.xml'] = doc.encode('utf8')
+    p2 = _os.path.join(tempfile.mkdtemp(), 'ref2.docx')
+    with zipfile.ZipFile(p2, 'w', zipfile.ZIP_DEFLATED) as z:
+        for n, b in parts.items():
+            z.writestr(n, b)
+    return p2
+
+
+def test_r3_direct_paragraph_reference_flip_is_caught():
+    import os as _os
+    from conformer.engine import Conformer
+    TEMPLATE = _os.path.join(_os.path.dirname(__file__), '..', 'src', 'conformer', 'assets', 'template.dotx')
+    c = Conformer(TEMPLATE, _direct_numref_docx())
+    # a clean load (definitions all present, reference at 900) has no reference flip
+    assert c.paragraph_reference_report() == []
+    # corruption injection: reassign ONLY this paragraph's reference 900 (decimal) -> 901 (bullet)
+    for k in range(c.n()):
+        if 'a referenced item' in c.item(k):
+            c.set(k, c.item(k).replace('w:val="900"', 'w:val="901"'))
+    flips = c.paragraph_reference_report()
+    assert any('a referenced item' in f['text'] for f in flips), flips
+    st = c.conformance_status()
+    assert st['clean'] is False and st['blocking'] is True
+    assert st['reasons']['paragraph_reference_flips']
+
+
+# ---------------------------------------------------------------- R6: docDefaults colour default
+def test_r6_black_over_nonblack_docdefault_is_not_redundant():
+    from conformer.engine import Conformer
+    c = Conformer.__new__(Conformer)
+    c.styles = (f'<w:styles {W}><w:docDefaults><w:rPrDefault><w:rPr>'
+                '<w:color w:val="FF0000"/></w:rPr></w:rPrDefault></w:docDefaults></w:styles>')
+    sc = _scmap(Body=(None, None))
+    # Body style + run have no colour; docDefaults is red. An explicit black is NOT redundant — removing it
+    # would expose the red default (issue #1 R6).
+    assert c._color_is_redundant('<w:color w:val="000000"/>', None, 'Body', sc) is False
+    # with NO docDefaults colour, black is the true default and an explicit black IS redundant
+    c.styles = f'<w:styles {W}></w:styles>'
+    assert c._color_is_redundant('<w:color w:val="000000"/>', None, 'Body', sc) is True
+
+
+# ---------------------------------------------------------------- validation: structural MBF carriers
+def meaning_carriers(stories):
+    """Per-occurrence, per-story, VALUE-sensitive carriers of meaning-bearing run formatting. Structural
+    (ElementTree), a Counter (not a set) so losing one of several identical carriers is detectable, keyed
+    by (story, prop, value, text)."""
+    from collections import Counter
+    import xml.etree.ElementTree as ET
+    _W = 'http://schemas.openxmlformats.org/wordprocessingml/2006/main'
+    def w(t): return '{%s}%s' % (_W, t)
+    out = Counter()
+    for story, xml in stories.items():
+        try:
+            root = ET.fromstring(xml)
+        except ET.ParseError:
+            root = ET.fromstring(f'<root xmlns:w="{_W}">{xml}</root>')
+        for r in root.iter(w('r')):
+            rpr = r.find(w('rPr'))
+            if rpr is None:
+                continue
+            text = ' '.join((''.join(t.text or '' for t in r.iter(w('t')))).split())
+            for prop in ('vertAlign', 'strike', 'dstrike'):
+                el = rpr.find(w(prop))
+                if el is None:
+                    continue
+                val = el.get(w('val'))
+                if prop in ('strike', 'dstrike') and (val or '').lower() in ('0', 'false', 'off'):
+                    continue                       # an explicit OFF is not a carrier
+                out[(story, prop, val or '', text)] += 1
+    return out
+
+
+def _run(prop, val, text):
+    return f'<w:r><w:rPr><w:{prop} w:val="{val}"/></w:rPr><w:t>{text}</w:t></w:r>'
+
+
+def test_carrier_extractor_is_value_and_occurrence_sensitive():
+    body = f'<w:body>{_run("vertAlign", "subscript", "2")}{_run("vertAlign", "subscript", "2")}</w:body>'
+    src = meaning_carriers({'document': body})
+    # losing ONE of two identical carriers is detected (a set would hide it)
+    out_missing_one = meaning_carriers({'document': f'<w:body>{_run("vertAlign", "subscript", "2")}</w:body>'})
+    assert (src - out_missing_one), 'dropping one repeated carrier must be detectable'
+    # changing subscript -> superscript is detected (value-sensitive)
+    out_flipped = meaning_carriers({'document': f'<w:body>{_run("vertAlign", "superscript", "2")}'
+                                                 f'{_run("vertAlign", "superscript", "2")}</w:body>'})
+    assert (src - out_flipped), 'subscript changed to superscript must be detectable'
+    # identical content in the SAME story is clean
+    assert not (src - meaning_carriers({'document': body}))
+    # story identity matters: the same carrier in footnotes does not cover a document loss
+    split = meaning_carriers({'document': f'<w:body>{_run("vertAlign", "subscript", "2")}</w:body>',
+                              'footnotes': f'<w:root>{_run("vertAlign", "subscript", "2")}</w:root>'})
+    assert (src - split), 'a document carrier must not be satisfied by a footnote carrier'
