@@ -1342,6 +1342,77 @@ class Conformer:
             self.say('M', -1, f'figure audit OK: {len(caps)} figures numbered sequentially per section; {tof}')
         return findings
 
+    @staticmethod
+    def _caption_basis(x):
+        """The heading level a caption's numbering is based on = the STYLEREF field's level. None if the
+        caption is not an auto-number (STYLEREF/SEQ) field."""
+        m = re.search(r'STYLEREF\s+(\d+)', x)
+        return int(m.group(1)) if m else None
+
+    def audit_captions(self):
+        """Verify Table AND Figure captions against guideline §8.6 (advisory; feeds the field refresh):
+          (a) each kind's numbering BASIS is a single, consistent Heading level, and that level is Heading 1
+              or Heading 2 (the only sanctioned bases) — flagged, never auto-renumbered (D-1);
+          (b) the two kinds do not use different bases;
+          (c) per-section cached SEQ results are sequential (1,2,3,…) — a gap/duplicate is a STALE field
+              that will renumber on update.
+        audit_figures already covers Figure sequence + Table-of-Figures matching; this adds the Table
+        captions (which audit_figures skips) and the basis checks, and APPENDS to self.audit so the field
+        refresh (force_field_update) is armed when anything drifted."""
+        from collections import defaultdict
+        caps = {'Table': [], 'Figure': []}
+        for i in range(self.n()):
+            if not self.is_par(i) or self.style(i) != 'Caption':
+                continue
+            x = self.item(i); t = self.text(i).strip()
+            m = re.match(r'(Table|Figure)\b', t)
+            if not m:
+                continue
+            kind = m.group(1)
+            res = self._field_results(x)
+            caps[kind].append({'i': i, 'text': t, 'basis': self._caption_basis(x),
+                               'fielded': 'SEQ ' in x, 'csec': res[0] if res else '',
+                               'cseq': res[1] if len(res) > 1 else ''})
+        findings = []
+        kind_basis = {}
+        for kind, lst in caps.items():
+            if not lst:
+                continue
+            static = [c for c in lst if not c['fielded']]
+            if static:
+                findings.append(('not-fielded', f'{len(static)} {kind} caption(s) are not auto-number fields '
+                                 '(they will not renumber): e.g. ' + repr(static[0]['text'][:40])))
+            bases = sorted({c['basis'] for c in lst if c['basis'] is not None})
+            kind_basis[kind] = bases
+            if len(bases) > 1:
+                findings.append(('basis-inconsistent', f'{kind} captions use MULTIPLE numbering bases '
+                                 f'(Heading levels {bases}); §8.6 requires ONE consistent basis — review'))
+            for b in bases:
+                if b not in (1, 2):
+                    findings.append(('basis-not-h1h2', f'{kind} captions are based on Heading {b}; §8.6 '
+                                     'sanctions only Heading 1 or Heading 2 — review/re-base (not auto-changed)'))
+            bysec = defaultdict(list)
+            for c in lst:
+                if c['fielded'] and c['csec']:
+                    bysec[c['csec']].append(c['cseq'])
+            for sec, seqs in bysec.items():
+                nums = [int(s) for s in seqs if s.isdigit()]
+                if nums and nums != list(range(1, len(nums) + 1)):
+                    findings.append(('seq-stale', f'{kind} numbers in section {sec} are not sequential '
+                                     f'(cached {nums}) — stale field(s); will renumber on update'))
+        allb = sorted({b for bs in kind_basis.values() for b in bs})
+        if len(kind_basis) > 1 and len(allb) > 1:
+            findings.append(('basis-cross-kind', f'Table and Figure captions use DIFFERENT bases '
+                             f'({kind_basis}); §8.6 wants a consistent basis — review'))
+        self.audit = (self.audit or []) + findings
+        if findings:
+            for lvl, msg in findings:
+                self.say('J', -1, f'CAPTION AUDIT [{lvl}]: {msg}')
+        else:
+            self.say('M', -1, 'caption audit OK: Table/Figure numbering bases consistent (Heading 1/2) and '
+                     'per-section numbering sequential')
+        return findings
+
     def _finalize_verdict(self, force=False):
         """Compute (or reuse) the conformance verdict tied to the CURRENT mutation generation (issue #1 E).
         A later edit bumps self._gen and invalidates a stale verdict. A verification exception is UNKNOWN
@@ -1417,7 +1488,7 @@ class Conformer:
         self.typography(); self.house_style(); self.fix_sections(); self.replace_parts()
         # colour/highlight AFTER replace_parts so redundancy is judged against the FINAL (template) styles
         self._color_highlight_calls()
-        self.audit_figures(); self.force_field_update()
+        self.audit_figures(); self.audit_captions(); self.force_field_update()
 
     # ---------------------------------------------------------------- review-preserving pipeline
     def _snapshot(self):
@@ -1502,6 +1573,8 @@ class Conformer:
         self._extract_images_preserving()   # #5
         self._drop_empty_columns_preserving()  # #7
         self.audit_figures()
+        self.audit_captions()               # §8.6 Table+Figure basis + per-section sequence (P1)
+        self.force_field_update()           # arm Word's refresh when the audit found caption/figure drift
         self._label_review_copy()           # GPT-6 2a: stamp as a normalized-formatting review copy
 
     def _prune_preserving(self):
