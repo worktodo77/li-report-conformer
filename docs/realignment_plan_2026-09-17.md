@@ -19,13 +19,25 @@ per the plan-mode discipline already in the repo.
 ---
 
 ## Build status (2026-09-17)
-- **P0-1 DONE** (commit `d3b57f5`) — tables conform to Grid Table 4 / "LI Table" teal; Warhoe 333/333
-  GridTable4, 0 navy, validate True, tracked records preserved.
-- **P0-2 DONE (pending final Warhoe confirm)** — heading-caps policy: never add `<w:caps/>`, honor the H2
-  initial-caps exception, flag (not force) inconsistent/wrong casing.
-- **P0-3 DONE (pending final Warhoe confirm)** — inch spelling-out (`2"`→`2-inch`) moved from the shared
-  typography transform into the house-style layer, so it fires in body prose only and never rewrites a
-  verbatim Excerpt/Quote or Caption (tables are whole-item, already untouched by the paragraph passes).
+**P0 COMPLETE + Warhoe-validated.**
+- **P0-1 DONE** (`d3b57f5`) — tables → Grid Table 4 / "LI Table" teal; Warhoe 333/333 GridTable4, 0 navy.
+- **P0-2 DONE** (`6f5ea80`) — heading-caps policy: never add `<w:caps/>`, honor the H2 initial-caps
+  exception, flag not force; Warhoe 0 caps added, 49 heading texts unchanged.
+- **P0-3 DONE** (`6f5ea80`) — inch spelling-out moved to the house-style layer (body-only, skips
+  excerpts/captions/tables); Warhoe 7 `-inch` in body, 0 in excerpts.
+
+**P1 IN PROGRESS** (shared verification):
+- **P1 caption audit DONE** (`bea6ba1`) — `audit_captions` checks Table+Figure basis (H1/H2-only, consistent)
+  and per-section SEQ sequence; preserve pipeline now arms `force_field_update` (P1-3). Warhoe: flags
+  Table→H3 basis, Table/Figure cross-kind mismatch, 13 static captions, 2 stale-sequence sections.
+- **P1 heading audit DONE** (`aa11d4a`) — `audit_headings` flags heading level-skips and numbered-paragraph
+  sublevel skips. Warhoe: 2 heading-skips, 2 sublevel-skips.
+- **P1 cross-ref style DONE** (`af2f318`) — `_style_crossreferences` applies the Cross Reference character
+  style to all existing REF fields + flags broken refs. Warhoe: 798 field runs styled (from 0), 0 broken,
+  text unchanged.
+- **P1 REMAINING**: caption re-base OFFER path (D-1, currently flag-only); generalize `rebuild_fields`
+  beyond single-level `N-N`; broaden literal→field conversion (multi-level Section/Table, Numbered-item &
+  Footnote categories); heading-number simulation for exact duplicate/gap prediction.
 
 ## Priority 0 — STOP the engine from degrading a conforming document
 
