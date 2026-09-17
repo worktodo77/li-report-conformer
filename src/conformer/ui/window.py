@@ -1117,6 +1117,26 @@ class MainWindow(QMainWindow):
 
         self.body_layout.addWidget(card)
 
+        # ── AUDIT LOG — full per-change record, downloadable as Word / Excel / CSV ──
+        self._audit_ctx = {'fresh': fresh, 'source': self.input_path, 'output': output_path,
+                           'decisions_log': decisions_log}
+        audit_sec = QLabel('AUDIT LOG')
+        audit_sec.setObjectName('sectionLabel')
+        self.body_layout.addWidget(audit_sec)
+        audit_desc = QLabel('A full record of every change made to the file — file details, preservation '
+                            'verdict, and one row per change (before/after, location, rule, disposition).')
+        audit_desc.setWordWrap(True)
+        audit_desc.setStyleSheet('font-size: 12px; color: #66707a;')
+        self.body_layout.addWidget(audit_desc)
+        al = QHBoxLayout()
+        for label, fmt in (('Word (.docx)', 'docx'), ('Excel (.xlsx)', 'xlsx'), ('CSV (.csv)', 'csv')):
+            b = QPushButton(label)
+            b.clicked.connect(lambda _=False, f=fmt: self._download_audit(f))
+            al.addWidget(b)
+        al.addStretch()
+        aw = QWidget(); aw.setLayout(al)
+        self.body_layout.addWidget(aw)
+
         audit = audit or []
         integ_sec = QLabel('FIGURE INTEGRITY')
         integ_sec.setObjectName('sectionLabel')
@@ -1172,6 +1192,31 @@ class MainWindow(QMainWindow):
                 self.body_layout.addWidget(row)
 
         self.body_layout.addStretch()
+
+    def _download_audit(self, fmt):
+        ctx = getattr(self, '_audit_ctx', None)
+        if not ctx or ctx.get('fresh') is None:
+            return
+        stem = os.path.splitext(os.path.basename(ctx['output']))[0]
+        date = datetime.datetime.now().strftime('%d%m%y')
+        default = os.path.join(os.path.dirname(ctx['output']), f'{stem} — audit log {date}.{fmt}')
+        filt = {'docx': 'Word Document (*.docx)', 'xlsx': 'Excel Workbook (*.xlsx)',
+                'csv': 'CSV (*.csv)'}[fmt]
+        path, _ = QFileDialog.getSaveFileName(self, 'Save audit log', default, filt)
+        if not path:
+            return
+        if not path.lower().endswith('.' + fmt):
+            path += '.' + fmt
+        try:
+            from conformer import audit_export as ax
+            summary, records = ax.build_records(
+                ctx['fresh'], ctx['source'], ctx['output'], ctx.get('decisions_log'))
+            {'docx': ax.write_docx, 'xlsx': ax.write_xlsx, 'csv': ax.write_csv}[fmt](path, summary, records)
+        except Exception as e:
+            QMessageBox.critical(self, 'Audit log failed', f'Could not write the audit log:\n{e}')
+            return
+        QMessageBox.information(self, 'Audit log saved',
+                                f'{len(records)} changes written to:\n{os.path.basename(path)}')
 
     def _build_error_state(self, title, message):
         self._clear_body()

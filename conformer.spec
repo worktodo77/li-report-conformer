@@ -4,9 +4,15 @@ import os
 import sys
 import glob
 import PySide6
-from PyInstaller.utils.hooks import collect_data_files
+from PyInstaller.utils.hooks import collect_data_files, collect_submodules
 
 block_cipher = None
+
+# python-docx ships a default .docx template it needs at runtime; openpyxl + docx have lazily-imported
+# submodules PyInstaller's static analysis misses. Collect them so the audit-log export works frozen.
+_export_datas = collect_data_files('docx')
+_export_hidden = (collect_submodules('docx') + collect_submodules('openpyxl')
+                  + ['conformer.audit_export'])
 
 # Qt platform plugins are REQUIRED for the app to start (without platforms/qwindows.dll Qt aborts with
 # "no Qt platform plugin could be initialized"). The bundled qt.conf uses Prefix=., so Qt looks for
@@ -28,7 +34,7 @@ a = Analysis(
         ('src/conformer/assets/LI icon.png', 'conformer/assets'),
         ('src/conformer/assets/LI logo.png', 'conformer/assets'),
         ('src/conformer/ui/styles.qss', 'conformer/ui'),
-    ] + _qt_plugins,
+    ] + _qt_plugins + _export_datas,
     hiddenimports=[
         'conformer',
         'conformer.engine',
@@ -37,7 +43,8 @@ a = Analysis(
         'conformer.ui.window',
         'conformer.ui.preview',
         'conformer.ui.selftest',
-    ],
+        'conformer.audit_export',
+    ] + _export_hidden,
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],
