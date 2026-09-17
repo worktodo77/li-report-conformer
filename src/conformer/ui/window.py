@@ -6,7 +6,7 @@ from PySide6.QtWidgets import (
     QFrame, QScrollArea, QComboBox, QFileDialog, QProgressBar,
     QMessageBox, QMenuBar, QMenu, QSizePolicy, QApplication, QGraphicsOpacityEffect,
 )
-from PySide6.QtCore import Qt, QThread, Signal, QSize
+from PySide6.QtCore import Qt, QThread, Signal, QSize, QTimer, QPropertyAnimation
 from PySide6.QtGui import QFont, QAction, QPixmap, QIcon
 
 
@@ -35,6 +35,7 @@ def _word_lock_exists(path):
 class AnalyzeWorker(QThread):
     finished = Signal(object, object)
     error = Signal(str)
+    progress = Signal(str, str)
 
     def __init__(self, template, input_path):
         super().__init__()
@@ -44,6 +45,7 @@ class AnalyzeWorker(QThread):
     def run(self):
         try:
             c = Conformer(self.template, self.input_path)
+            c.progress = lambda k, d='': self.progress.emit(k, d)
             calls = c.analyze()
             self.finished.emit(c, calls)
         except Exception as e:
@@ -53,6 +55,7 @@ class AnalyzeWorker(QThread):
 class ApplyWorker(QThread):
     finished = Signal(object)
     error = Signal(str)
+    progress = Signal(str, str)
 
     def __init__(self, conformer, decisions):
         super().__init__()
@@ -61,7 +64,8 @@ class ApplyWorker(QThread):
 
     def run(self):
         try:
-            fresh = self.conformer.apply_with_decisions(self.decisions)
+            fresh = self.conformer.apply_with_decisions(
+                self.decisions, progress=lambda k, d='': self.progress.emit(k, d))
             self.finished.emit(fresh)
         except Exception as e:
             self.error.emit(str(e))
@@ -378,6 +382,151 @@ def _is_cosmetic_log(msg):
     return m.startswith('typography normalised') or m.startswith('li house style applied')
 
 
+# Display metadata for each engine progress phase key: (title, default sub-text).
+_PHASE_INFO = {
+    'read':      ('Reading document', 'Opening every part of the file'),
+    'track':     ('Mapping tracked changes', 'Cataloguing revisions, comments and authors'),
+    'styles':    ('Repairing corrupt styles', 'Rebuilding LI styles from the template'),
+    'tables':    ('Conforming tables', 'Applying the LI table style'),
+    'structure': ('Structure & headings', 'Paragraph styles, levels and sections'),
+    'type':      ('Typography & house style', 'Smart quotes, spacing and LI terminology'),
+    'refs':      ('Captions & cross-references', 'Rebuilding caption and REF fields'),
+    'save':      ('Verifying & finishing', 'Confirming every change is preserved'),
+}
+_PHASES_PRESERVE = ['read', 'track', 'styles', 'tables', 'structure', 'type', 'refs', 'save']
+_PHASES_CLEAN = ['read', 'structure', 'type', 'save']
+_SPINNER = '⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏'
+
+
+class ChecklistView(QFrame):
+    """The live conforming screen: a preservation shield plus a vertical checklist of pipeline phases,
+    each advancing from pending → a spinning current step → an animated green check as the engine
+    reports real per-pass progress."""
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setObjectName('checklist')
+        self._v = QVBoxLayout(self)
+        self._v.setContentsMargins(2, 2, 2, 2); self._v.setSpacing(10)
+        self.shield = QLabel(); self.shield.setObjectName('shieldBanner')
+        self.shield.setTextFormat(Qt.RichText); self.shield.setWordWrap(True)
+        self._v.addWidget(self.shield)
+        self._rows_box = QVBoxLayout(); self._rows_box.setSpacing(2)
+        self._v.addLayout(self._rows_box)
+        self.rows = []          # per phase: {'key','frame','icon','title','sub','state','fx'}
+        self.keys = []
+        self.current = -1
+        self._preserve = True
+        self._spin_i = 0
+        self._timer = QTimer(self); self._timer.timeout.connect(self._tick); self._timer.start(90)
+
+    def set_mode(self, mode):
+        self._preserve = (mode == 'preserve')
+        self.keys = _PHASES_PRESERVE if self._preserve else _PHASES_CLEAN
+        while self._rows_box.count():
+            item = self._rows_box.takeAt(0)
+            w = item.widget()
+            if w: w.deleteLater()
+        self.rows = []
+        self.current = -1
+        for key in self.keys:
+            title, sub = _PHASE_INFO[key]
+            row = QFrame(); row.setObjectName('clRow')
+            hl = QHBoxLayout(row); hl.setContentsMargins(10, 8, 10, 8); hl.setSpacing(12)
+            icon = QLabel('○'); icon.setFixedWidth(22)
+            icon.setStyleSheet('font-size: 16px; color: #b9c0c8;')
+            col = QVBoxLayout(); col.setSpacing(1)
+            t = QLabel(title); t.setStyleSheet('font-size: 13px; color: #9aa2ab;')
+            s = QLabel(sub); s.setStyleSheet('font-size: 11px; color: #b0b6bd;')
+            col.addWidget(t); col.addWidget(s)
+            hl.addWidget(icon, 0, Qt.AlignTop); hl.addLayout(col, 1)
+            self._rows_box.addWidget(row)
+            self.rows.append({'key': key, 'frame': row, 'icon': icon, 'title': t, 'sub': s,
+                              'state': 'pending', 'fx': None})
+        self._render()
+        self._update_shield('start')
+
+    def advance(self, key, detail=''):
+        if key == '__mode__':
+            self.set_mode(detail or 'preserve'); return
+        if key not in self.keys:
+            return
+        idx = self.keys.index(key)
+        if detail:
+            self.rows[idx]['sub'].setText(detail)
+        if idx > self.current:
+            self.current = idx
+        self._render()
+        if key == 'track' and detail:
+            self._update_shield('safe', detail)
+        elif key == 'save':
+            self._update_shield('verified')
+
+    def complete(self):
+        self.current = len(self.rows)
+        self._render()
+        self._update_shield('verified')
+        self._timer.stop()
+
+    def _render(self):
+        for i, r in enumerate(self.rows):
+            state = 'done' if i < self.current else ('current' if i == self.current else 'pending')
+            if state == r['state'] and state != 'current':
+                continue
+            r['state'] = state
+            if state == 'done':
+                r['icon'].setText('✓')
+                r['icon'].setStyleSheet('font-size: 15px; font-weight: 700; color: #1f7a34;')
+                r['title'].setStyleSheet('font-size: 13px; color: #1c2733;')
+                r['sub'].setStyleSheet('font-size: 11px; color: #66707a;')
+                self._pop(r)
+            elif state == 'current':
+                r['title'].setStyleSheet('font-size: 13px; font-weight: 600; color: #005088;')
+                r['sub'].setStyleSheet('font-size: 11px; color: #66707a;')
+            else:
+                r['icon'].setText('○')
+                r['icon'].setStyleSheet('font-size: 16px; color: #b9c0c8;')
+                r['title'].setStyleSheet('font-size: 13px; color: #9aa2ab;')
+                r['sub'].setStyleSheet('font-size: 11px; color: #b0b6bd;')
+
+    def _pop(self, r):
+        # a brief fade-in on the check so completion reads as animated
+        fx = QGraphicsOpacityEffect(r['icon']); r['icon'].setGraphicsEffect(fx)
+        anim = QPropertyAnimation(fx, b'opacity', self)
+        anim.setDuration(260); anim.setStartValue(0.0); anim.setEndValue(1.0)
+        anim.start(QPropertyAnimation.DeleteWhenStopped)
+        r['fx'] = (fx, anim)
+
+    def _tick(self):
+        self._spin_i = (self._spin_i + 1) % len(_SPINNER)
+        ch = _SPINNER[self._spin_i]
+        for i, r in enumerate(self.rows):
+            if i == self.current and r['state'] == 'current':
+                r['icon'].setText(ch)
+                r['icon'].setStyleSheet('font-size: 15px; color: #28A0D8;')
+
+    def _update_shield(self, mode, detail=''):
+        if not self._preserve:
+            self.shield.setVisible(False); return
+        self.shield.setVisible(True)
+        if mode == 'verified':
+            self.shield.setText('<span style="font-size:15px;">🛡</span>&nbsp;&nbsp;'
+                                '<b style="color:#0f6e56;">Tracked changes preserved &amp; verified</b>')
+            self.shield.setStyleSheet('background:#e1f5ee; border:1px solid #5dcaa5; border-left:3px solid '
+                                      '#0f6e56; border-radius:8px; padding:10px 14px; color:#0f6e56;')
+        elif mode == 'safe':
+            self.shield.setText('<span style="font-size:15px;">🛡</span>&nbsp;&nbsp;'
+                                f'<b style="color:#005088;">{detail}</b>'
+                                '<span style="color:#4a5a6a;"> — held safe while conforming</span>')
+            self.shield.setStyleSheet('background:#eef5fb; border:1px solid #cfe4f5; border-left:3px solid '
+                                      '#28A0D8; border-radius:8px; padding:10px 14px; color:#005088;')
+        else:
+            self.shield.setText('<span style="font-size:15px;">🛡</span>&nbsp;&nbsp;'
+                                '<span style="color:#4a5a6a;">Your tracked changes and comments will be '
+                                'preserved and verified</span>')
+            self.shield.setStyleSheet('background:#eef5fb; border:1px solid #cfe4f5; border-left:3px solid '
+                                      '#28A0D8; border-radius:8px; padding:10px 14px;')
+
+
 class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
@@ -586,21 +735,29 @@ class MainWindow(QMainWindow):
 
         self.body_layout.addStretch()
 
-    def _build_analyzing_state(self):
+    def _build_analyzing_state(self, heading='CONFORMING'):
         self._clear_body()
 
-        sec = QLabel('ANALYZING')
+        sec = QLabel(heading)
         sec.setObjectName('sectionLabel')
         self.body_layout.addWidget(sec)
 
-        self.progress_bar = QProgressBar()
-        self.progress_bar.setRange(0, 0)
-        self.body_layout.addWidget(self.progress_bar)
+        # Live checklist driven by real per-pass progress from the engine.
+        self.checklist = ChecklistView()
+        self.checklist.set_mode('preserve')   # default; corrected by the first '__mode__' event
+        self.body_layout.addWidget(self.checklist)
 
-        self.status_label = QLabel('Reading document and identifying fixes...')
+        # Kept for back-compat with callers that set a status message; hidden behind the checklist.
+        self.status_label = QLabel('')
         self.status_label.setStyleSheet('color: #66707a; font-size: 12px;')
+        self.status_label.setVisible(False)
         self.body_layout.addWidget(self.status_label)
         self.body_layout.addStretch()
+
+    def _on_progress(self, key, detail):
+        cl = getattr(self, 'checklist', None)
+        if cl is not None:
+            cl.advance(key, detail)
 
     def _preserve_banner(self):
         """An elegant review-preserving banner: a shield with the tracked-change / comment / author
@@ -997,8 +1154,9 @@ class MainWindow(QMainWindow):
             )
             return
 
-        self._build_analyzing_state()
+        self._build_analyzing_state('CONFORMING')
         self.worker = AnalyzeWorker(self.template_path, self.input_path)
+        self.worker.progress.connect(self._on_progress)
         self.worker.finished.connect(self._on_analysis_done)
         self.worker.error.connect(self._on_analysis_error)
         self.worker.start()
@@ -1036,10 +1194,10 @@ class MainWindow(QMainWindow):
                 if row.skipped:
                     decisions[row.decision_id()] = 'skip'
 
-        self._build_analyzing_state()
-        self.status_label.setText('Applying decisions and conforming document...')
+        self._build_analyzing_state('APPLYING & CONFORMING')
 
         self.apply_worker = ApplyWorker(self.conformer, decisions)
+        self.apply_worker.progress.connect(self._on_progress)
         self.apply_worker.finished.connect(
             lambda fresh: self._on_apply_done(fresh, decisions)
         )

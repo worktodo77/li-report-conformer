@@ -247,6 +247,7 @@ class Conformer:
         self._verify_cache = {}
         self.revision_ledger = _rev.Ledger.build(self.parts, cache=self._verify_cache)
         self.disposition = None      # None/clean → legacy pipeline; 'preserve' → review-preserving
+        self.progress = None         # optional fn(phase_key, detail) for live UI progress; see _emit
         self.exceptions = []         # (pass_name, reason) for passes rolled back in preserve mode
         self._jcall_counter = 0
         self.pending_edits = []      # mechanical TEXT edits (before/after) for the UI, per-fix skippable
@@ -992,17 +993,45 @@ class Conformer:
         with zipfile.ZipFile(path, 'w', zipfile.ZIP_DEFLATED) as z:
             for n_, b in parts.items(): z.writestr(n_, b)
 
+    # Ordered progress phases the UI can render. The engine emits these keys as it works; the '__mode__'
+    # event fires first so the UI knows whether to show the preserve (8-step + shield) or clean checklist.
+    PROGRESS_PHASES_PRESERVE = ['read', 'track', 'styles', 'tables', 'structure', 'type', 'refs', 'save']
+    PROGRESS_PHASES_CLEAN = ['read', 'structure', 'type', 'save']
+
+    def _emit(self, phase, detail=''):
+        """Report progress to an optional UI callback (fn(phase_key, detail)). Never lets a UI error
+        break conforming."""
+        cb = getattr(self, 'progress', None)
+        if cb:
+            try:
+                cb(phase, detail)
+            except Exception:
+                pass
+
     def _run_passes(self):
         if self.revision_ledger.has_content_revisions() and self.disposition in (None, 'preserve'):
             self.disposition = 'preserve'
+            s = self.revision_ledger.summary()
+            self._emit('__mode__', 'preserve')
+            self._emit('read')
+            self._emit('track', f"{s['total']:,} tracked changes · {s['comments']} comments "
+                                f"· {len(s['authors'])} authors")
             self._run_passes_preserving()
+            self._emit('save')
         else:
+            self._emit('__mode__', 'clean')
+            self._emit('read')
             self._run_passes_clean()
+            self._emit('save')
 
     def _run_passes_clean(self):
-        self.revert_tracked_formatting(); self.unwrap_and_prune(); self.classify(); self.merge_pdf_lines()
+        self.revert_tracked_formatting(); self.unwrap_and_prune()
+        self._emit('structure')
+        self.classify(); self.merge_pdf_lines()
         self.fix_headings(); self.fix_levels(); self.strip_direct(); self.fix_tables(); self.fix_figures()
-        self.fix_footnotes(); self.rebuild_fields(); self.typography(); self.house_style(); self.fix_sections(); self.replace_parts()
+        self.fix_footnotes(); self.rebuild_fields()
+        self._emit('type')
+        self.typography(); self.house_style(); self.fix_sections(); self.replace_parts()
         self.audit_figures(); self.force_field_update()
 
     # ---------------------------------------------------------------- review-preserving pipeline
@@ -1040,19 +1069,22 @@ class Conformer:
         # — the prune pass (#4) removes page-break-ONLY paragraphs, which are layout, not reading
         # content (CAP-1). Column breaks, line breaks, and every other token stay protected.
         ordered = [
-            (self._repair_styles, 'stream'), (self._conform_tables_preserving, 'stream'),
-            (self.classify, 'stream'), (self.fix_levels, 'stream'),
-            (self._caps_headings_preserving, 'stream'), (self.strip_direct, 'stream'),
-            (self.fix_footnotes, 'stream'), (self.fix_sections, 'stream'),
-            (self.typography, 'text'), (self.house_style, 'house'),
-            (self._prune_preserving, 'prune'),
+            (self._repair_styles, 'stream', 'styles'), (self._conform_tables_preserving, 'stream', 'tables'),
+            (self.classify, 'stream', 'structure'), (self.fix_levels, 'stream', 'structure'),
+            (self._caps_headings_preserving, 'stream', 'structure'), (self.strip_direct, 'stream', 'structure'),
+            (self.fix_footnotes, 'stream', 'structure'), (self.fix_sections, 'stream', 'structure'),
+            (self.typography, 'text', 'type'), (self.house_style, 'house', 'type'),
+            (self._prune_preserving, 'prune', 'type'),
         ]
         # #3 unwrap wrapper tables runs FIRST (before formatting): the extracted paragraphs then
         # flow through classify/strip_direct and get properly conformed, instead of keeping the
         # TableData styling a later table pass would wrongly stamp on a layout wrapper.
         self._unwrap_tables_preserving()    # #3
         prev_stream = _rev.content_stream(self._output_parts(), cache=self._verify_cache)
-        for fn, gate in ordered:
+        _phase = None
+        for fn, gate, phase in ordered:
+            if phase != _phase:
+                self._emit(phase); _phase = phase
             snap = self._snapshot()
             try:
                 fn()
@@ -1076,6 +1108,7 @@ class Conformer:
         self._merge_pdf_lines_preserving()   # #1 AUTO authorized text edit (clean excerpts only)
         # Interactive ASK structural changes (display-preserving, per-instance JudgmentCalls).
         # #8 first (Claire's explicit need): caption fielding then cross-reference rebuild.
+        self._emit('refs')
         self._caption_fields_preserving()   # #8a
         self._xrefs_preserving()            # #8b
         self._split_headings_preserving()   # #6
@@ -1689,9 +1722,10 @@ class Conformer:
         self._run_passes()
         return list(self.pending_judgments)
 
-    def apply_with_decisions(self, decisions):
+    def apply_with_decisions(self, decisions, progress=None):
         fresh = Conformer(self.template_path, self.input_path)
         fresh.decisions = decisions
+        fresh.progress = progress
         fresh._run_passes()
         return fresh
 
