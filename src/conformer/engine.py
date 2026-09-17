@@ -1498,6 +1498,39 @@ class Conformer:
         self.styles = re.sub(r'<w:style\b[^>]*w:styleId="%s".*?</w:style>' % re.escape(sid),
                              repl, self.styles, count=1, flags=re.S)
 
+    @staticmethod
+    def _esc_attr(s):
+        return (s or '').replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;').replace('"', '&quot;')
+
+    @classmethod
+    def _overlay_level(cls, lvl, numFmt, lvlText, rfonts):
+        """Overlay the approved house numFmt / lvlText (and the glyph's symbol rFonts) onto one <w:lvl>,
+        replacing those children in place and leaving start / lvlRestart / pStyle / overrides intact (B)."""
+        if numFmt is not None:
+            el = f'<w:numFmt w:val="{cls._esc_attr(numFmt)}"/>'
+            if re.search(r'<w:numFmt\b[^>]*/>', lvl):
+                lvl = re.sub(r'<w:numFmt\b[^>]*/>', el, lvl, count=1)
+            else:
+                m = re.search(r'<w:start\b[^>]*/>', lvl) or re.search(r'<w:lvl\b[^>]*>', lvl)
+                lvl = lvl[:m.end()] + el + lvl[m.end():]
+        if lvlText is not None:
+            el = f'<w:lvlText w:val="{cls._esc_attr(lvlText)}"/>'
+            if re.search(r'<w:lvlText\b[^>]*/>', lvl):
+                lvl = re.sub(r'<w:lvlText\b[^>]*/>', el, lvl, count=1)
+            else:
+                m = re.search(r'<w:numFmt\b[^>]*/>', lvl) or re.search(r'<w:lvl\b[^>]*>', lvl)
+                lvl = lvl[:m.end()] + el + lvl[m.end():]
+        if rfonts:
+            rpr = re.search(r'<w:rPr>.*?</w:rPr>', lvl, re.S)
+            if rpr:
+                body = rpr.group(0)
+                nb = (re.sub(r'<w:rFonts\b[^>]*/>', rfonts, body, count=1)
+                      if re.search(r'<w:rFonts\b[^>]*/>', body) else body.replace('<w:rPr>', '<w:rPr>' + rfonts, 1))
+                lvl = lvl.replace(body, nb, 1)
+            else:
+                lvl = lvl.replace('</w:lvl>', f'<w:rPr>{rfonts}</w:rPr></w:lvl>', 1)
+        return lvl
+
     def _repair_styles(self):
         """Fix corrupt LI style definitions (Claire's 'List Bullet dysfunctional' / 'table style
         corrupted'): overwrite the document's definition of any style the template defines with the
@@ -1656,71 +1689,155 @@ class Conformer:
 
         self._house_repaired = {}
 
-        def _record_house_repair(c):
-            t_lv, o_lv = c['t_lv'], c['o_lv']
-            self._house_repaired[c['sid']] = {
-                'ilvl': c['ilvl'], 'shared_new_numId': c.get('new_nid'),
-                'before': {k: (o_lv or {}).get(k) for k in self._LEVEL_KEYS},
-                'after_expected': {'numFmt': t_lv.get('numFmt'), 'lvlText': t_lv.get('lvlText'),
-                                   'isLgl': t_lv.get('isLgl'),
-                                   'start': (o_lv or t_lv).get('start'),
-                                   'lvlRestart': (o_lv or t_lv).get('lvlRestart')}}
+        def _lvl_xml(graph, numId, ilvl):
+            aid = graph.abstract_of(numId)
+            raw = graph.raw_abstract(aid) if aid else None
+            if not raw:
+                return None
+            for lm in re.finditer(r'<w:lvl\b[^>]*?w:ilvl="([^"]+)".*?</w:lvl>', raw, re.S):
+                if lm.group(1) == ilvl:
+                    return lm.group(0)
+            return None
 
-        # Collect repair candidates, then plan PER ORIGINAL NUMBERING INSTANCE (issue #1 R1): styles that
-        # share one multilevel list in the source are rewired to ONE shared imported instance so continuation
-        # and parent/child numbering survive; originally independent lists stay independent.
-        candidates = []
-        for sid in ograph.styles:
-            if sid not in tmpl or not _house_list_target(sid, ograph.styles[sid].get('name')):
-                continue
-            o_np = ograph.style_numpr(sid); t_np = tgraph.style_numpr(sid)
-            if not t_np:
-                continue
-            ilvl = t_np[1] or '0'
-            t_lv = tgraph.resolve_level(t_np[0], ilvl)
-            if not t_lv:
-                continue
-            o_lv = ograph.resolve_level(o_np[0], ilvl) if o_np else None
-            o_house = tuple((o_lv or {}).get(k) for k in _HOUSE_LEVEL_KEYS)
-            t_house = tuple(t_lv.get(k) for k in _HOUSE_LEVEL_KEYS)
-            if o_house != t_house:      # wrong format OR wrong glyph OR missing -> dysfunctional
-                candidates.append({'sid': sid, 'o_np': o_np, 't_np': t_np, 'ilvl': ilvl,
-                                   'o_lv': o_lv, 't_lv': t_lv})
+        def _lvl_rfonts(lvl_xml):
+            rpr = re.search(r'<w:rPr>.*?</w:rPr>', lvl_xml or '', re.S)
+            f = re.search(r'<w:rFonts\b[^>]*/>', rpr.group(0)) if rpr else None
+            return f.group(0) if f else None
 
-        groups = defaultdict(list)
-        for c in candidates:
-            key = c['o_np'][0] if c['o_np'] else ('__nostyle__', c['sid'])
-            groups[key].append(c)
+        def _build_repaired_instance(src_numId, overlays):
+            """Import a FRESH copy of the SOURCE instance and overlay the approved house numFmt/lvlText (and
+            the glyph's symbol font) on ONLY the affected levels — retaining healthy levels, starts, restarts
+            and instance overrides (issue #1 B)."""
+            src_aid = ograph.abstract_of(src_numId)
+            raw_abs = ograph.raw_abstract(src_aid)
+            raw_num = ograph.raw_num(src_numId)
+            if not raw_abs or not raw_num:
+                return None
+            new_nid = str(alloc['num']); alloc['num'] += 1
+            new_aid = str(alloc['abs']); alloc['abs'] += 1
+            abs_xml = re.sub(r'(<w:abstractNum\b[^>]*w:abstractNumId=")[^"]+(")',
+                             lambda mm: mm.group(1) + new_aid + mm.group(2), raw_abs, count=1)
 
-        for key, group in groups.items():
-            tpl_nums = {c['t_np'][0] for c in group}
-            shared = len(tpl_nums) == 1 and all(c['o_np'] for c in group) and not isinstance(key, tuple)
-            if shared:
-                tpl_nid = next(iter(tpl_nums))
-                raw_num, raw_abs = _resolved_tpl_blocks(tpl_nid)
-                new_nid = _emit_import(raw_num, raw_abs, preserve=(ograph, group[0]['o_np'][0]))
-                if not new_nid:
-                    for c in group:
-                        self._unresolved_imports.append(
-                            {'style': c['sid'], 'numId': tpl_nid, 'context': 'house-repair',
-                             'detail': f"shared house list for {c['sid']} could not be repaired: template "
-                                       f"numbering {tpl_nid} did not resolve; left unchanged"})
+            present = set()
+
+            def _ov(lm):
+                lvl = lm.group(0)
+                ilm = re.search(r'w:ilvl="([^"]+)"', lvl)
+                il = ilm.group(1) if ilm else '0'
+                present.add(il)
+                ov = overlays.get(il)
+                if not ov:
+                    return lvl
+                return self._overlay_level(lvl, ov['numFmt'], ov['lvlText'], ov['rfonts'])
+            abs_xml = re.sub(r'<w:lvl\b.*?</w:lvl>', _ov, abs_xml, flags=re.S)
+            # a USED level the source lacks entirely (a dysfunctional style pointing past its definition) is
+            # ADDED from the template's approved level, so the repair completes rather than staying broken.
+            add = ''
+            for il, ov in sorted(overlays.items()):
+                if il in present or not ov.get('t_lvl_xml'):
                     continue
-                for c in group:                      # every level of the shared list -> ONE imported instance
-                    self._set_style_numpr(c['sid'], new_nid, c['ilvl'])
-                    c['new_nid'] = new_nid; _record_house_repair(c)
-            else:
-                for c in group:
-                    raw_num, raw_abs = _resolved_tpl_blocks(c['t_np'][0])
-                    new_nid = _emit_import(raw_num, raw_abs, preserve=(ograph, c['o_np'][0]) if c['o_np'] else None)
-                    if not new_nid:
-                        self._unresolved_imports.append(
-                            {'style': c['sid'], 'numId': c['t_np'][0], 'context': 'house-repair',
-                             'detail': f"dysfunctional house list style {c['sid']} could not be repaired: "
-                                       f"template numbering {c['t_np'][0]} did not resolve; left unchanged"})
-                        continue
-                    self._set_style_numpr(c['sid'], new_nid, c['ilvl'])
-                    c['new_nid'] = new_nid; _record_house_repair(c)
+                lvl = re.sub(r'(<w:lvl\b[^>]*?w:ilvl=")[^"]+(")', lambda mm: mm.group(1) + il + mm.group(2),
+                             ov['t_lvl_xml'], count=1)
+                add += lvl
+            abs_xml = abs_xml.replace('</w:abstractNum>', add + '</w:abstractNum>', 1) if add else abs_xml
+            new_defs.append(abs_xml)
+            nn = re.sub(r'(<w:num\b[^>]*w:numId=")[^"]+(")',
+                        lambda mm: mm.group(1) + new_nid + mm.group(2), raw_num, count=1)
+            nn = re.sub(r'(<w:abstractNumId w:val=")[^"]+(")',
+                        lambda mm: mm.group(1) + new_aid + mm.group(2), nn, count=1)
+            new_defs.append(nn)
+            return new_nid
+
+        # Reverse-use index over the ORIGINAL graph, built BEFORE any mutation (issue #1 B): every current
+        # STYLE user of each source instance (numId), plus DIRECT paragraph users in the body. A whole
+        # instance is repaired and ALL its users rebound together — never only the broken candidate styles.
+        style_users = defaultdict(list)          # src_numId -> [{'sid','ilvl'}]
+        for sid in ograph.styles:
+            r = ograph.resolve_style(sid)
+            if r.resolved:
+                style_users[r.numId].append({'sid': sid, 'ilvl': r.ilvl})
+            elif r.state == 'unresolved' and r.numId is not None:
+                # a DYSFUNCTIONAL house style declares an instance but its level does not resolve — it is
+                # still a user of that instance and is exactly what needs repair (must not be dropped).
+                style_users[r.numId].append({'sid': sid, 'ilvl': r.ilvl or '0'})
+        direct_users = defaultdict(list)         # src_numId -> [{'item','ilvl','tracked'}]
+        body_n = self.n() if getattr(self, 'items', None) is not None and hasattr(self, 'b0') else 0
+        for idx in range(body_n):
+            it = self.item(idx)
+            if not it.startswith('<w:p'):
+                continue
+            ppr = re.search(r'<w:pPr>.*?</w:pPr>', it, re.S)
+            cur = re.sub(r'<w:pPrChange\b.*?</w:pPrChange>', '', ppr.group(0), flags=re.S) if ppr else ''
+            npr = re.search(r'<w:numPr>.*?</w:numPr>', cur, re.S)
+            nm = re.search(r'<w:numId w:val="([^"]+)"', npr.group(0)) if npr else None
+            if not nm:
+                continue
+            im = re.search(r'<w:ilvl w:val="([^"]+)"', npr.group(0))
+            direct_users[nm.group(1)].append(
+                {'item': idx, 'ilvl': im.group(1) if im else None,
+                 'tracked': bool(re.search(r'<w:pPrChange|<w:ins\b|<w:del\b', it))})
+
+        def _house_target_style(sid):
+            return sid in tmpl and _house_list_target(sid, ograph.styles.get(sid, {}).get('name'))
+
+        for src_numId in list(style_users):
+            users = style_users[src_numId]
+            tnums = set(); overlays = {}
+            for u in users:
+                if not _house_target_style(u['sid']):
+                    continue
+                traw = tgraph._style_numpr_raw(u['sid'])
+                if not traw[0] or traw[0] == '0':
+                    continue
+                ilvl = u['ilvl']
+                t_lv = tgraph.resolve_level(traw[0], ilvl)
+                if not t_lv:
+                    continue
+                o_lv = ograph.resolve_level(src_numId, ilvl)
+                if tuple((o_lv or {}).get(k) for k in _HOUSE_LEVEL_KEYS) != tuple(t_lv.get(k) for k in _HOUSE_LEVEL_KEYS):
+                    tnums.add(traw[0])
+                    t_lvl_xml = _lvl_xml(tgraph, traw[0], ilvl)
+                    overlays[ilvl] = {'t_lv': t_lv, 'rfonts': _lvl_rfonts(t_lvl_xml), 't_lvl_xml': t_lvl_xml,
+                                      'numFmt': t_lv.get('numFmt'), 'lvlText': t_lv.get('lvlText')}
+            if not overlays:
+                continue                             # this instance's used levels already match house
+            if len(tnums) > 1:                       # conflicting house targets -> report, do not split
+                for u in users:
+                    self._unresolved_imports.append(
+                        {'style': u['sid'], 'numId': src_numId, 'context': 'house-repair-conflict',
+                         'detail': f'source instance {src_numId} maps to multiple template targets '
+                                   f'{sorted(tnums)}; reported, not split'})
+                continue
+            new_nid = _build_repaired_instance(src_numId, overlays)
+            if not new_nid:
+                for u in users:
+                    self._unresolved_imports.append(
+                        {'style': u['sid'], 'numId': src_numId, 'context': 'house-repair',
+                         'detail': f'source instance {src_numId} could not be repaired (definition unresolved)'})
+                continue
+            for u in users:                          # rebind EVERY style user (broken + healthy siblings)
+                self._set_style_numpr(u['sid'], new_nid, u['ilvl'])
+                o_lv = ograph.resolve_level(src_numId, u['ilvl'])
+                ov = overlays.get(u['ilvl'])
+                if ov:
+                    after = {'numFmt': ov['t_lv'].get('numFmt'), 'lvlText': ov['t_lv'].get('lvlText'),
+                             'isLgl': (o_lv or {}).get('isLgl'), 'start': (o_lv or {}).get('start'),
+                             'lvlRestart': (o_lv or {}).get('lvlRestart')}
+                else:
+                    after = {k: (o_lv or {}).get(k) for k in self._LEVEL_KEYS}
+                self._house_repaired[u['sid']] = {
+                    'ilvl': u['ilvl'], 'shared_new_numId': new_nid,
+                    'before': {k: (o_lv or {}).get(k) for k in self._LEVEL_KEYS}, 'after_expected': after}
+            for du in direct_users.get(src_numId, []):   # rebind direct users; report tracked ones
+                if du['tracked']:
+                    self._unresolved_imports.append(
+                        {'style': None, 'numId': src_numId, 'context': 'house-repair-direct-tracked',
+                         'item': du['item'], 'detail': f'direct numbering reference to repaired instance '
+                         f'{src_numId} at item {du["item"]} is a tracked change; left for review'})
+                    continue
+                self.set(du['item'], re.sub(
+                    r'(<w:numPr>(?:(?!</w:numPr>).)*?<w:numId w:val=")[^"]+(")',
+                    lambda mm: mm.group(1) + new_nid + mm.group(2), self.item(du['item']), count=1, flags=re.S))
 
         if new_defs:
             self.num = self.num.replace('</w:numbering>', ''.join(new_defs) + '</w:numbering>', 1)

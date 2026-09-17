@@ -94,3 +94,100 @@ def test_a_partial_direct_ilvl_merges_with_inherited_instance():
     r = g.resolve_paragraph(None, '1', 'L')          # direct ilvl 1, no direct numId
     assert r.state == 'resolved' and (r.numId, r.ilvl) == ('5', '1'), (r.state, r.numId, r.ilvl)
     assert r.level['numFmt'] == 'lowerLetter'
+
+
+# =================================================================== B. Whole-instance repair
+def _bconf(num, sty, tnum, tsty, items=None):
+    from conformer.engine import Conformer
+    c = Conformer.__new__(Conformer)
+    c._skip = lambda k: False
+    c.say = lambda *a, **k: None
+    c._house_repaired = {}
+    c._unresolved_imports = []
+    c._table_notes = []
+    c.num = num; c.styles = sty
+    c._orig_num0 = num; c._orig_styles0 = sty
+    c.t_num = tnum; c.t_styles = tsty
+    c.items = list(items or []); c.b0 = 0
+    c._orig_items0 = list(items or []); c._orig_b0 = 0
+    return c
+
+
+def _np2_styles(numsrc):
+    return (f'<w:styles {W}>'
+            '<w:style w:type="paragraph" w:styleId="NumberedParagraph"><w:name w:val="NumberedParagraph"/>'
+            f'<w:pPr><w:numPr><w:ilvl w:val="0"/><w:numId w:val="{numsrc}"/></w:numPr></w:pPr></w:style>'
+            '<w:style w:type="paragraph" w:styleId="NumberedParagraphL1"><w:name w:val="NumberedParagraphL1"/>'
+            f'<w:pPr><w:numPr><w:ilvl w:val="1"/><w:numId w:val="{numsrc}"/></w:numPr></w:pPr></w:style>'
+            '</w:styles>')
+
+
+def test_b_partial_corruption_keeps_shared_instance():
+    # numId 5 shared by NumberedParagraph (lvl0, BROKEN) and NumberedParagraphL1 (lvl1, ALREADY CORRECT).
+    # Only lvl0 needs repair; the two styles must remain on ONE shared instance, not split.
+    from conformer.numbering import NumberingGraph
+    num = (f'<w:numbering {W}><w:abstractNum w:abstractNumId="50">'
+           '<w:lvl w:ilvl="0"><w:start w:val="1"/><w:numFmt w:val="decimal"/><w:lvlText w:val="BROKEN1"/></w:lvl>'
+           '<w:lvl w:ilvl="1"><w:start w:val="1"/><w:numFmt w:val="decimal"/><w:lvlText w:val="%1.%2."/></w:lvl>'
+           '</w:abstractNum><w:num w:numId="5"><w:abstractNumId w:val="50"/></w:num></w:numbering>')
+    tnum = (f'<w:numbering {W}><w:abstractNum w:abstractNumId="70">'
+            '<w:lvl w:ilvl="0"><w:start w:val="1"/><w:numFmt w:val="decimal"/><w:lvlText w:val="%1."/></w:lvl>'
+            '<w:lvl w:ilvl="1"><w:start w:val="1"/><w:numFmt w:val="decimal"/><w:lvlText w:val="%1.%2."/></w:lvl>'
+            '</w:abstractNum><w:num w:numId="9"><w:abstractNumId w:val="70"/></w:num></w:numbering>')
+    c = _bconf(num, _np2_styles('5'), tnum, _np2_styles('9'))
+    c._repair_styles()
+    g = NumberingGraph(c.num, c.styles)
+    n0 = g.style_numpr('NumberedParagraph'); n1 = g.style_numpr('NumberedParagraphL1')
+    assert n0 is not None and n1 is not None
+    assert n0[0] == n1[0], f'partial repair split the shared instance: {n0} vs {n1}'
+    assert g.resolve_level(*n0)['lvlText'] == '%1.'      # lvl0 label repaired
+    assert g.resolve_level(*n1)['lvlText'] == '%1.%2.'   # lvl1 preserved
+
+
+def test_b_healthy_direct_user_rebound_to_repaired_instance():
+    # numId 5 used by style NumberedParagraph (lvl0, broken) AND a DIRECT paragraph reference (numId 5,
+    # lvl 1, non-tracked). Repairing the instance must rebind the direct user to the SAME new instance.
+    from conformer.numbering import NumberingGraph
+    num = (f'<w:numbering {W}><w:abstractNum w:abstractNumId="50">'
+           '<w:lvl w:ilvl="0"><w:start w:val="1"/><w:numFmt w:val="decimal"/><w:lvlText w:val="BROKEN1"/></w:lvl>'
+           '<w:lvl w:ilvl="1"><w:start w:val="1"/><w:numFmt w:val="decimal"/><w:lvlText w:val="%1.%2."/></w:lvl>'
+           '</w:abstractNum><w:num w:numId="5"><w:abstractNumId w:val="50"/></w:num></w:numbering>')
+    tnum = (f'<w:numbering {W}><w:abstractNum w:abstractNumId="70">'
+            '<w:lvl w:ilvl="0"><w:start w:val="1"/><w:numFmt w:val="decimal"/><w:lvlText w:val="%1."/></w:lvl>'
+            '<w:lvl w:ilvl="1"><w:start w:val="1"/><w:numFmt w:val="decimal"/><w:lvlText w:val="%1.%2."/></w:lvl>'
+            '</w:abstractNum><w:num w:numId="9"><w:abstractNumId w:val="70"/></w:num></w:numbering>')
+    para = ('<w:p><w:pPr><w:numPr><w:ilvl w:val="1"/><w:numId w:val="5"/></w:numPr></w:pPr>'
+            '<w:r><w:t>direct user</w:t></w:r></w:p>')
+    c = _bconf(num, _np2_styles('5'), tnum, _np2_styles('9'), items=[para])
+    c._repair_styles()
+    g = NumberingGraph(c.num, c.styles)
+    style_nid = g.style_numpr('NumberedParagraph')[0]
+    import re as _re
+    m = _re.search(r'<w:numId w:val="([^"]+)"', c.items[0])
+    assert m and m.group(1) == style_nid, 'direct user not rebound to the repaired instance'
+
+
+def test_b_independent_instances_sharing_abstract_stay_independent():
+    from conformer.numbering import NumberingGraph
+    # numId 5 and numId 6 both reference abstract 50; style A uses 5 (broken), style B uses 6 (independent).
+    num = (f'<w:numbering {W}><w:abstractNum w:abstractNumId="50"><w:lvl w:ilvl="0"><w:numFmt w:val="decimal"/>'
+           '<w:lvlText w:val="BROKEN"/></w:lvl></w:abstractNum>'
+           '<w:num w:numId="5"><w:abstractNumId w:val="50"/></w:num>'
+           '<w:num w:numId="6"><w:abstractNumId w:val="50"/></w:num></w:numbering>')
+
+    def sty(a, b):
+        return (f'<w:styles {W}>'
+                '<w:style w:type="paragraph" w:styleId="ListNumber"><w:name w:val="ListNumber"/>'
+                f'<w:pPr><w:numPr><w:ilvl w:val="0"/><w:numId w:val="{a}"/></w:numPr></w:pPr></w:style>'
+                '<w:style w:type="paragraph" w:styleId="ListNumber2"><w:name w:val="ListNumber2"/>'
+                f'<w:pPr><w:numPr><w:ilvl w:val="0"/><w:numId w:val="{b}"/></w:numPr></w:pPr></w:style></w:styles>')
+    tnum = (f'<w:numbering {W}><w:abstractNum w:abstractNumId="70"><w:lvl w:ilvl="0"><w:numFmt w:val="decimal"/>'
+            '<w:lvlText w:val="%1."/></w:lvl></w:abstractNum>'
+            '<w:num w:numId="8"><w:abstractNumId w:val="70"/></w:num>'
+            '<w:num w:numId="9"><w:abstractNumId w:val="70"/></w:num></w:numbering>')
+    c = _bconf(num, sty('5', '6'), tnum, sty('8', '9'))
+    c._repair_styles()
+    g = NumberingGraph(c.num, c.styles)
+    a = g.style_numpr('ListNumber')[0]; b = g.style_numpr('ListNumber2')[0]
+    assert a != b, 'independent instances (5 vs 6) were merged'
+    assert '6' == b or b != a   # B keeps its own instance

@@ -19,9 +19,11 @@ def _blank_conformer(num, sty, tnum, tsty):
     c.say = lambda *a, **k: None
     c._house_repaired = {}
     c._unresolved_imports = []
+    c._table_notes = []
     c.num = num; c.styles = sty
     c._orig_num0 = num; c._orig_styles0 = sty
     c.t_num = tnum; c.t_styles = tsty
+    c.items = []; c.b0 = 0; c._orig_items0 = []; c._orig_b0 = 0
     return c
 
 
