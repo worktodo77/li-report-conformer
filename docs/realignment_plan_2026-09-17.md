@@ -156,12 +156,18 @@ farther/further, company-singular, etc. Listed in §10 of the gap analysis for c
 3. **P2 auto-fixes** — bolt on once the verifier exists (several feed off it).
 4. **P3 flags** — a review surface, lowest risk, add incrementally.
 
-## Open decisions for Alex (one at a time, recommendation-first, before building)
-- **D-1 Caption basis:** Warhoe tables are H3-based (`3.4.2-1`). Re-base to the house H1/H2 standard
-  (renumbers every caption + reference), or flag-only and leave the author's basis? (Recommend: flag +
-  offer, don't silently renumber — it's a big, visible change.)
-- **D-2 Prime vs spelled-out** for measurements (`2″` vs `2 inches`/`2-inch`) [§7/§10 #19].
-- **D-3 Column alignment:** infer numeric-right/text-left, or preserve the author's alignment and only stop
-  imposing centering? (Recommend: stop imposing centering; infer conservatively, flag ambiguous.)
-- **D-4 H2 casing exception:** confirm the rule "if H2s are consistently initial-caps, preserve as the
-  documented long-title exception" is the intended behavior.
+## Decisions — RESOLVED by Alex 2026-09-17
+- **D-1 Caption basis → FLAG + OFFER, do not auto-renumber.** Detect and report a non-H1/H2 or mixed basis
+  (Warhoe: H3 tables `3.4.2-1` mixed with H1 figures) as a review item; offer re-basing as an explicit
+  opt-in. Never silently renumber captions/references. Within whatever basis is present, still fix stale/
+  duplicate/gapped SEQ numbers.
+- **D-2 Measurements → SPELL OUT IN BODY, PRIME IN TABLES.** Body prose: `2"` → `2-inch`/`2 inches`. Tables:
+  keep a true prime mark `2″` (do not convert). Excerpts/quotes: untouched. Scope the current blanket
+  `N"`→`-inch` accordingly (fixes P0-3).
+- **D-3 Column alignment → INFER CONSERVATIVELY, FLAG AMBIGUOUS.** Stop force-centering. Unambiguously
+  numeric column → right; first/text column → left; preserve any alignment the author set explicitly; flag
+  columns that can't be confidently classified. (Header row stays centered per GridTable4.)
+- **D-4 H2 casing → HONOR THE EXCEPTION IF CONSISTENT.** If H2s are consistently initial-caps, preserve
+  (documented long-title exception); if consistently all-caps, keep all-caps; if mixed, flag rather than
+  force. H1 always true caps; the engine never uses a display-only `<w:caps/>` attribute (breaks TOC/PDF
+  bookmarks per §3).
