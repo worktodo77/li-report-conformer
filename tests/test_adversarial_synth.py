@@ -135,19 +135,19 @@ def test_corrupted_list_bullet_style_repaired():
 
 
 def test_corrupted_table_style_repaired():
+    # A document with a table but missing the house table style ends up with a correct Grid Table 4 /
+    # "LI Table": present in the output styles, with the black grid and the CONCRETE teal header (no navy,
+    # no theme-dependent fill), so it renders teal regardless of the document's accent5.
     d = _doc()
-    # ensure LITable exists then corrupt it
-    from conformer.engine import LITABLE
-    d.styles.element.append(parse_xml(LITABLE.replace('<w:style ', '<w:style %s ' % nsdecls('w'), 1)))
-    assert lib.corrupt_style_def(d, 'LITable')
     t = d.add_table(rows=2, cols=2)
     t.cell(0, 0).paragraphs[0].add_run('x')
     path = _save(d)
     c = Conformer(TEMPLATE, path)
     c.run()
     import re
-    m = re.search(r'<w:style\b[^>]*w:styleId="LITable".*?</w:style>', c.styles, re.S)
-    assert m and '<w:tblBorders' in m.group(0), 'LITable not repaired from template'
+    m = re.search(r'<w:style\b[^>]*w:styleId="GridTable4".*?</w:style>', c.styles, re.S)
+    assert m and '<w:tblBorders' in m.group(0), 'GridTable4 ("LI Table") not present/repaired from template'
+    assert 'B6DDE8' in m.group(0) and '054F8A' not in m.group(0) and 'themeFill' not in m.group(0)
 
 
 def test_comment_inside_removed_region_preserved():

@@ -221,7 +221,7 @@ def test_r5_header_fill_corrected_even_when_tracked_record_preserved():
     out, rep, tracked_fixed = c._repair_stray_header_formatting(tbl, 'T1')
     assert rep == 2 and tracked_fixed == 1
     assert 'BDD6EE' not in out and 'D9EAF7' not in out   # current fills corrected (tracked one too)
-    assert out.count('w:fill="054F8A"') == 2            # both current backgrounds are concrete house navy
+    assert out.count('w:fill="B6DDE8"') == 2            # both current backgrounds are concrete house teal
     assert 'tcPrChange' in out and 'ABCDEF' in out      # the tracked-change record + its old colour preserved
     assert '<w:sz' not in out and 'w:val="222222"' not in out  # stray-cell run overrides normalised
     assert any('TRACKED' in n and 'corrected' in n for n in c._table_notes)

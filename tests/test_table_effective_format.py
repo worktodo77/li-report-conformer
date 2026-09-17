@@ -15,7 +15,7 @@ def _cell(text, tcpr='', ppr=''):
     return f'<w:tc><w:tcPr>{tcpr}</w:tcPr><w:p><w:pPr>{ppr}</w:pPr><w:r><w:t>{text}</w:t></w:r></w:p></w:tc>'
 
 
-def _header_cell(text, fill='054F8A', color='FFFFFF'):
+def _header_cell(text, fill='B6DDE8', color='auto'):
     return (f'<w:tc><w:tcPr><w:shd w:val="clear" w:color="auto" w:fill="{fill}"/></w:tcPr>'
             f'<w:p><w:pPr><w:jc w:val="center"/></w:pPr><w:r><w:rPr><w:color w:val="{color}"/></w:rPr>'
             f'<w:t>{text}</w:t></w:r></w:p></w:tc>')
@@ -23,7 +23,7 @@ def _header_cell(text, fill='054F8A', color='FFFFFF'):
 
 def _table(rows, tblpr_extra=''):
     body = ''.join(rows)
-    return (f'<w:tbl><w:tblPr><w:tblStyle w:val="LITable"/>{tblpr_extra}</w:tblPr>'
+    return (f'<w:tbl><w:tblPr><w:tblStyle w:val="GridTable4"/>{tblpr_extra}</w:tblPr>'
             f'<w:tblGrid><w:gridCol w:w="2000"/><w:gridCol w:w="2000"/></w:tblGrid>{body}</w:tbl>')
 
 
@@ -52,8 +52,8 @@ def test_correct_style_name_but_direct_cell_border_fails():
 
 def test_direct_table_borders_fail():
     # a NON-house direct table border (red, thick) overrides the grey grid and must fail
-    t = _conformant_table().replace('<w:tblStyle w:val="LITable"/>',
-                                    '<w:tblStyle w:val="LITable"/><w:tblBorders>'
+    t = _conformant_table().replace('<w:tblStyle w:val="GridTable4"/>',
+                                    '<w:tblStyle w:val="GridTable4"/><w:tblBorders>'
                                     '<w:top w:val="single" w:sz="18" w:color="FF0000"/></w:tblBorders>')
     assert any(i['kind'] == 'grid-overridden' for i in effective_table_issues(t))
 
@@ -115,6 +115,6 @@ def test_engine_strips_direct_cell_borders_and_reports_nested():
     assert 'FF0000' not in out                 # the injected direct grid-override border was removed
     # and the conformed table carries the LI style with no direct cell borders left on my table
     my_tbl = [it for it in c.items if it.startswith('<w:tbl') and 'Data' in it]
-    assert my_tbl and '<w:tcBorders>' not in my_tbl[0] and 'w:val="LITable"' in my_tbl[0]
+    assert my_tbl and '<w:tcBorders>' not in my_tbl[0] and 'w:val="GridTable4"' in my_tbl[0]
     ok, _ = c.validate_output()
     assert ok

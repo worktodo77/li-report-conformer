@@ -286,10 +286,23 @@ def keep_rpr_children(rpr_inner, is_fnref=False, keep_color=False):
         elif tag == 'rFonts' and _keep_rfonts(cx):
             kept.append(cx)
     return kept
-LITABLE = ('<w:style w:type="table" w:customStyle="1" w:styleId="LITable"><w:name w:val="LI Table"/><w:basedOn w:val="TableNormal"/><w:uiPriority w:val="1"/><w:qFormat/>'
-  '<w:pPr><w:spacing w:before="60" w:after="60" w:line="240" w:lineRule="auto"/><w:jc w:val="center"/></w:pPr><w:rPr><w:color w:val="000000"/><w:sz w:val="22"/><w:szCs w:val="22"/></w:rPr>'
-  '<w:tblPr><w:jc w:val="center"/><w:tblBorders><w:top w:val="single" w:sz="4" w:space="0" w:color="808080"/><w:left w:val="single" w:sz="4" w:space="0" w:color="808080"/><w:bottom w:val="single" w:sz="4" w:space="0" w:color="808080"/><w:right w:val="single" w:sz="4" w:space="0" w:color="808080"/><w:insideH w:val="single" w:sz="4" w:space="0" w:color="808080"/><w:insideV w:val="single" w:sz="4" w:space="0" w:color="808080"/></w:tblBorders><w:tblCellMar><w:left w:w="72" w:type="dxa"/><w:right w:w="72" w:type="dxa"/></w:tblCellMar></w:tblPr>'
-  '<w:tcPr><w:vAlign w:val="center"/></w:tcPr><w:tblStylePr w:type="firstRow"><w:pPr><w:keepNext/><w:jc w:val="center"/></w:pPr><w:rPr><w:b/><w:bCs/><w:color w:val="FFFFFF"/></w:rPr><w:trPr><w:cantSplit/><w:tblHeader/></w:trPr><w:tcPr><w:shd w:val="clear" w:color="auto" w:fill="054F8A"/><w:vAlign w:val="center"/></w:tcPr></w:tblStylePr></w:style>')
+# Fallback house table style (Grid Table 4 / "LI Table"), used ONLY if a template lacks it: teal B6DDE8
+# header, black bold Times New Roman Bold 10pt header text, black ½pt grid. Colours are CONCRETE (no
+# themeFill) so it renders correctly regardless of the document's theme.
+GRIDTABLE4 = ('<w:style w:type="table" w:styleId="GridTable4"><w:name w:val="Grid Table 4"/><w:aliases w:val="LI Table"/><w:basedOn w:val="TableNormal"/><w:uiPriority w:val="49"/>'
+  '<w:pPr><w:spacing w:before="60" w:after="60"/></w:pPr><w:rPr><w:sz w:val="22"/></w:rPr>'
+  '<w:tblPr><w:tblStyleRowBandSize w:val="1"/><w:tblStyleColBandSize w:val="1"/><w:jc w:val="center"/><w:tblBorders><w:top w:val="single" w:sz="4" w:space="0" w:color="auto"/><w:left w:val="single" w:sz="4" w:space="0" w:color="auto"/><w:bottom w:val="single" w:sz="4" w:space="0" w:color="auto"/><w:right w:val="single" w:sz="4" w:space="0" w:color="auto"/><w:insideH w:val="single" w:sz="4" w:space="0" w:color="auto"/><w:insideV w:val="single" w:sz="4" w:space="0" w:color="auto"/></w:tblBorders></w:tblPr>'
+  '<w:trPr><w:cantSplit/><w:jc w:val="center"/></w:trPr>'
+  '<w:tblStylePr w:type="firstRow"><w:pPr><w:wordWrap/><w:spacing w:line="240" w:lineRule="auto"/><w:jc w:val="center"/></w:pPr><w:rPr><w:rFonts w:ascii="Times New Roman Bold" w:hAnsi="Times New Roman Bold"/><w:b/><w:bCs/><w:i w:val="0"/><w:caps w:val="0"/><w:color w:val="auto"/><w:sz w:val="20"/><w:u w:val="none"/><w:vertAlign w:val="baseline"/></w:rPr><w:trPr><w:cantSplit/><w:tblHeader/></w:trPr><w:tcPr><w:tcBorders><w:top w:val="single" w:sz="4" w:space="0" w:color="auto"/><w:left w:val="single" w:sz="4" w:space="0" w:color="auto"/><w:bottom w:val="single" w:sz="4" w:space="0" w:color="auto"/><w:right w:val="single" w:sz="4" w:space="0" w:color="auto"/><w:insideH w:val="nil"/><w:insideV w:val="single" w:sz="4" w:space="0" w:color="auto"/></w:tcBorders><w:shd w:val="clear" w:color="auto" w:fill="B6DDE8"/><w:vAlign w:val="bottom"/></w:tcPr></w:tblStylePr></w:style>')
+
+
+def _theme_independent_style(style_xml):
+    """Strip themeFill/themeFillTint/themeFillShade/themeColor/themeTint/themeShade from a style block so
+    its colours are the CONCRETE fallback hex (e.g. header fill B6DDE8), rendering the same regardless of
+    the destination document's theme (whose accentN may differ from the LI template's)."""
+    s = re.sub(r'\s+w:theme(?:Fill|Color)="[^"]*"', '', style_xml)
+    s = re.sub(r'\s+w:theme(?:FillTint|FillShade|Tint|Shade)="[^"]*"', '', s)
+    return s
 
 class Conformer:
     def __init__(self, template, path):
@@ -300,7 +313,16 @@ class Conformer:
             for n in z.namelist(): self.parts[n] = z.read(n)
         with zipfile.ZipFile(template) as z:
             self.t_styles = z.read('word/styles.xml').decode('utf8'); self.t_num = z.read('word/numbering.xml').decode('utf8')
-        if 'w:styleId="LITable"' not in self.t_styles: self.t_styles = self.t_styles.replace('</w:styles>', LITABLE + '</w:styles>')
+        # The house table style is Grid Table 4 / "LI Table". Take the template's own definition when it
+        # carries one (the bundled template.dotx does), else the fallback constant; make it theme-INDEPENDENT
+        # (concrete B6DDE8 teal, not themeFill=accent5) so the header renders teal even in a document whose
+        # theme accent5 is a different colour. This is the definition the engine imports/stamps.
+        m = re.search(r'<w:style\b[^>]*w:styleId="GridTable4".*?</w:style>', self.t_styles, re.S)
+        self._house_table_style = _theme_independent_style(m.group(0) if m else GRIDTABLE4)
+        if m:
+            self.t_styles = self.t_styles.replace(m.group(0), self._house_table_style)
+        else:
+            self.t_styles = self.t_styles.replace('</w:styles>', self._house_table_style + '</w:styles>')
         self.doc = self.parts['word/document.xml'].decode('utf8')
         self.styles = self.parts['word/styles.xml'].decode('utf8'); self.num = self.parts['word/numbering.xml'].decode('utf8')
         # Pristine numbering/styles captured for resolution-based verification (numbering_report): passes
@@ -853,8 +875,8 @@ class Conformer:
             x = self.item(i)
             if not x.startswith('<w:tbl'): continue
             x = re.sub(r'<w:tblBorders>.*?</w:tblBorders>|<w:tcBorders>.*?</w:tcBorders>|<w:shd [^>]*/>', '', x, flags=re.S)
-            if '<w:tblStyle' not in x: x = x.replace('<w:tblPr>', '<w:tblPr><w:tblStyle w:val="LITable"/>', 1)
-            else: x = re.sub(r'<w:tblStyle w:val="[^"]+"/>', '<w:tblStyle w:val="LITable"/>', x)
+            if '<w:tblStyle' not in x: x = x.replace('<w:tblPr>', '<w:tblPr><w:tblStyle w:val="GridTable4"/>', 1)
+            else: x = re.sub(r'<w:tblStyle w:val="[^"]+"/>', '<w:tblStyle w:val="GridTable4"/>', x)
             x = re.sub(r'<w:tblLook [^>]*/>', '<w:tblLook w:val="04A0" w:firstRow="1" w:lastRow="0" w:firstColumn="0" w:lastColumn="0" w:noHBand="0" w:noVBand="1"/>', x)
             # drop empty columns
             rows = re.findall(r'<w:tr\b.*?</w:tr>', x, re.S)
@@ -2410,14 +2432,16 @@ class Conformer:
             xml = xml.replace(tok, masks[tok])
         return xml
 
-    HOUSE_HEADER_SHD = '<w:shd w:val="clear" w:color="auto" w:fill="054F8A"/>'
+    HOUSE_HEADER_SHD = '<w:shd w:val="clear" w:color="auto" w:fill="B6DDE8"/>'
 
     @classmethod
     def _correct_current_header_fill(cls, tc):
-        """Normalize a header cell's CURRENT background to the CONCRETE house navy (issue #1 D): the direct
-        <w:shd> in the current tcPr (the region BEFORE any <w:tcPrChange> snapshot) is replaced with
-        clear/054F8A/auto with any conflicting themeFill/themeColor/tint/shade removed — covering white,
-        automatic and theme fills, not just a non-house hex. The historical tcPrChange snapshot is left
+        """Normalize a header cell's CURRENT background to the CONCRETE house teal B6DDE8 (Grid Table 4): the
+        direct <w:shd> in the current tcPr (the region BEFORE any <w:tcPrChange> snapshot) is replaced with
+        clear/B6DDE8/auto with any conflicting themeFill/themeColor/tint/shade removed — covering white,
+        automatic and theme fills (incl. a theme accent that would resolve to the wrong colour), not just a
+        non-house hex. A concrete B6DDE8 (with no theme reference) is theme-independent, so the teal renders
+        correctly regardless of the document's accent5. The historical tcPrChange snapshot is left
         byte-identical, so the tracked-change RECORD is preserved. Returns (xml, changed)."""
         o = tc.find('<w:tcPr>')
         if o < 0:
@@ -2432,19 +2456,20 @@ class Conformer:
             return tc, False                          # no direct current fill -> rely on the conditional
         shd = m.group(0)
         fill = re.search(r'w:fill="([^"]+)"', shd)
-        already_navy = (fill and fill.group(1).upper() == '054F8A' and 'theme' not in shd)
-        if already_navy:
+        already_teal = (fill and fill.group(1).upper() == 'B6DDE8' and 'theme' not in shd)
+        if already_teal:
             return tc, False
         new_region = region.replace(shd, cls.HOUSE_HEADER_SHD, 1)
         return tc[:o] + new_region + tc[end:], True
 
     def _repair_stray_header_formatting(self, tbl_xml, locator):
-        """Correct the header row to the house style so the LITable navy/white/bold header renders (issue
-        #1 R5). Per the maintainer ruling, a WRONG header FILL is corrected to the house colour even when it
-        is a tracked formatting change — the tracked-change RECORD (the <w:tcPrChange> snapshot and every
-        ins/del text mark) is preserved, only the CURRENT wrong fill is normalised so the house colour wins.
-        Run size/colour are also normalised on cells with no run-level tracked change (so a tracked inserted
-        run's own formatting is left intact). Returns (xml, corrected_cells, tracked_fills_corrected)."""
+        """Correct the header row to the house style so the Grid Table 4 teal/black-bold header renders
+        (issue #1 R5). Per the maintainer ruling, a WRONG header FILL is corrected to the house colour even
+        when it is a tracked formatting change — the tracked-change RECORD (the <w:tcPrChange> snapshot and
+        every ins/del text mark) is preserved, only the CURRENT wrong fill is normalised so the house teal
+        wins. Direct run size/colour are stripped on cells with no run-level tracked change so the header
+        inherits the style's black 10pt bold text (a tracked inserted run's own formatting is left intact).
+        Returns (xml, corrected_cells, tracked_fills_corrected)."""
         m = re.search(r'<w:tr\b.*?</w:tr>', tbl_xml, re.S)
         if not m or '<w:tblHeader' not in m.group(0):
             return tbl_xml, 0, 0
@@ -2476,6 +2501,16 @@ class Conformer:
                                      'tracked-change record is preserved')
         return out, rep[0], tracked_fixed[0]
 
+    def _ensure_house_table_style(self):
+        """Import the house table style (Grid Table 4 / "LI Table") into the document's own styles.xml if it
+        is missing (the Warhoe report lacks it entirely), so a stamped tblStyle="GridTable4" resolves to the
+        real teal/black/grid definition instead of Word's default. The imported definition is theme-
+        independent (concrete B6DDE8), so it renders teal regardless of the document's accent5."""
+        if re.search(r'<w:style\b[^>]*w:styleId="GridTable4"', self.styles):
+            return
+        self.styles = self.styles.replace('</w:styles>', self._house_table_style + '</w:styles>', 1)
+        self.say('M', -1, 'imported the house table style Grid Table 4 ("LI Table")')
+
     def _conform_tables_preserving(self):
         """Make every table USE the (now-repaired) LI table style so its built-in settings apply
         (Claire's 'tables not using the table style' / 'settings not used'). Table-level properties
@@ -2483,6 +2518,7 @@ class Conformer:
         target is touched."""
         if self._skip('tables'):
             return
+        self._ensure_house_table_style()
         cnt = 0
         for i in range(self.n()):
             x = self.item(i)
@@ -2498,20 +2534,20 @@ class Conformer:
                 self._table_notes.append(f'{self._locator(i)}: nested table left untouched for independent '
                                          'review')
                 continue
-            # Remove direct table AND cell borders that would override the LITable grey grid (a correct
-            # style name does not conform if a direct <w:tcBorders> defeats it). Masked revision content
-            # is untouched (its borders are behind sentinels).
+            # Remove direct table AND cell borders that would override the Grid Table 4 black grid (a
+            # correct style name does not conform if a direct <w:tcBorders> defeats it). Masked revision
+            # content is untouched (its borders are behind sentinels).
             nx = re.sub(r'<w:tblBorders>.*?</w:tblBorders>', '', masked, flags=re.S)
             nx = re.sub(r'<w:tcBorders>.*?</w:tcBorders>', '', nx, flags=re.S)
             # REPAIR (not only detect) known house-controlled conflicts: remove direct cell margins and
-            # direct run sizes that conflict with the house 11pt, so the LITable style supplies them. Masked
-            # revision content is untouched (behind sentinels).
+            # direct run sizes that conflict with the house body 11pt, so the Grid Table 4 style supplies
+            # them. Masked revision content is untouched (behind sentinels).
             nx = re.sub(r'<w:tcMar>.*?</w:tcMar>', '', nx, flags=re.S)
             nx = re.sub(r'<w:sz w:val="(\d+)"/>', lambda mm: '' if mm.group(1) != '22' else mm.group(0), nx)
             if '<w:tblStyle' in nx:
-                nx = re.sub(r'<w:tblStyle w:val="[^"]+"/>', '<w:tblStyle w:val="LITable"/>', nx, count=1)
+                nx = re.sub(r'<w:tblStyle w:val="[^"]+"/>', '<w:tblStyle w:val="GridTable4"/>', nx, count=1)
             else:
-                nx = nx.replace('<w:tblPr>', '<w:tblPr><w:tblStyle w:val="LITable"/>', 1)
+                nx = nx.replace('<w:tblPr>', '<w:tblPr><w:tblStyle w:val="GridTable4"/>', 1)
             nx = re.sub(r'<w:tblLook [^>]*/>',
                         '<w:tblLook w:val="04A0" w:firstRow="1" w:lastRow="0" w:firstColumn="0" '
                         'w:lastColumn="0" w:noHBand="0" w:noVBand="1"/>', nx)
@@ -2540,7 +2576,7 @@ class Conformer:
                 nx = nx.replace(fr.group(0), hdr, 1)
             nx = self._unmask(nx, masks)
             # R5 header repair: on the header row, strip a NON-house direct fill / run size / colour so the
-            # LITable navy+white+bold header renders — but ONLY on cells with NO tracked change. A header
+            # Grid Table 4 teal + black-bold header renders — but ONLY on cells with NO tracked change. A header
             # fill that is itself a tracked formatting edit (tcPrChange/ins/del) is a reviewer's in-progress
             # decision: it is PRESERVED and flagged for human review, never silently rewritten.
             nx, hrep, hflag = self._repair_stray_header_formatting(nx, self._locator(i))

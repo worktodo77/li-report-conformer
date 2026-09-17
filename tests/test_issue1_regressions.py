@@ -426,14 +426,14 @@ def test_r3_conformance_clean_wired_into_audit_and_ui_callers():
 # ---------------------------------------------------------------- R5: effective table formatting
 def test_r5_disabled_header_and_direct_font_size_fail():
     from conformer.tablespec import effective_table_issues, table_conformant
-    frag = ('<w:tbl><w:tblPr><w:tblStyle w:val="LITable"/>'
+    frag = ('<w:tbl><w:tblPr><w:tblStyle w:val="GridTable4"/>'
             '<w:tblLook w:val="0000" w:firstRow="0" w:lastRow="0" w:firstColumn="0" w:lastColumn="0"/></w:tblPr>'
             '<w:tblGrid><w:gridCol w:w="2000"/></w:tblGrid>'
             '<w:tr><w:trPr><w:tblHeader w:val="0"/></w:trPr><w:tc><w:tcPr></w:tcPr>'
             '<w:p><w:pPr><w:jc w:val="center"/></w:pPr><w:r><w:rPr><w:sz w:val="144"/></w:rPr>'
             '<w:t>H</w:t></w:r></w:p></w:tc></w:tr></w:tbl>')
     kinds = {i['kind'] for i in effective_table_issues(frag)}
-    assert 'header-conditional-off' in kinds     # tblLook firstRow off -> navy header never applies
+    assert 'header-conditional-off' in kinds     # tblLook firstRow off -> teal header never applies
     assert 'header-missing' in kinds             # tblHeader val=0 is DISABLED, not enabled
     assert 'font-size' in kinds                  # a 72pt direct header run defeats the house size
     assert table_conformant(frag) is False       # was falsely True before
@@ -441,42 +441,42 @@ def test_r5_disabled_header_and_direct_font_size_fail():
 
 def test_r5_equivalent_direct_border_not_flagged():
     from conformer.tablespec import effective_table_issues
-    house = '<w:tcBorders><w:top w:val="single" w:sz="4" w:color="808080"/></w:tcBorders>'
-    frag = (f'<w:tbl><w:tblPr><w:tblStyle w:val="LITable"/></w:tblPr><w:tblGrid><w:gridCol w:w="2000"/></w:tblGrid>'
+    house = '<w:tcBorders><w:top w:val="single" w:sz="4" w:color="auto"/></w:tcBorders>'
+    frag = (f'<w:tbl><w:tblPr><w:tblStyle w:val="GridTable4"/></w:tblPr><w:tblGrid><w:gridCol w:w="2000"/></w:tblGrid>'
             f'<w:tr><w:trPr><w:tblHeader/></w:trPr><w:tc><w:tcPr>{house}</w:tcPr>'
             f'<w:p><w:pPr><w:jc w:val="center"/></w:pPr><w:r><w:t>x</w:t></w:r></w:p></w:tc></w:tr></w:tbl>')
     assert not any(i['kind'] == 'grid-overridden' for i in effective_table_issues(frag))   # equivalent = ok
-    red = house.replace('808080', 'FF0000').replace('sz="4"', 'sz="18"')
+    red = house.replace('auto', 'FF0000').replace('sz="4"', 'sz="18"')
     assert any(i['kind'] == 'grid-overridden' for i in effective_table_issues(frag.replace(house, red)))
 
 
 def test_r5_corrupt_litable_style_def_detected():
     from conformer.tablespec import effective_table_issues
-    frag = ('<w:tbl><w:tblPr><w:tblStyle w:val="LITable"/></w:tblPr><w:tblGrid><w:gridCol w:w="2000"/></w:tblGrid>'
+    frag = ('<w:tbl><w:tblPr><w:tblStyle w:val="GridTable4"/></w:tblPr><w:tblGrid><w:gridCol w:w="2000"/></w:tblGrid>'
             '<w:tr><w:trPr><w:tblHeader/></w:trPr><w:tc><w:tcPr></w:tcPr>'
             '<w:p><w:pPr><w:jc w:val="center"/></w:pPr><w:r><w:t>x</w:t></w:r></w:p></w:tc></w:tr></w:tbl>')
-    grid = ''.join(f'<w:{s} w:val="single" w:sz="4" w:color="808080"/>'
+    grid = ''.join(f'<w:{s} w:val="single" w:sz="4" w:color="auto"/>'
                    for s in ('top', 'left', 'bottom', 'right', 'insideH', 'insideV'))
-    good = (f'<w:styles {W}><w:style w:type="table" w:styleId="LITable"><w:name w:val="LI Table"/>'
+    good = (f'<w:styles {W}><w:style w:type="table" w:styleId="GridTable4"><w:name w:val="Grid Table 4"/>'
             f'<w:tblPr><w:tblBorders>{grid}</w:tblBorders></w:tblPr>'
-            '<w:tblStylePr w:type="firstRow"><w:rPr><w:b/><w:color w:val="FFFFFF"/></w:rPr>'
-            '<w:tcPr><w:shd w:val="clear" w:fill="054F8A"/></w:tcPr></w:tblStylePr></w:style></w:styles>')
+            '<w:tblStylePr w:type="firstRow"><w:rPr><w:b/><w:color w:val="auto"/></w:rPr>'
+            '<w:tcPr><w:shd w:val="clear" w:fill="B6DDE8"/></w:tcPr></w:tblStylePr></w:style></w:styles>')
     # a style merely NAMED with the hex strings but with no grid/header properties must NOT pass
-    corrupt = f'<w:styles {W}><w:style w:type="table" w:styleId="LITable"><w:name w:val="808080 054F8A"/></w:style></w:styles>'
+    corrupt = f'<w:styles {W}><w:style w:type="table" w:styleId="GridTable4"><w:name w:val="B6DDE8 auto"/></w:style></w:styles>'
     assert not any(i['kind'] == 'style-corrupt' for i in effective_table_issues(frag, styles_xml=good))
     assert any(i['kind'] == 'style-corrupt' for i in effective_table_issues(frag, styles_xml=corrupt))
 
 
 def test_r5_single_grey_border_and_no_header_text_is_not_house():
-    # The reviewer's exact reproduction: a definition with ONE nil grey border and a firstRow fill only —
-    # no real grid, no white header text — must be reported corrupt, not conformant (issue #1 R5).
+    # The reviewer's exact reproduction: a definition with ONE nil border and a firstRow fill only —
+    # no real grid, no black bold header text — must be reported corrupt, not conformant (issue #1 R5).
     from conformer.tablespec import effective_table_issues, table_conformant
-    frag = ('<w:tbl><w:tblPr><w:tblStyle w:val="LITable"/></w:tblPr><w:tblGrid><w:gridCol w:w="2000"/></w:tblGrid>'
+    frag = ('<w:tbl><w:tblPr><w:tblStyle w:val="GridTable4"/></w:tblPr><w:tblGrid><w:gridCol w:w="2000"/></w:tblGrid>'
             '<w:tr><w:trPr><w:tblHeader/></w:trPr><w:tc><w:tcPr></w:tcPr>'
             '<w:p><w:pPr><w:jc w:val="center"/></w:pPr><w:r><w:t>x</w:t></w:r></w:p></w:tc></w:tr></w:tbl>')
-    weak = (f'<w:styles {W}><w:style w:type="table" w:styleId="LITable">'
-            '<w:tblPr><w:tblBorders><w:top w:val="nil" w:color="808080"/></w:tblBorders></w:tblPr>'
-            '<w:tblStylePr w:type="firstRow"><w:tcPr><w:shd w:fill="054F8A"/></w:tcPr></w:tblStylePr>'
+    weak = (f'<w:styles {W}><w:style w:type="table" w:styleId="GridTable4">'
+            '<w:tblPr><w:tblBorders><w:top w:val="nil" w:color="auto"/></w:tblBorders></w:tblPr>'
+            '<w:tblStylePr w:type="firstRow"><w:tcPr><w:shd w:fill="B6DDE8"/></w:tcPr></w:tblStylePr>'
             '</w:style></w:styles>')
     issues = effective_table_issues(frag, styles_xml=weak)
     assert any(i['kind'] == 'style-corrupt' for i in issues), issues   # was falsely conformant before
@@ -487,11 +487,12 @@ def test_r5_equivalent_font_size_not_flagged_but_conflicting_is():
     from conformer.tablespec import effective_table_issues
 
     def frag(sz):
-        return ('<w:tbl><w:tblPr><w:tblStyle w:val="LITable"/></w:tblPr><w:tblGrid><w:gridCol w:w="2000"/>'
+        return ('<w:tbl><w:tblPr><w:tblStyle w:val="GridTable4"/></w:tblPr><w:tblGrid><w:gridCol w:w="2000"/>'
                 '</w:tblGrid><w:tr><w:trPr><w:tblHeader/></w:trPr><w:tc><w:tcPr></w:tcPr>'
                 f'<w:p><w:pPr><w:jc w:val="center"/></w:pPr><w:r><w:rPr><w:sz w:val="{sz}"/></w:rPr>'
                 '<w:t>x</w:t></w:r></w:p></w:tc></w:tr></w:tbl>')
-    assert not any(i['kind'] == 'font-size' for i in effective_table_issues(frag('22')))   # equal = ok
+    # header run size is 10pt (sz 20); an equal size is not flagged, a conflicting one is
+    assert not any(i['kind'] == 'font-size' for i in effective_table_issues(frag('20')))   # equal = ok
     assert any(i['kind'] == 'font-size' for i in effective_table_issues(frag('144')))       # 72pt conflicts
 
 
