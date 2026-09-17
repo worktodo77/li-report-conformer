@@ -308,6 +308,7 @@ class Conformer:
         self.b0 = next(i for i, it in enumerate(self.items) if 'w:val="Heading1"' in it)
         self.log = []; self.judgment = []; self.audit = []
         self._table_notes = []       # tables the table pass could not conform reliably (nested/complex)
+        self._house_repaired = {}    # styleId -> (before_fmt, after_fmt) for INTENDED house list repairs
         self.pending_judgments = []
         self.decisions = None
         from conformer import revisions as _rev
@@ -1412,6 +1413,20 @@ class Conformer:
                 return new[:sm.end()] + '<w:pPr>' + om.group(0) + '</w:pPr>' + new[sm.end():]
         return new
 
+    def _set_style_numpr(self, sid, numId, ilvl):
+        """Set/replace a style's numbering association (its <w:numPr>) in self.styles."""
+        npr = f'<w:numPr><w:ilvl w:val="{ilvl}"/><w:numId w:val="{numId}"/></w:numPr>'
+        def repl(m):
+            body = m.group(0)
+            if '<w:numPr>' in body:
+                return re.sub(r'<w:numPr>.*?</w:numPr>', npr, body, count=1, flags=re.S)
+            if '<w:pPr>' in body:
+                return body.replace('<w:pPr>', '<w:pPr>' + npr, 1)
+            sm = re.search(r'<w:style\b[^>]*>', body)
+            return (body[:sm.end()] + '<w:pPr>' + npr + '</w:pPr>' + body[sm.end():]) if sm else body
+        self.styles = re.sub(r'<w:style\b[^>]*w:styleId="%s".*?</w:style>' % re.escape(sid),
+                             repl, self.styles, count=1, flags=re.S)
+
     def _repair_styles(self):
         """Fix corrupt LI style definitions (Claire's 'List Bullet dysfunctional' / 'table style
         corrupted'): overwrite the document's definition of any style the template defines with the
@@ -1455,7 +1470,9 @@ class Conformer:
                 return None
             new_nid = str(alloc['num']); alloc['num'] += 1
             tpl_aid = tgraph.abstract_of(tpl_nid)
-            raw_abs = tgraph.raw_abstract(tpl_aid) if tpl_aid else None
+            # resolve numStyleLink so the import is self-contained and cannot bind to a same-named but
+            # different destination style (R2 counterexample 1)
+            raw_abs = tgraph.resolved_abstract_xml(tpl_aid) if tpl_aid else None
             new_aid = None
             if raw_abs:
                 new_aid = str(alloc['abs']); alloc['abs'] += 1
@@ -1484,11 +1501,81 @@ class Conformer:
             added.append(d)
         if added:
             self.styles = self.styles.replace('</w:styles>', ''.join(added) + '</w:styles>', 1)
+
+        # HOUSE REPAIR of dysfunctional house LIST styles (R1): a house-controlled list style whose
+        # document numbering resolves to the WRONG format (Claire's 'List Bullet dysfunctional' — a bullet
+        # style resolving to decimal, or missing numbering) is REPAIRED to the template's intended format
+        # by importing the template's list (dependency closure, fresh ids) and rewiring the style. Headings
+        # are excluded (their intent is ambiguous and is left to review). The change is RECORDED as intended
+        # so verification distinguishes it from an accidental flip.
+        ograph = NumberingGraph(self._orig_num0, self._orig_styles0)
+
+        def _house_list_target(sid, name):
+            nm = (name or '').lower()
+            if sid.startswith('Heading') or nm.startswith('heading'):
+                return False
+            if tgraph.style_numpr(sid) is None:
+                return False
+            return (sid in NUMBERED or sid in LISTS or 'list' in nm
+                    or sid.startswith(('ListNumber', 'ListBullet', 'NumberedParagraph')))
+
+        self._house_repaired = {}
+        for sid in ograph.styles:
+            if sid not in tmpl or not _house_list_target(sid, ograph.styles[sid].get('name')):
+                continue
+            o_np = ograph.style_numpr(sid); t_np = tgraph.style_numpr(sid)
+            o_fmt = ograph.effective_format(*o_np) if o_np else None
+            t_fmt = tgraph.effective_format(*t_np) if t_np else None
+            if t_np and t_fmt and o_fmt != t_fmt:
+                new_nid = _import_tpl_list(t_np[0])
+                if new_nid:
+                    self._set_style_numpr(sid, new_nid, t_np[1] or '0')
+                    self._house_repaired[sid] = (o_fmt or 'none', t_fmt)
+
         if new_defs:
             self.num = self.num.replace('</w:numbering>', ''.join(new_defs) + '</w:numbering>', 1)
+
+        pinned = self._preserve_inherited_numbering(ograph)
+
         self.say('M', -1, f'preserve mode: repaired {fixed[0]} corrupt style definitions + added '
                           f'{len(added)} missing styles / imported {len(imported)} numbering defs with fresh '
-                          f'ids (existing lists untouched; docDefaults untouched)', 'styles-repair')
+                          f'ids; repaired {len(self._house_repaired)} dysfunctional house list style(s), '
+                          f'preserved {pinned} inherited list(s) (docDefaults untouched)', 'styles-repair')
+
+    def _preserve_inherited_numbering(self, ograph):
+        """Pin back the ORIGINAL resolved numbering of any style whose resolved FORMAT changed WITHOUT an
+        intended house repair — covering styles numbered only through basedOn inheritance (which
+        _keep_numpr, local-numPr-only, cannot protect; issue #1 R2 counterexample 2). A style whose
+        original basedOn chain reaches a house-repaired style is intentionally following that repair and
+        is NOT pinned. Returns the number of styles pinned."""
+        from conformer.numbering import NumberingGraph
+        ngraph = NumberingGraph(self.num, self.styles)
+
+        def chain_repaired(sid):
+            seen = set(); s = sid
+            while s and s not in seen:
+                seen.add(s)
+                if s in self._house_repaired:
+                    return True
+                st = ograph.styles.get(s)
+                if not st or st.get('numId'):     # local numbering ends the inheritance chain
+                    return False
+                s = st.get('basedOn')
+            return False
+
+        pinned = 0
+        for sid in ograph.styles:
+            if sid in self._house_repaired or chain_repaired(sid):
+                continue
+            o_np = ograph.style_numpr(sid)
+            if not o_np:
+                continue
+            o_fmt = ograph.effective_format(*o_np)
+            n_np = ngraph.style_numpr(sid)
+            n_fmt = ngraph.effective_format(*n_np) if n_np else None
+            if o_fmt and o_fmt != n_fmt:
+                self._set_style_numpr(sid, o_np[0], o_np[1]); pinned += 1
+        return pinned
 
     def numbering_report(self):
         """Resolution-based numbering verification (the gate is blind to numbering.xml/styles.xml). For
@@ -1509,7 +1596,8 @@ class Conformer:
             af = after.effective_format(*ap)
             if bf and af and bf != af:
                 changes.append({'style': sid, 'before': bf, 'after': af,
-                                'meaning_flip': (bf == 'bullet') != (af == 'bullet')})
+                                'meaning_flip': (bf == 'bullet') != (af == 'bullet'),
+                                'intended': sid in getattr(self, '_house_repaired', {})})
         return changes
 
     def definition_integrity_report(self):
@@ -1559,7 +1647,9 @@ class Conformer:
                 table_unresolved.append({'item': i, 'locator': loc, 'issues': u})
             if rv:
                 table_review.append({'item': i, 'locator': loc, 'issues': rv})
-        conformance = {'numbering_flips': self.numbering_report(),
+        num_changes = self.numbering_report()
+        conformance = {'numbering_flips': [c for c in num_changes if not c.get('intended')],
+                       'numbering_intended_repairs': [c for c in num_changes if c.get('intended')],
                        'definition_integrity_violations': self.definition_integrity_report(),
                        'tables_failing_effective_format': table_fails,
                        'tables_review': table_review}

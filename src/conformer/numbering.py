@@ -211,3 +211,24 @@ class NumberingGraph:
     def abstract_of(self, numId):
         n = self.nums.get(numId)
         return n['aid'] if n else None
+
+    def resolved_abstract_xml(self, aid, _seen=None):
+        """Raw <w:abstractNum> for `aid`, but with any numStyleLink RESOLVED: if the abstract defers its
+        levels to a linked style, inline that style's abstract levels and drop the link. This makes an
+        import self-contained — it no longer binds to a same-named (possibly different) destination style
+        (issue #1 R2 counterexample 1)."""
+        raw = self.raw_abstract(aid)
+        if not raw:
+            return None
+        ab = self.abstract.get(aid, {})
+        link = ab.get('numStyleLink')
+        if link and not ab.get('levels'):
+            sp = self.style_numpr(link)
+            if sp:
+                target_aid = self.abstract_of(sp[0])
+                traw = self.raw_abstract(target_aid) if target_aid else None
+                if traw:
+                    lvls = ''.join(re.findall(r'<w:lvl\b.*?</w:lvl>', traw, re.S))
+                    raw = re.sub(r'<w:numStyleLink\b[^>]*/>', '', raw)
+                    raw = raw.replace('</w:abstractNum>', lvls + '</w:abstractNum>')
+        return raw

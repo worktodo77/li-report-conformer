@@ -42,8 +42,9 @@ def _conform(path):
 
 def test_warhoe_numbering_and_integrity():
     c = _conform(_warhoe())
-    flips = c.numbering_report()
-    assert flips == [], f"list-meaning flips (decimal<->bullet regression): {flips}"
+    # no UNINTENDED flips (intended house repairs of dysfunctional list styles are allowed and recorded)
+    unintended = [x for x in c.numbering_report() if not x.get('intended')]
+    assert unintended == [], f"unintended list-meaning flips (decimal<->bullet regression): {unintended}"
     assert c.definition_integrity_report() == []
     rep = c.outcome_report()
     assert rep['preservation']['clean'] is True, rep['preservation']
@@ -75,5 +76,5 @@ def test_warhoe_idempotent_numbering():
     out1 = os.path.join(d, 'w1.docx')
     c1 = _conform(_warhoe()); c1.save(out1)
     c2 = _conform(out1)
-    assert c2.numbering_report() == []
+    assert [x for x in c2.numbering_report() if not x.get('intended')] == []
     assert c2.definition_integrity_report() == []
