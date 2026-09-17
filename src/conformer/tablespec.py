@@ -20,6 +20,7 @@ HOUSE = {
     'header_text': 'FFFFFF',       # white bold header text
     'cell_margin_lr': '72',        # dxa
     'align': 'center',             # cells + table centered
+    'sz': '22',                    # house run size (11pt, half-points) for body + header
 }
 _DEFAULT_SHD = {'auto', 'clear', None, ''}   # non-fills that don't override the house appearance
 
@@ -98,21 +99,36 @@ def _border_is_house(borders_el):
 
 
 def _style_defines_house_table(styles_xml):
-    """Check the LITable style definition itself is the house def (grey grid + navy header). Returns an
-    issue list (empty when correct / when styles not provided)."""
+    """Verify the LITable style DEFINITION resolves the house appearance by its actual PROPERTIES (a grey
+    grid on tblBorders sides; a navy fill on the firstRow conditional's cell shading) — not by a substring
+    search that a style merely NAMED '808080 054F8A' would pass. Returns an issue list."""
     if not styles_xml:
         return []
     m = re.search(r'<w:style\b[^>]*w:styleId="LITable".*?</w:style>', styles_xml, re.S)
     if not m:
         return [{'kind': 'style-missing', 'detail': 'LITable style is not defined', 'severity': 'fail'}]
-    body = m.group(0)
+    try:
+        el = ET.fromstring(f'<root {_NSDECLS}>{m.group(0)}</root>').find(_w('style'))
+    except ET.ParseError:
+        el = None
+    if el is None:
+        return [{'kind': 'style-corrupt', 'detail': 'LITable style did not parse', 'severity': 'fail'}]
     bad = []
-    if HOUSE['grid_color'] not in body:
-        bad.append('grey grid')
-    if HOUSE['header_fill'] not in body:
-        bad.append('navy header fill')
+    tblPr = el.find(_w('tblPr'))
+    borders = tblPr.find(_w('tblBorders')) if tblPr is not None else None
+    if borders is None or not any((s.get(_w('color')) or '').upper() == HOUSE['grid_color'] for s in borders):
+        bad.append('grey grid on the table borders')
+    navy = False
+    for sp in el.findall(_w('tblStylePr')):
+        if sp.get(_w('type')) == 'firstRow':
+            tcpr = sp.find(_w('tcPr'))
+            shd = tcpr.find(_w('shd')) if tcpr is not None else None
+            if shd is not None and (shd.get(_w('fill')) or '').upper() == HOUSE['header_fill']:
+                navy = True
+    if not navy:
+        bad.append('navy fill on the first-row header')
     if bad:
-        return [{'kind': 'style-corrupt', 'detail': 'LITable style definition is missing ' + ', '.join(bad),
+        return [{'kind': 'style-corrupt', 'detail': 'LITable style definition is missing ' + '; '.join(bad),
                  'severity': 'fail'}]
     return []
 
@@ -163,12 +179,13 @@ def effective_table_issues(tbl_xml, nsdecls=None, styles_xml=None):
             if tcPr is not None and tcPr.find(_w('tcMar')) is not None:
                 issues.append({'kind': 'cell-margins', 'detail': f'cell r{ri}c{ci} has direct margins '
                                'overriding the house cell margins', 'severity': 'review'})
-            # direct run font size defeats the house size (e.g. a 72pt header run)
+            # a direct run font size that CONFLICTS with the house size (e.g. a 72pt run); a direct size
+            # equal to the house size is equivalent and not flagged
             for r in tc.iter(_w('r')):
                 sz = _val(r.find(_w('rPr')), 'sz') if r.find(_w('rPr')) is not None else None
-                if sz is not None:
+                if sz is not None and sz != HOUSE['sz']:
                     issues.append({'kind': 'font-size', 'detail': f'cell r{ri}c{ci} run has a direct font '
-                                   f'size ({int(sz) // 2}pt) overriding the house size',
+                                   f'size ({int(sz) // 2}pt) conflicting with the house size',
                                    'severity': 'fail' if is_header else 'review'})
                     break
             # shading

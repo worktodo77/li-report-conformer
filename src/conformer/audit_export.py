@@ -176,10 +176,14 @@ def build_records(fresh, source_path, output_path, decisions_log=None,
     n_flip = len(conf.get('numbering_flips', []) or [])
     n_integ = len(conf.get('definition_integrity_violations', []) or [])
     n_tblfail = len(conf.get('tables_failing_effective_format', []) or [])
+    n_review = len(conf.get('tables_review', []) or [])
+    # authoritative verdict (includes unadjudicated review/unresolved) — never derived from ZIP/XML validity
+    clean = fresh.conformance_clean() if hasattr(fresh, 'conformance_clean') else not (n_flip or n_integ or n_tblfail)
     conformance_verdict = ('Clean — numbering, definitions and table formatting resolve as intended'
-                           if not (n_flip or n_integ or n_tblfail)
-                           else f'ISSUES — {n_flip} list-meaning flip(s), {n_integ} definition-integrity '
-                                f'violation(s), {n_tblfail} table(s) failing effective format')
+                           if clean
+                           else f'NOT CLEAN — {n_flip} list-meaning flip(s), {n_integ} definition-integrity '
+                                f'violation(s), {n_tblfail} table(s) failing effective format, '
+                                f'{n_review} table(s) with unadjudicated review deviations')
     n_unres_tbl = len(unres.get('tables_needing_review', []) or []) + len(unres.get('tables_unresolved', []) or [])
     n_rolled = len(unres.get('rolled_back_passes', []) or [])
     unresolved_verdict = ('None' if not (n_unres_tbl or n_rolled)
@@ -198,7 +202,7 @@ def build_records(fresh, source_path, output_path, decisions_log=None,
         'authors': len(s.get('authors', []) or []),
         'preservation_verdict': verdict,
         'conformance_verdict': conformance_verdict,
-        'conformance_clean': not (n_flip or n_integ or n_tblfail or n_unres_tbl or n_rolled),
+        'conformance_clean': clean,
         'unresolved_verdict': unresolved_verdict,
         'rolled_back': len(getattr(fresh, 'exceptions', []) or []),
         'total_changes': len(records),

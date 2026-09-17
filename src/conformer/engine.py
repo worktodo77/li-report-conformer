@@ -309,6 +309,7 @@ class Conformer:
         self.log = []; self.judgment = []; self.audit = []
         self._table_notes = []       # tables the table pass could not conform reliably (nested/complex)
         self._house_repaired = {}    # styleId -> (before_fmt, after_fmt) for INTENDED house list repairs
+        self._unresolved_imports = []  # template numIds whose numbering chain could not be resolved
         self.pending_judgments = []
         self.decisions = None
         from conformer import revisions as _rev
@@ -607,20 +608,24 @@ class Conformer:
         return 'black' if v in ('000000', 'auto', 'windowtext', 'black') else v
 
     def _style_color_map(self):
-        """styleId -> {'color', 'basedOn'} from the STYLE-LEVEL rPr (the paragraph-mark rPr inside pPr is
-        dropped first so we read the run colour the style actually applies)."""
+        """styleId -> {'color', 'color_xml', 'basedOn'} from the STYLE-LEVEL rPr (the paragraph-mark rPr
+        inside pPr is dropped first). color_xml keeps the FULL <w:color/> element so theme/tint/shade
+        metadata is not lost when resolving inherited colour."""
         m = {}
         for sm in re.finditer(r'<w:style\b[^>]*w:styleId="([^"]+)".*?</w:style>', self.styles, re.S):
             body = sm.group(0)
             based = re.search(r'<w:basedOn w:val="([^"]+)"', body)
             body2 = re.sub(r'<w:pPr>.*?</w:pPr>', '', body, flags=re.S)
-            col = re.search(r'<w:rPr>.*?<w:color\b[^>]*w:val="([^"]+)"', body2, re.S)
-            m[sm.group(1)] = {'color': col.group(1) if col else None,
+            col = re.search(r'<w:rPr>.*?(<w:color\b[^>]*/>)', body2, re.S)
+            col_xml = col.group(1) if col else None
+            val = re.search(r'w:val="([^"]+)"', col_xml).group(1) if col_xml else None
+            m[sm.group(1)] = {'color': val, 'color_xml': col_xml,
                               'basedOn': based.group(1) if based else None}
         return m
 
-    def _effective_style_color(self, style_id, cache):
-        """The run colour a paragraph inherits from its style, following basedOn; None = default black."""
+    def _effective_style_color_el(self, style_id, cache):
+        """The FULL <w:color/> element a paragraph inherits from its style, following basedOn; None when
+        the chain defines none."""
         seen = set()
         sid = style_id
         while sid and sid not in seen:
@@ -628,25 +633,39 @@ class Conformer:
             s = cache.get(sid)
             if not s:
                 break
-            if s['color']:
-                return s['color']
+            if s.get('color_xml'):
+                return s['color_xml']
             sid = s['basedOn']
         return None
 
+    def _effective_style_color(self, style_id, cache):
+        """The inherited run colour's w:val (for messages); None = default black."""
+        el = self._effective_style_color_el(style_id, cache)
+        m = re.search(r'w:val="([^"]+)"', el) if el else None
+        return m.group(1) if m else None
+
+    @staticmethod
+    def _is_theme_color(color_xml):
+        return bool(color_xml) and ('themeColor' in color_xml or 'themeTint' in color_xml
+                                    or 'themeShade' in color_xml)
+
     def _color_is_redundant(self, color_xml, rstyle, para_style, scmap):
-        """A direct run colour is redundant only if removing it leaves the SAME effective colour \u2014 the
-        character style's colour when the run carries one, otherwise the paragraph style's colour. So an
-        explicit black over a red character style is NOT redundant (removing it would reveal red). Theme
-        colours are never silently stripped (theme/tint/shade resolution is out of scope for a safe
-        no-visible-change removal)."""
-        if 'themeColor' in color_xml or 'themeTint' in color_xml or 'themeShade' in color_xml:
+        """A direct run colour is redundant only if removing it leaves the SAME effective colour. The
+        effective-without colour is the character style's (if the run has one) else the paragraph style's,
+        resolved through basedOn. A theme-backed colour on EITHER the direct property OR the inherited one
+        is never treated as redundant \u2014 its resolved value is uncertain, so removing the direct colour
+        could silently change the visible colour (issue #1 R6)."""
+        if self._is_theme_color(color_xml):
             return False
         m = re.search(r'w:val="([^"]+)"', color_xml)
         direct = m.group(1) if m else None
-        eff_without = self._effective_style_color(rstyle, scmap) if rstyle else None
-        if eff_without is None:
-            eff_without = self._effective_style_color(para_style, scmap)
-        return self._norm_color(direct) == self._norm_color(eff_without)
+        eff_el = self._effective_style_color_el(rstyle, scmap) if rstyle else None
+        if eff_el is None:
+            eff_el = self._effective_style_color_el(para_style, scmap)
+        if self._is_theme_color(eff_el):
+            return False
+        ev = re.search(r'w:val="([^"]+)"', eff_el) if eff_el else None
+        return self._norm_color(direct) == self._norm_color(ev.group(1) if ev else None)
 
     def _color_highlight_calls(self):
         """Colour that leaves the SAME effective colour when removed (redundant) is stripped silently (no
@@ -1468,21 +1487,21 @@ class Conformer:
             raw_num = tgraph.raw_num(tpl_nid)
             if not raw_num:
                 return None
-            new_nid = str(alloc['num']); alloc['num'] += 1
             tpl_aid = tgraph.abstract_of(tpl_nid)
-            # resolve numStyleLink so the import is self-contained and cannot bind to a same-named but
-            # different destination style (R2 counterexample 1)
+            # resolve the numStyleLink chain to concrete levels (dependency closure). If it cannot be
+            # resolved, DO NOT import a dangling/empty definition — treat it as unresolved (R2).
             raw_abs = tgraph.resolved_abstract_xml(tpl_aid) if tpl_aid else None
-            new_aid = None
-            if raw_abs:
-                new_aid = str(alloc['abs']); alloc['abs'] += 1
-                new_defs.append(re.sub(r'(<w:abstractNum\b[^>]*w:abstractNumId=")[^"]+(")',
-                                       lambda mm: mm.group(1) + new_aid + mm.group(2), raw_abs, count=1))
+            if not raw_abs:
+                self._unresolved_imports.append(tpl_nid)
+                return None
+            new_nid = str(alloc['num']); alloc['num'] += 1
+            new_aid = str(alloc['abs']); alloc['abs'] += 1
+            new_defs.append(re.sub(r'(<w:abstractNum\b[^>]*w:abstractNumId=")[^"]+(")',
+                                   lambda mm: mm.group(1) + new_aid + mm.group(2), raw_abs, count=1))
             nn = re.sub(r'(<w:num\b[^>]*w:numId=")[^"]+(")',
                         lambda mm: mm.group(1) + new_nid + mm.group(2), raw_num, count=1)
-            if new_aid is not None:
-                nn = re.sub(r'(<w:abstractNumId w:val=")[^"]+(")',
-                            lambda mm: mm.group(1) + new_aid + mm.group(2), nn, count=1)
+            nn = re.sub(r'(<w:abstractNumId w:val=")[^"]+(")',
+                        lambda mm: mm.group(1) + new_aid + mm.group(2), nn, count=1)
             new_defs.append(nn)
             imported[tpl_nid] = new_nid
             return new_nid
@@ -1502,13 +1521,17 @@ class Conformer:
         if added:
             self.styles = self.styles.replace('</w:styles>', ''.join(added) + '</w:styles>', 1)
 
-        # HOUSE REPAIR of dysfunctional house LIST styles (R1): a house-controlled list style whose
-        # document numbering resolves to the WRONG format (Claire's 'List Bullet dysfunctional' — a bullet
-        # style resolving to decimal, or missing numbering) is REPAIRED to the template's intended format
-        # by importing the template's list (dependency closure, fresh ids) and rewiring the style. Headings
-        # are excluded (their intent is ambiguous and is left to review). The change is RECORDED as intended
-        # so verification distinguishes it from an accidental flip.
+        # HOUSE REPAIR of dysfunctional house LIST styles (R1): a house-controlled list style is repaired
+        # when its resolved house PROPERTIES (list format AND the level label/glyph `lvlText`) differ from
+        # the template's approved definition — not only when the numFmt enum differs. So a bullet style
+        # whose glyph is corrupt (numFmt still 'bullet', lvlText='BROKEN') is repaired, and a functional
+        # list with a merely different START/restart (its instance semantics, not authorised to change) is
+        # NOT repaired — its label/format already match, so the trigger does not fire. The template's list
+        # is imported (dependency closure, fresh ids) and the style rewired. Headings are excluded
+        # (ambiguous intent). Each repair is RECORDED with its expected before→after so verification and the
+        # audit distinguish it from an accidental flip.
         ograph = NumberingGraph(self._orig_num0, self._orig_styles0)
+        _HOUSE_LEVEL_KEYS = ('numFmt', 'lvlText')
 
         def _house_list_target(sid, name):
             nm = (name or '').lower()
@@ -1524,13 +1547,21 @@ class Conformer:
             if sid not in tmpl or not _house_list_target(sid, ograph.styles[sid].get('name')):
                 continue
             o_np = ograph.style_numpr(sid); t_np = tgraph.style_numpr(sid)
-            o_fmt = ograph.effective_format(*o_np) if o_np else None
-            t_fmt = tgraph.effective_format(*t_np) if t_np else None
-            if t_np and t_fmt and o_fmt != t_fmt:
+            if not t_np:
+                continue
+            t_lv = tgraph.resolve_level(*t_np)
+            if not t_lv:
+                continue
+            o_lv = ograph.resolve_level(*o_np) if o_np else None
+            o_house = tuple((o_lv or {}).get(k) for k in _HOUSE_LEVEL_KEYS)
+            t_house = tuple(t_lv.get(k) for k in _HOUSE_LEVEL_KEYS)
+            if o_house != t_house:      # wrong format OR wrong glyph OR missing -> dysfunctional
                 new_nid = _import_tpl_list(t_np[0])
                 if new_nid:
                     self._set_style_numpr(sid, new_nid, t_np[1] or '0')
-                    self._house_repaired[sid] = (o_fmt or 'none', t_fmt)
+                    self._house_repaired[sid] = {
+                        'before': {'numFmt': o_house[0], 'lvlText': o_house[1]},
+                        'after': {'numFmt': t_house[0], 'lvlText': t_house[1]}}
 
         if new_defs:
             self.num = self.num.replace('</w:numbering>', ''.join(new_defs) + '</w:numbering>', 1)
@@ -1568,36 +1599,69 @@ class Conformer:
             if sid in self._house_repaired or chain_repaired(sid):
                 continue
             o_np = ograph.style_numpr(sid)
-            if not o_np:
-                continue
-            o_fmt = ograph.effective_format(*o_np)
             n_np = ngraph.style_numpr(sid)
-            n_fmt = ngraph.effective_format(*n_np) if n_np else None
-            if o_fmt and o_fmt != n_fmt:
+            if not o_np:
+                # the style had NO numbering; if it GAINED some (e.g. a template basedOn change made it
+                # inherit a list, as a TOC style would), suppress it with an explicit numId 0 override
+                if n_np:
+                    self._set_style_numpr(sid, '0', '0'); pinned += 1
+                continue
+            o_sig = self._level_signature(ograph, o_np)
+            n_sig = self._level_signature(ngraph, n_np)
+            if o_sig and o_sig != 'UNRESOLVED' and o_sig != n_sig:
                 self._set_style_numpr(sid, o_np[0], o_np[1]); pinned += 1
         return pinned
 
+    _LEVEL_KEYS = ('numFmt', 'lvlText', 'start', 'isLgl', 'lvlRestart')
+
+    @classmethod
+    def _level_signature(cls, graph, numpr):
+        """The full resolved level record a style uses, or None. Compares by MEANING (format, label,
+        start, restart), not by numeric id — so a style REASSIGNED to a same-format list with a different
+        start/restart is still detected (issue #1 R3)."""
+        if not numpr:
+            return None
+        lv = graph.resolve_level(*numpr)
+        return tuple(lv.get(k) for k in cls._LEVEL_KEYS) if lv else 'UNRESOLVED'
+
     def numbering_report(self):
         """Resolution-based numbering verification (the gate is blind to numbering.xml/styles.xml). For
-        every paragraph style, RESOLVE the list it uses before vs after conforming and compare the level
-        FORMAT (decimal/bullet/lowerLetter/…). A changed format with no explicit repair rule is a
-        conformance defect — this is what catches the Warhoe decimal↔bullet failure. Returns a list of
-        {style, before, after, meaning_flip} for every style whose resolved format changed."""
+        every paragraph style, RESOLVE the list it uses before vs after and compare the FULL level record
+        (format, label, start, isLgl, restart) — not just numFmt — so reassignment to a different list and
+        start/restart changes are caught, not only decimal↔bullet flips. Returns a change record per style
+        whose resolved numbering changed (with 'intended' set for recorded house repairs)."""
         from conformer.numbering import NumberingGraph
         before = NumberingGraph(self._orig_num0, self._orig_styles0)
         after = NumberingGraph(self.num, self.styles)
+        repaired = getattr(self, '_house_repaired', {})
+
+        def _reaches_repair(sid):
+            """A style is an INTENDED change if it, or a basedOn ancestor it inherits numbering from, was
+            house-repaired (it correctly follows that repair)."""
+            seen = set(); s = sid
+            while s and s not in seen:
+                seen.add(s)
+                if s in repaired:
+                    return True
+                st = before.styles.get(s)
+                if not st or st.get('numId'):     # local numbering ends the inheritance chain
+                    return False
+                s = st.get('basedOn')
+            return False
+
         changes = []
         for sid in before.styles:
             bp = before.style_numpr(sid)
             ap = after.style_numpr(sid)
-            if not (bp and ap):
-                continue
-            bf = before.effective_format(*bp)
-            af = after.effective_format(*ap)
-            if bf and af and bf != af:
+            bsig = self._level_signature(before, bp)
+            asig = self._level_signature(after, ap)
+            if bool(bp) != bool(ap) or (bp and ap and bsig != asig):
+                bf = before.effective_format(*bp) if bp else None
+                af = after.effective_format(*ap) if ap else None
                 changes.append({'style': sid, 'before': bf, 'after': af,
+                                'before_level': bsig, 'after_level': asig,
                                 'meaning_flip': (bf == 'bullet') != (af == 'bullet'),
-                                'intended': sid in getattr(self, '_house_repaired', {})})
+                                'intended': _reaches_repair(sid)})
         return changes
 
     def definition_integrity_report(self):
@@ -1609,7 +1673,7 @@ class Conformer:
         before = NumberingGraph(self._orig_num0, self._orig_styles0)
         after = NumberingGraph(self.num, self.styles)
         viol = []
-        _keys = ('numFmt', 'lvlText', 'start', 'isLgl')
+        _keys = self._LEVEL_KEYS      # numFmt, lvlText, start, isLgl, lvlRestart
         for nid in before.nums:
             aid = before.abstract_of(nid)
             levels = set((before.abstract.get(aid, {}) or {}).get('levels', {}) or {})
@@ -1627,17 +1691,36 @@ class Conformer:
                                  'before': {k: b.get(k) for k in _keys}, 'after': {k: a.get(k) for k in _keys}})
         return viol
 
-    def conformance_clean(self):
-        """Enforcing conformance verdict: True ONLY when there are no unintended numbering flips, no
-        definition-integrity violations, no tables failing effective formatting, and nothing unresolved.
-        A partial/unresolved result is NOT clean — the callers (audit + UI) gate the 'conforms' claim on
-        this rather than on ZIP/XML validity."""
+    def conformance_status(self):
+        """The single authoritative verdict consumed by production save, UI and audit (issue #1 R3).
+        - blocking = unauthorized SEMANTIC damage that must not pass as normal output (unintended
+          numbering flips, definition-integrity violations, tables failing effective formatting).
+        - clean = blocking is empty AND nothing is unadjudicated (no review deviations, no unresolved
+          tables/passes). An unadjudicated review deviation is never silently treated as approved.
+        Returns {'clean', 'blocking', 'reasons': {...}}."""
         rep = self.outcome_report()
         conf, unres = rep['conformance'], rep['unresolved']
-        return not (conf['numbering_flips'] or conf['definition_integrity_violations']
-                    or conf['tables_failing_effective_format']
-                    or unres['rolled_back_passes'] or unres['tables_needing_review']
-                    or unres.get('tables_unresolved'))
+        blocking_reasons = {
+            'numbering_flips': conf['numbering_flips'],
+            'definition_integrity_violations': conf['definition_integrity_violations'],
+            'tables_failing_effective_format': conf['tables_failing_effective_format'],
+        }
+        review_reasons = {
+            'tables_review': conf.get('tables_review') or [],
+            'tables_unresolved': unres.get('tables_unresolved') or [],
+            'tables_needing_review': unres.get('tables_needing_review') or [],
+            'rolled_back_passes': unres.get('rolled_back_passes') or [],
+        }
+        blocking = any(blocking_reasons.values())
+        clean = not (blocking or any(review_reasons.values()))
+        return {'clean': clean, 'blocking': blocking,
+                'reasons': {**blocking_reasons, **review_reasons}}
+
+    def conformance_clean(self):
+        """True only when the authoritative verdict is clean (no semantic damage AND nothing unadjudicated
+        — including review deviations, which are never silently treated as approved). Callers gate the
+        'conforms' claim on this, not on ZIP/XML validity."""
+        return self.conformance_status()['clean']
 
     def outcome_report(self):
         """The three outcomes reported SEPARATELY (a clean preservation result never stands in for
@@ -1756,6 +1839,11 @@ class Conformer:
             # is untouched (its borders are behind sentinels).
             nx = re.sub(r'<w:tblBorders>.*?</w:tblBorders>', '', masked, flags=re.S)
             nx = re.sub(r'<w:tcBorders>.*?</w:tcBorders>', '', nx, flags=re.S)
+            # REPAIR (not only detect) known house-controlled conflicts: remove direct cell margins and
+            # direct run sizes that conflict with the house 11pt, so the LITable style supplies them. Masked
+            # revision content is untouched (behind sentinels).
+            nx = re.sub(r'<w:tcMar>.*?</w:tcMar>', '', nx, flags=re.S)
+            nx = re.sub(r'<w:sz w:val="(\d+)"/>', lambda mm: '' if mm.group(1) != '22' else mm.group(0), nx)
             if '<w:tblStyle' in nx:
                 nx = re.sub(r'<w:tblStyle w:val="[^"]+"/>', '<w:tblStyle w:val="LITable"/>', nx, count=1)
             else:

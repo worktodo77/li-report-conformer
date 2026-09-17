@@ -53,22 +53,26 @@ def test_warhoe_numbering_and_integrity():
 
 
 def test_warhoe_preserves_meaning_bearing_formatting():
-    # The meaningful invariant: every piece of TEXT that carries meaning-bearing formatting in the source
-    # still carries it in the output (no subscript/superscript/strike is silently normalised away). Raw
-    # COUNTS can move by 1 when a structural merge collapses a duplicate; the text-set must not shrink.
-    orig = _warhoe()
+    # Per-carrier invariant across the DOCUMENT AND FOOTNOTES, comparing the property VALUE (subscript vs
+    # superscript, single vs double strike), not merely the presence of a property type on some text. Every
+    # (text, value) carrier in the source must still be present in the output — no subscript/superscript/
+    # strike is silently normalised away, and none is silently changed to a different value.
     import zipfile
-    src_doc = zipfile.ZipFile(orig).read('word/document.xml').decode('utf8')
+    orig = _warhoe()
+    zin = zipfile.ZipFile(orig)
+    src = zin.read('word/document.xml').decode('utf8') + zin.read('word/footnotes.xml').decode('utf8')
     c = _conform(orig)
-    out = c.head + ''.join(c.items) + c.tail
+    out = (c.head + ''.join(c.items) + c.tail) + c.fn      # conformed document + footnotes
 
     def carriers(doc, prop):
-        pat = (r'<w:r\b[^>]*>(?:(?!</w:r>).)*?<w:%s\b[^>]*/>(?:(?!</w:r>).)*?<w:t[^>]*>([^<]+)</w:t>' % prop)
-        return set(re.findall(pat, doc, re.S))
+        # (text, value) for every run bearing the property, so the VALUE is compared, footnotes included
+        pat = (r'<w:r\b[^>]*>(?:(?!</w:r>).)*?<w:%s\b[^>]*?(?:w:val="([^"]*)")?[^>]*/>'
+               r'(?:(?!</w:r>).)*?<w:t[^>]*>([^<]+)</w:t>' % prop)
+        return {(txt.strip(), (val or '')) for val, txt in re.findall(pat, doc, re.S) if txt.strip()}
 
     for prop in ('vertAlign', 'strike', 'dstrike'):
-        lost = carriers(src_doc, prop) - carriers(out, prop)
-        assert lost == set(), f"{prop}: text lost its formatting after conforming: {sorted(lost)[:5]}"
+        lost = carriers(src, prop) - carriers(out, prop)
+        assert lost == set(), f"{prop}: carrier(s) lost/changed after conforming: {sorted(lost)[:5]}"
 
 
 def test_warhoe_idempotent_numbering():

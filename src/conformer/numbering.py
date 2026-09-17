@@ -119,7 +119,8 @@ class NumberingGraph:
             if not s:
                 return None
             if s['numId'] is not None:
-                return (s['numId'], s['ilvl'] or '0')
+                # numId 0 is an explicit "no numbering" override — it ends the chain with no list
+                return None if s['numId'] == '0' else (s['numId'], s['ilvl'] or '0')
             sid = s['basedOn']
         return None
 
@@ -212,23 +213,42 @@ class NumberingGraph:
         n = self.nums.get(numId)
         return n['aid'] if n else None
 
+    def resolved_levels_xml(self, aid, _seen=None):
+        """The concrete <w:lvl> element XML an abstract ultimately resolves to, following numStyleLink
+        RECURSIVELY through the whole chain (cycle- and dead-end-safe). Returns '' when the chain cannot
+        be resolved — so an unresolved import is never turned into an apparently-valid empty definition
+        (issue #1 R2). This is the dependency-closure resolution."""
+        seen = _seen if _seen is not None else set()
+        if aid is None or aid in seen:
+            return ''
+        seen.add(aid)
+        ab = self.abstract.get(aid)
+        raw = self.raw_abstract(aid)
+        if ab is None or raw is None:
+            return ''
+        if ab.get('levels'):
+            return ''.join(re.findall(r'<w:lvl\b.*?</w:lvl>', raw, re.S))
+        link = ab.get('numStyleLink')
+        if link:
+            sp = self.style_numpr(link)
+            if sp:
+                return self.resolved_levels_xml(self.abstract_of(sp[0]), seen)   # recurse the chain
+        return ''
+
     def resolved_abstract_xml(self, aid, _seen=None):
-        """Raw <w:abstractNum> for `aid`, but with any numStyleLink RESOLVED: if the abstract defers its
-        levels to a linked style, inline that style's abstract levels and drop the link. This makes an
-        import self-contained — it no longer binds to a same-named (possibly different) destination style
-        (issue #1 R2 counterexample 1)."""
+        """Raw <w:abstractNum> for `aid` with numStyleLink RESOLVED to concrete levels (recursively, via
+        resolved_levels_xml), so an import is self-contained and cannot rebind to a same-named destination
+        style. Returns None when the chain is unresolved/cyclic (the import must then be treated as
+        unresolved, never emitted as an empty definition)."""
         raw = self.raw_abstract(aid)
         if not raw:
             return None
         ab = self.abstract.get(aid, {})
-        link = ab.get('numStyleLink')
-        if link and not ab.get('levels'):
-            sp = self.style_numpr(link)
-            if sp:
-                target_aid = self.abstract_of(sp[0])
-                traw = self.raw_abstract(target_aid) if target_aid else None
-                if traw:
-                    lvls = ''.join(re.findall(r'<w:lvl\b.*?</w:lvl>', traw, re.S))
-                    raw = re.sub(r'<w:numStyleLink\b[^>]*/>', '', raw)
-                    raw = raw.replace('</w:abstractNum>', lvls + '</w:abstractNum>')
-        return raw
+        if ab.get('levels'):
+            return raw
+        # deferred to a linked style — inline the fully-resolved levels or fail
+        lvls = self.resolved_levels_xml(aid)
+        if not lvls:
+            return None
+        raw = re.sub(r'<w:numStyleLink\b[^>]*/>', '', raw)
+        return raw.replace('</w:abstractNum>', lvls + '</w:abstractNum>')

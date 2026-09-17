@@ -1193,17 +1193,25 @@ class MainWindow(QMainWindow):
                 nflip = len(conf.get('numbering_flips', []) or [])
                 ninteg = len(conf.get('definition_integrity_violations', []) or [])
                 ntbl = len(conf.get('tables_failing_effective_format', []) or [])
-                nrev = len(unres.get('tables_needing_review', []) or []) + len(unres.get('tables_unresolved', []) or [])
+                nreview = len(conf.get('tables_review', []) or [])
+                nrev = (len(unres.get('tables_needing_review', []) or []) + len(unres.get('tables_unresolved', []) or [])
+                        + nreview)
                 nroll = len(unres.get('rolled_back_passes', []) or [])
+                # the SAME authoritative verdict the audit uses (includes unadjudicated review deviations)
+                try:
+                    formatting_ok = fresh.conformance_clean()
+                except Exception:
+                    formatting_ok = not (nflip or ninteg or ntbl)
                 oc = QFrame(); oc.setObjectName('card')
                 ol = QVBoxLayout(oc)
                 for label, ok, detail in (
                     ('Review history preserved', rep.get('preservation', {}).get('clean') is True,
                      'Every tracked change and comment intact'),
-                    ('Formatting conforms', not (nflip or ninteg or ntbl),
+                    ('Formatting conforms', formatting_ok,
                      'Numbering, definitions and table formatting resolve as intended'
-                     if not (nflip or ninteg or ntbl)
-                     else f'{nflip} list-meaning flip(s), {ninteg} definition issue(s), {ntbl} table(s) off'),
+                     if formatting_ok
+                     else f'{nflip} list-meaning flip(s), {ninteg} definition issue(s), {ntbl} table(s) off, '
+                          f'{nreview} table(s) with unadjudicated review deviations'),
                     ('Nothing left unresolved', not (nrev or nroll),
                      'No exceptions' if not (nrev or nroll)
                      else f'{nroll} pass(es) held back, {nrev} table(s) need a manual look')):
@@ -1506,6 +1514,23 @@ class MainWindow(QMainWindow):
                 'The original file has not been modified.'
             )
             return
+
+        # Authoritative semantic verdict at the save boundary (not just ZIP/XML validity): if there is
+        # unauthorized semantic damage, identify it before saving and never present it as clean.
+        try:
+            status = fresh.conformance_status()
+        except Exception:
+            status = {'blocking': False}
+        if status.get('blocking'):
+            r = QMessageBox.warning(
+                self, 'Conformance not verified clean',
+                'The conformed copy contains formatting changes that could not be verified as authorized '
+                '(numbering, definitions, or effective table formatting). It is a review copy, not a '
+                'clean conformed document.\n\nSave the review copy anyway?',
+                QMessageBox.Save | QMessageBox.Cancel, QMessageBox.Save)
+            if r == QMessageBox.Cancel:
+                self._build_review_state()
+                return
 
         try:
             output_path = self._save_output(fresh)
