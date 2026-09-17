@@ -1612,16 +1612,19 @@ class Conformer:
         for sid, d in tmpl.items():
             if sid in existing:
                 continue
-            tpl_np = tgraph.style_numpr(sid)      # the (numId, ilvl) the template gives this style
-            if tpl_np and '<w:numPr>' in d:
-                new_nid = _import_tpl_list(tpl_np[0])
+            # the numId the template DECLARES for this style (raw numPr), even if its list does not resolve
+            # — so an unresolvable template list is caught by the import (R2), not skipped and added raw.
+            raw_np = tgraph._style_numpr_raw(sid)
+            tpl_numid = raw_np[0]
+            if tpl_numid and tpl_numid != '0' and '<w:numPr>' in d:
+                new_nid = _import_tpl_list(tpl_numid)
                 if not new_nid:
                     # ATOMIC import (R2): the dependency could not be resolved, so we must NOT add the style
                     # carrying the template's numId — that id names an unrelated list in THIS document and
                     # would silently rebind the style to it. Skip the style and surface it as unresolved.
                     self._unresolved_imports.append(
-                        {'style': sid, 'numId': tpl_np[0], 'context': 'add-missing-style',
-                         'detail': f'template style {sid} needs numbering {tpl_np[0]} whose definition '
+                        {'style': sid, 'numId': tpl_numid, 'context': 'add-missing-style',
+                         'detail': f'template style {sid} needs numbering {tpl_numid} whose definition '
                                    f'could not be resolved; style not added rather than rebound'})
                     continue
                 d = re.sub(r'(<w:numPr>.*?<w:numId w:val=")[^"]+(")',

@@ -27,6 +27,44 @@ def _val(el, tag, attr='val'):
     return child.get(_w(attr)) if child is not None else None
 
 
+class Resolution:
+    """A three-state numbering resolution (issue #1 A): RESOLVED with a concrete instance+level, NONE
+    (the style/paragraph carries no numbering), or UNRESOLVED (a missing definition, a cycle, or an
+    AMBIGUOUS instance selection). Unresolved is never silently treated as no-numbering or as a resolved
+    list — it is surfaced. `level` is the effective level-property record for a resolved result."""
+    __slots__ = ('state', 'numId', 'aid', 'ilvl', 'level', 'reason', 'provenance')
+    RESOLVED = 'resolved'
+    NONE = 'none'
+    UNRESOLVED = 'unresolved'
+
+    def __init__(self, state, numId=None, aid=None, ilvl=None, level=None, reason=None, provenance=None):
+        self.state = state
+        self.numId = numId
+        self.aid = aid
+        self.ilvl = ilvl
+        self.level = level
+        self.reason = reason
+        self.provenance = provenance
+
+    @property
+    def resolved(self):
+        return self.state == self.RESOLVED
+
+    def as_tuple(self):
+        """(numId, ilvl) for a resolved result, else None (backward-compatible with style_numpr callers)."""
+        return (self.numId, self.ilvl) if self.resolved else None
+
+    def signature(self, keys):
+        """A comparable meaning signature: the level record for a resolved result, else a state marker so
+        NONE and UNRESOLVED are distinguished from each other and from any resolved level."""
+        if self.resolved and self.level is not None:
+            return tuple(self.level.get(k) for k in keys)
+        return self.state.upper()
+
+    def __repr__(self):
+        return 'Resolution(%s, numId=%s, ilvl=%s, reason=%s)' % (self.state, self.numId, self.ilvl, self.reason)
+
+
 class NumberingGraph:
     """Model of one package's numbering.xml + styles.xml: abstract definitions, numbering instances (with
     level overrides), paragraph styles (with basedOn inheritance and style-carried numbering), plus
@@ -93,18 +131,18 @@ class NumberingGraph:
 
     def _build_pstyle_links(self):
         """Word links a multilevel list to paragraph styles: a level carrying <w:pStyle w:val="HeadingN"/>
-        means paragraphs of that style are numbered by this list at this level (no direct numPr needed).
-        Build styleId -> (numId, ilvl) so numbering resolves through this linkage too — otherwise a
-        heading numbered only through the linkage appears to LOSE its number when a redundant direct numPr
-        is stripped (issue #1 R3 false positive). First numId referencing the abstract wins (stable)."""
+        means paragraphs of that style are ASSOCIATED with this list at this level. Build a MULTIMAP
+        styleId -> {(numId, ilvl), ...} across EVERY instance (issue #1 A): keeping all associations lets
+        resolution detect an ambiguous instance selection instead of silently picking the first numId."""
+        self.pstyle_link = {}
         for nid, num in self.nums.items():
             ab = self.abstract.get(num.get('aid'))
             if not ab:
                 continue
             for ilvl, lv in (ab.get('levels') or {}).items():
                 ps = lv.get('pStyle')
-                if ps and ps not in self.pstyle_link:
-                    self.pstyle_link[ps] = (nid, ilvl)
+                if ps:
+                    self.pstyle_link.setdefault(ps, set()).add((nid, ilvl))
 
     @staticmethod
     def _root(xml):
@@ -125,30 +163,125 @@ class NumberingGraph:
                 'suff': _val(lvl, 'suff')}
 
     # ---- resolution ----------------------------------------------------------------------------
-    def style_numpr(self, style_id):
-        """(numId, ilvl) a paragraph inherits from its style, following basedOn; None if the style chain
-        carries no numbering. Cycle-safe."""
+    def _style_chain(self, style_id):
+        """The style's basedOn chain (self first), cycle-safe."""
+        chain = []
         seen = set()
         sid = style_id
         while sid and sid not in seen:
             seen.add(sid)
+            chain.append(sid)
+            s = self.styles.get(sid)
+            if not s:
+                break
+            sid = s.get('basedOn')
+        return chain
+
+    def _style_numpr_raw(self, style_id):
+        """(numId, ilvl, defining_style) from the FIRST explicit numPr in the basedOn chain; numId may be
+        '0' (explicit suppression). (None, None, None) if the chain carries no explicit numPr."""
+        for sid in self._style_chain(style_id):
             s = self.styles.get(sid)
             if s and s['numId'] is not None:
-                # numId 0 is an explicit "no numbering" override — it ends the chain with no list
-                return None if s['numId'] == '0' else (s['numId'], s['ilvl'] or '0')
-            if sid in self.pstyle_link:      # list→style linkage (heading numbering, list styles)
-                return self.pstyle_link[sid]
-            if not s:
-                return None
-            sid = s['basedOn']
+                return (s['numId'], s['ilvl'], sid)
+        return (None, None, None)
+
+    def _associated_level_ilvl(self, numId, style_ids):
+        """Within the instance `numId`'s abstract, the ilvl of the level whose <w:pStyle> names one of
+        `style_ids` (prefer the earliest style in the chain). None if no level is associated."""
+        aid = self.abstract_of(numId)
+        ab = self.abstract.get(aid)
+        if not ab:
+            return None
+        levels = ab.get('levels') or {}
+        for want in style_ids:                       # chain order: exact style first, then ancestors
+            for ilvl, lv in levels.items():
+                if lv.get('pStyle') == want:
+                    return ilvl
         return None
 
-    def paragraph_numbering(self, direct_numId, direct_ilvl, style_id):
-        """The list a paragraph ACTUALLY uses: its direct numPr if present, else the style's. This is the
-        gap the old engine missed — a paragraph numbered only through its style."""
+    def resolve_style(self, style_id):
+        """Three-state resolution of the numbering a STYLE carries (issue #1 A). Instance selection and
+        level selection are separate: the explicit numPr (through basedOn) selects the INSTANCE; the level
+        is the style's explicit ilvl, else the pStyle-associated level within that instance, else 0. A
+        style with no explicit numPr resolves only through its pStyle association, and ONLY when that names
+        a single instance — multiple candidate instances are UNRESOLVED, never a first-wins guess."""
+        chain = self._style_chain(style_id)
+        numId, ilvl, _def = self._style_numpr_raw(style_id)
+        if numId == '0':
+            return Resolution(Resolution.NONE, provenance='style-numId0')
+        if numId is not None:
+            if numId not in self.nums:
+                return Resolution(Resolution.UNRESOLVED, numId=numId, reason='missing instance',
+                                  provenance='style-numId')
+            sel_ilvl = ilvl if ilvl is not None else self._associated_level_ilvl(numId, chain)
+            if sel_ilvl is None:
+                sel_ilvl = '0'
+            lvl = self.resolve_level(numId, sel_ilvl)
+            if lvl is None:
+                return Resolution(Resolution.UNRESOLVED, numId=numId, ilvl=sel_ilvl,
+                                  reason='level not resolvable in instance', provenance='style-numId')
+            return Resolution(Resolution.RESOLVED, numId=numId, aid=self.abstract_of(numId),
+                              ilvl=sel_ilvl, level=lvl, provenance='style-numId')
+        # no explicit numPr in the chain -> reverse pStyle association
+        cands = set()
+        for sid in chain:
+            cands |= self.pstyle_link.get(sid, set())
+        numids = {c[0] for c in cands}
+        if not numids:
+            return Resolution(Resolution.NONE, provenance='no-association')
+        if len(numids) > 1:
+            return Resolution(Resolution.UNRESOLVED, reason='ambiguous instance selection (%d candidates)'
+                              % len(numids), provenance='pstyle-ambiguous')
+        nid = next(iter(numids))
+        il = next((l for (n, l) in cands if n == nid), '0')
+        lvl = self.resolve_level(nid, il)
+        if lvl is None:
+            return Resolution(Resolution.UNRESOLVED, numId=nid, ilvl=il, reason='linked level unresolvable',
+                              provenance='pstyle-link')
+        return Resolution(Resolution.RESOLVED, numId=nid, aid=self.abstract_of(nid), ilvl=il, level=lvl,
+                          provenance='pstyle-link')
+
+    def resolve_paragraph(self, direct_numId, direct_ilvl, style_id):
+        """Three-state resolution of the numbering a PARAGRAPH actually uses. A direct numId selects the
+        instance (its level is the direct ilvl, else the pStyle-associated level, else 0). A PARTIAL direct
+        numPr (an ilvl with no numId) merges with the inherited instance rather than being discarded. With
+        no direct numPr, resolution defers to the style."""
+        if direct_numId == '0':
+            return Resolution(Resolution.NONE, provenance='direct-numId0')
         if direct_numId is not None:
-            return (direct_numId, direct_ilvl or '0')
-        return self.style_numpr(style_id)
+            if direct_numId not in self.nums:
+                return Resolution(Resolution.UNRESOLVED, numId=direct_numId, reason='missing instance',
+                                  provenance='direct')
+            sel_ilvl = direct_ilvl
+            if sel_ilvl is None:
+                sel_ilvl = self._associated_level_ilvl(direct_numId, self._style_chain(style_id)) or '0'
+            lvl = self.resolve_level(direct_numId, sel_ilvl)
+            if lvl is None:
+                return Resolution(Resolution.UNRESOLVED, numId=direct_numId, ilvl=sel_ilvl,
+                                  reason='level not resolvable in instance', provenance='direct')
+            return Resolution(Resolution.RESOLVED, numId=direct_numId, aid=self.abstract_of(direct_numId),
+                              ilvl=sel_ilvl, level=lvl, provenance='direct')
+        if direct_ilvl is not None:
+            base = self.resolve_style(style_id)          # instance from the style, level from the direct ilvl
+            if not base.resolved:
+                return base
+            lvl = self.resolve_level(base.numId, direct_ilvl)
+            if lvl is None:
+                return Resolution(Resolution.UNRESOLVED, numId=base.numId, ilvl=direct_ilvl,
+                                  reason='level not resolvable in instance', provenance='direct-ilvl+style')
+            return Resolution(Resolution.RESOLVED, numId=base.numId, aid=base.aid, ilvl=direct_ilvl,
+                              level=lvl, provenance='direct-ilvl+style')
+        return self.resolve_style(style_id)
+
+    def style_numpr(self, style_id):
+        """(numId, ilvl) a paragraph inherits from its style; None for no-numbering OR unresolved (callers
+        needing the distinction use resolve_style). Backward-compatible shape."""
+        return self.resolve_style(style_id).as_tuple()
+
+    def paragraph_numbering(self, direct_numId, direct_ilvl, style_id):
+        """(numId, ilvl) the paragraph actually uses; None for no-numbering OR unresolved."""
+        return self.resolve_paragraph(direct_numId, direct_ilvl, style_id).as_tuple()
 
     def resolve_level(self, numId, ilvl):
         """Effective level record for (numId, ilvl): resolve num->abstractNum, apply lvlOverride and
@@ -183,9 +316,9 @@ class NumberingGraph:
                 return lv
             link = ab.get('numStyleLink')
             if link:
-                sp = self.style_numpr(link)
-                if sp:
-                    aid = self.nums.get(sp[0], {}).get('aid')
+                raw = self._style_numpr_raw(link)     # explicit numPr only (avoids resolve recursion)
+                if raw[0] and raw[0] != '0':
+                    aid = self.nums.get(raw[0], {}).get('aid')
                     continue
             return None
         return None
@@ -249,9 +382,9 @@ class NumberingGraph:
             return ''.join(re.findall(r'<w:lvl\b.*?</w:lvl>', raw, re.S))
         link = ab.get('numStyleLink')
         if link:
-            sp = self.style_numpr(link)
-            if sp:
-                return self.resolved_levels_xml(self.abstract_of(sp[0]), seen)   # recurse the chain
+            raw = self._style_numpr_raw(link)         # explicit numPr only (avoids resolve recursion)
+            if raw[0] and raw[0] != '0':
+                return self.resolved_levels_xml(self.abstract_of(raw[0]), seen)   # recurse the chain
         return ''
 
     def resolved_abstract_xml(self, aid, _seen=None):

@@ -210,7 +210,8 @@ def test_r1_dysfunctional_bullet_repaired_numbered_unchanged():
     TEMPLATE = _os.path.join(_os.path.dirname(__file__), '..', 'src', 'conformer', 'assets', 'template.dotx')
     c = Conformer(TEMPLATE, _broken_bullet_docx())
     g0 = NumberingGraph(c._orig_num0, c._orig_styles0)
-    assert g0.is_bullet(*g0.style_numpr('ListBullet')) is not True    # dysfunctional (not a bullet)
+    r0 = g0.resolve_style('ListBullet')                              # dysfunctional: unresolved OR not a bullet
+    assert r0.state != 'resolved' or (r0.level or {}).get('numFmt') != 'bullet'
     c.disposition = 'preserve'
     c._repair_styles()
     g1 = NumberingGraph(c.num, c.styles)
