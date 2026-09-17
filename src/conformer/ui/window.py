@@ -4,10 +4,18 @@ from pathlib import Path
 from PySide6.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
     QFrame, QScrollArea, QComboBox, QFileDialog, QProgressBar,
-    QMessageBox, QMenuBar, QMenu, QSizePolicy, QApplication,
+    QMessageBox, QMenuBar, QMenu, QSizePolicy, QApplication, QGraphicsOpacityEffect,
 )
 from PySide6.QtCore import Qt, QThread, Signal, QSize
-from PySide6.QtGui import QFont, QAction
+from PySide6.QtGui import QFont, QAction, QPixmap, QIcon
+
+
+def _asset(name):
+    return os.path.join(_assets_dir(), name)
+
+
+LI_NAVY = '#005088'
+LI_SKY = '#28A0D8'
 
 from conformer.engine import Conformer, JudgmentCall
 
@@ -250,6 +258,9 @@ class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
         self.setWindowTitle('LI Report Conformer')
+        _icon = QIcon(_asset('LI icon.png'))
+        if not _icon.isNull():
+            self.setWindowIcon(_icon)
         self.setMinimumSize(QSize(700, 600))
         self.resize(800, 700)
 
@@ -299,6 +310,52 @@ class MainWindow(QMainWindow):
         about_act.triggered.connect(self._show_about)
         help_menu.addAction(about_act)
 
+    def _build_header(self):
+        """Branded header: a light strip carrying the full Long International logo, above a stylized
+        navy title band with a sky-blue accent rule and a faded globe watermark."""
+        wrap = QWidget()
+        col = QVBoxLayout(wrap)
+        col.setContentsMargins(0, 0, 0, 0)
+        col.setSpacing(0)
+
+        # -- brand strip: the full LI logo on a light band --
+        brand = QFrame(); brand.setObjectName('brandStrip')
+        bl = QHBoxLayout(brand); bl.setContentsMargins(24, 12, 24, 12); bl.setSpacing(0)
+        logo = QLabel()
+        pix = QPixmap(_asset('LI logo.png'))
+        if not pix.isNull():
+            logo.setPixmap(pix.scaledToHeight(42, Qt.SmoothTransformation))
+        else:
+            logo.setText('LONG INTERNATIONAL')
+        bl.addWidget(logo)
+        bl.addStretch()
+        col.addWidget(brand)
+
+        # -- title band: navy, stylized title + accent + subtitle, faded globe on the right --
+        header = QFrame(); header.setObjectName('headerFrame')
+        hl = QHBoxLayout(header); hl.setContentsMargins(24, 20, 24, 22); hl.setSpacing(0)
+        text_col = QVBoxLayout(); text_col.setSpacing(0)
+        title = QLabel('Report Conformer'); title.setObjectName('headerTitle')
+        accent = QFrame(); accent.setObjectName('headerAccent')
+        accent.setFixedSize(64, 3)
+        subtitle = QLabel('Repair expert reports to match the Long International template')
+        subtitle.setObjectName('headerSubtitle')
+        text_col.addWidget(title)
+        text_col.addSpacing(8)
+        text_col.addWidget(accent)
+        text_col.addSpacing(8)
+        text_col.addWidget(subtitle)
+        hl.addLayout(text_col)
+        hl.addStretch()
+        globe = QLabel()
+        gpix = QPixmap(_asset('LI icon.png'))
+        if not gpix.isNull():
+            globe.setPixmap(gpix.scaledToHeight(72, Qt.SmoothTransformation))
+            eff = QGraphicsOpacityEffect(globe); eff.setOpacity(0.16); globe.setGraphicsEffect(eff)
+        hl.addWidget(globe, 0, Qt.AlignVCenter)
+        col.addWidget(header)
+        return wrap
+
     def _build_ui(self):
         central = QWidget()
         self.setCentralWidget(central)
@@ -306,17 +363,7 @@ class MainWindow(QMainWindow):
         root.setContentsMargins(0, 0, 0, 0)
         root.setSpacing(0)
 
-        header = QFrame()
-        header.setObjectName('headerFrame')
-        header_layout = QVBoxLayout(header)
-        header_layout.setContentsMargins(20, 16, 20, 16)
-        header_layout.setSpacing(2)
-        title = QLabel('LI Report Conformer')
-        subtitle = QLabel('Repair expert reports to match the LI template')
-        subtitle.setObjectName('headerSubtitle')
-        header_layout.addWidget(title)
-        header_layout.addWidget(subtitle)
-        root.addWidget(header)
+        root.addWidget(self._build_header())
 
         body = QWidget()
         self.body_layout = QVBoxLayout(body)

@@ -25,6 +25,8 @@ a = Analysis(
         ('src/conformer/assets/template.dotx', 'conformer/assets'),
         ('src/conformer/assets/golden.docx', 'conformer/assets'),
         ('src/conformer/assets/KITCHEN_SINK.docx', 'conformer/assets'),
+        ('src/conformer/assets/LI icon.png', 'conformer/assets'),
+        ('src/conformer/assets/LI logo.png', 'conformer/assets'),
         ('src/conformer/ui/styles.qss', 'conformer/ui'),
     ] + _qt_plugins,
     hiddenimports=[
@@ -67,6 +69,7 @@ exe = EXE(
     upx=True,
     console=False,
     disable_windowed_traceback=False,
+    icon='src/conformer/assets/LI_icon.ico',
 )
 
 coll = COLLECT(
