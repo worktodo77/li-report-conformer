@@ -1,9 +1,21 @@
 # -*- mode: python ; coding: utf-8 -*-
 """PyInstaller spec for LI Report Conformer — Windows .exe and macOS .app."""
+import os
 import sys
+import glob
+import PySide6
 from PyInstaller.utils.hooks import collect_data_files
 
 block_cipher = None
+
+# Qt platform plugins are REQUIRED for the app to start (without platforms/qwindows.dll Qt aborts with
+# "no Qt platform plugin could be initialized"). The bundled qt.conf uses Prefix=., so Qt looks for
+# them under PySide6/plugins/<group>/. Collect them explicitly — the auto-hook did not.
+_qt_plugin_root = os.path.join(os.path.dirname(PySide6.__file__), 'plugins')
+_qt_plugins = []
+for _group in ('platforms', 'styles', 'imageformats', 'iconengines', 'tls', 'networkinformation'):
+    for _dll in glob.glob(os.path.join(_qt_plugin_root, _group, '*.dll')):
+        _qt_plugins.append((_dll, 'PySide6/plugins/' + _group))
 
 a = Analysis(
     ['src/conformer/main.py'],
@@ -14,7 +26,7 @@ a = Analysis(
         ('src/conformer/assets/golden.docx', 'conformer/assets'),
         ('src/conformer/assets/KITCHEN_SINK.docx', 'conformer/assets'),
         ('src/conformer/ui/styles.qss', 'conformer/ui'),
-    ],
+    ] + _qt_plugins,
     hiddenimports=[
         'conformer',
         'conformer.engine',
