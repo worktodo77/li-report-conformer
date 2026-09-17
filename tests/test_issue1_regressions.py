@@ -235,6 +235,45 @@ def test_r3_conformance_clean_gate_reflects_issues():
     assert c.conformance_clean() is False   # an unresolved table is never clean
 
 
+# ---------------------------------------------------------------- R5: effective table formatting
+def test_r5_disabled_header_and_direct_font_size_fail():
+    from conformer.tablespec import effective_table_issues, table_conformant
+    frag = ('<w:tbl><w:tblPr><w:tblStyle w:val="LITable"/>'
+            '<w:tblLook w:val="0000" w:firstRow="0" w:lastRow="0" w:firstColumn="0" w:lastColumn="0"/></w:tblPr>'
+            '<w:tblGrid><w:gridCol w:w="2000"/></w:tblGrid>'
+            '<w:tr><w:trPr><w:tblHeader w:val="0"/></w:trPr><w:tc><w:tcPr></w:tcPr>'
+            '<w:p><w:pPr><w:jc w:val="center"/></w:pPr><w:r><w:rPr><w:sz w:val="144"/></w:rPr>'
+            '<w:t>H</w:t></w:r></w:p></w:tc></w:tr></w:tbl>')
+    kinds = {i['kind'] for i in effective_table_issues(frag)}
+    assert 'header-conditional-off' in kinds     # tblLook firstRow off -> navy header never applies
+    assert 'header-missing' in kinds             # tblHeader val=0 is DISABLED, not enabled
+    assert 'font-size' in kinds                  # a 72pt direct header run defeats the house size
+    assert table_conformant(frag) is False       # was falsely True before
+
+
+def test_r5_equivalent_direct_border_not_flagged():
+    from conformer.tablespec import effective_table_issues
+    house = '<w:tcBorders><w:top w:val="single" w:sz="4" w:color="808080"/></w:tcBorders>'
+    frag = (f'<w:tbl><w:tblPr><w:tblStyle w:val="LITable"/></w:tblPr><w:tblGrid><w:gridCol w:w="2000"/></w:tblGrid>'
+            f'<w:tr><w:trPr><w:tblHeader/></w:trPr><w:tc><w:tcPr>{house}</w:tcPr>'
+            f'<w:p><w:pPr><w:jc w:val="center"/></w:pPr><w:r><w:t>x</w:t></w:r></w:p></w:tc></w:tr></w:tbl>')
+    assert not any(i['kind'] == 'grid-overridden' for i in effective_table_issues(frag))   # equivalent = ok
+    red = house.replace('808080', 'FF0000').replace('sz="4"', 'sz="18"')
+    assert any(i['kind'] == 'grid-overridden' for i in effective_table_issues(frag.replace(house, red)))
+
+
+def test_r5_corrupt_litable_style_def_detected():
+    from conformer.tablespec import effective_table_issues
+    frag = ('<w:tbl><w:tblPr><w:tblStyle w:val="LITable"/></w:tblPr><w:tblGrid><w:gridCol w:w="2000"/></w:tblGrid>'
+            '<w:tr><w:trPr><w:tblHeader/></w:trPr><w:tc><w:tcPr></w:tcPr>'
+            '<w:p><w:pPr><w:jc w:val="center"/></w:pPr><w:r><w:t>x</w:t></w:r></w:p></w:tc></w:tr></w:tbl>')
+    good = (f'<w:styles {W}><w:style w:styleId="LITable"><w:tblBorders><w:top w:color="808080"/></w:tblBorders>'
+            '<w:tblStylePr w:type="firstRow"><w:tcPr><w:shd w:fill="054F8A"/></w:tcPr></w:tblStylePr></w:style></w:styles>')
+    corrupt = f'<w:styles {W}><w:style w:styleId="LITable"><w:name w:val="LI Table"/></w:style></w:styles>'
+    assert not any(i['kind'] == 'style-corrupt' for i in effective_table_issues(frag, styles_xml=good))
+    assert any(i['kind'] == 'style-corrupt' for i in effective_table_issues(frag, styles_xml=corrupt))
+
+
 # ---------------------------------------------------------------- R7: highlight decision honesty
 def test_r7_per_item_keep_survives_remove_all():
     import os as _os

@@ -7,6 +7,7 @@ paragraph style) and resolves the EFFECTIVE formatting of a table — style + fi
 overrides — so a table can be checked by what it renders, not by the style name it carries.
 
 Namespace-aware (ElementTree). Analysis only; the engine performs the edits."""
+import re
 import xml.etree.ElementTree as ET
 
 W = 'http://schemas.openxmlformats.org/wordprocessingml/2006/main'
@@ -73,40 +74,103 @@ def _direct_rows(tbl):
     return tbl.findall(_w('tr'))
 
 
-def effective_table_issues(tbl_xml, nsdecls=None):
-    """Resolve a table's effective formatting and report where DIRECT overrides defeat the house
-    appearance. Each issue: {'kind', 'detail', 'severity'} where severity 'fail' = the house appearance
-    is not achieved, 'review' = a meaningful deviation to surface (e.g. subtotal shading), 'unresolved' =
-    a construct the engine cannot reliably conform (reported, not silently claimed conformant).
-    `nsdecls` = the document's namespace declarations so a fragment with inherited prefixes parses."""
+def _disabled(el):
+    """True when a boolean toggle element is explicitly OFF (val='0'/'false'/'off'). A missing val = on."""
+    if el is None:
+        return None
+    v = (el.get(_w('val')) or '').lower()
+    return v in ('0', 'false', 'off')
+
+
+def _border_is_house(borders_el):
+    """True when a direct <w:tcBorders>/<w:tblBorders> exactly matches the house grey ½pt grid (so an
+    equivalent direct border is not wrongly flagged as an override)."""
+    for side in borders_el:
+        val = side.get(_w('val'))
+        if val in (None, 'nil', 'none'):
+            return False
+        if val != 'single' or side.get(_w('sz')) not in ('4', None):
+            return False
+        col = (side.get(_w('color')) or '').upper()
+        if col not in (HOUSE['grid_color'], 'AUTO', ''):
+            return False
+    return True
+
+
+def _style_defines_house_table(styles_xml):
+    """Check the LITable style definition itself is the house def (grey grid + navy header). Returns an
+    issue list (empty when correct / when styles not provided)."""
+    if not styles_xml:
+        return []
+    m = re.search(r'<w:style\b[^>]*w:styleId="LITable".*?</w:style>', styles_xml, re.S)
+    if not m:
+        return [{'kind': 'style-missing', 'detail': 'LITable style is not defined', 'severity': 'fail'}]
+    body = m.group(0)
+    bad = []
+    if HOUSE['grid_color'] not in body:
+        bad.append('grey grid')
+    if HOUSE['header_fill'] not in body:
+        bad.append('navy header fill')
+    if bad:
+        return [{'kind': 'style-corrupt', 'detail': 'LITable style definition is missing ' + ', '.join(bad),
+                 'severity': 'fail'}]
+    return []
+
+
+def effective_table_issues(tbl_xml, nsdecls=None, styles_xml=None):
+    """Resolve a table's EFFECTIVE formatting and report where the house appearance is not achieved.
+    Severity 'fail' = house appearance not achieved, 'review' = a meaningful deviation to surface,
+    'unresolved' = a construct that cannot be reliably conformed (never silently claimed conformant).
+    `nsdecls` = document namespace declarations (so inherited prefixes parse); `styles_xml` lets the
+    check verify the LITable style DEFINITION itself, not just the assigned name."""
     tbl = _parse(tbl_xml, nsdecls)
     if tbl is None:
         return [{'kind': 'parse', 'detail': 'table did not parse', 'severity': 'unresolved'}]
-    issues = []
+    issues = list(_style_defines_house_table(styles_xml))
 
     tblPr = tbl.find(_w('tblPr'))
     style = _val(tblPr, 'tblStyle') if tblPr is not None else None
     if style != 'LITable':
         issues.append({'kind': 'style', 'detail': f'table style is {style!r}, not LITable',
                        'severity': 'fail'})
-    # direct table borders defeat the grey grid
-    if tblPr is not None and tblPr.find(_w('tblBorders')) is not None:
+    # direct table borders that are NOT the house grid defeat it
+    tblB = tblPr.find(_w('tblBorders')) if tblPr is not None else None
+    if tblB is not None and not _border_is_house(tblB):
         issues.append({'kind': 'grid-overridden', 'detail': 'direct <w:tblBorders> overrides the grid',
                        'severity': 'fail'})
+    # the first-row conditional (navy header) must be ENABLED via tblLook, or the header never applies
+    look = tblPr.find(_w('tblLook')) if tblPr is not None else None
+    if look is not None and (look.get(_w('firstRow')) or '1').lower() in ('0', 'false'):
+        issues.append({'kind': 'header-conditional-off', 'detail': 'tblLook firstRow is off, so the navy '
+                       'header formatting is not applied', 'severity': 'fail'})
 
     rows = _direct_rows(tbl)
     for ri, tr in enumerate(rows):
         is_header = ri == 0
         trPr = tr.find(_w('trPr'))
-        if is_header and (trPr is None or trPr.find(_w('tblHeader')) is None):
-            issues.append({'kind': 'header-missing', 'detail': 'first row is not marked as a repeating '
-                           'header (tblHeader)', 'severity': 'fail'})
+        hdr = trPr.find(_w('tblHeader')) if trPr is not None else None
+        if is_header and (hdr is None or _disabled(hdr)):
+            issues.append({'kind': 'header-missing', 'detail': 'first row is not an ENABLED repeating '
+                           'header (tblHeader missing or off)', 'severity': 'fail'})
         for ci, tc in enumerate(tr.findall(_w('tc'))):
             tcPr = tc.find(_w('tcPr'))
-            # direct cell borders defeat the grid
-            if tcPr is not None and tcPr.find(_w('tcBorders')) is not None:
+            # direct cell borders that are not the house grid defeat it (an equivalent one is fine)
+            tcb = tcPr.find(_w('tcBorders')) if tcPr is not None else None
+            if tcb is not None and not _border_is_house(tcb):
                 issues.append({'kind': 'grid-overridden', 'detail': f'cell r{ri}c{ci} has direct '
                                '<w:tcBorders> overriding the grid', 'severity': 'fail'})
+            # direct cell margins override the house 72-twip margins
+            if tcPr is not None and tcPr.find(_w('tcMar')) is not None:
+                issues.append({'kind': 'cell-margins', 'detail': f'cell r{ri}c{ci} has direct margins '
+                               'overriding the house cell margins', 'severity': 'review'})
+            # direct run font size defeats the house size (e.g. a 72pt header run)
+            for r in tc.iter(_w('r')):
+                sz = _val(r.find(_w('rPr')), 'sz') if r.find(_w('rPr')) is not None else None
+                if sz is not None:
+                    issues.append({'kind': 'font-size', 'detail': f'cell r{ri}c{ci} run has a direct font '
+                                   f'size ({int(sz) // 2}pt) overriding the house size',
+                                   'severity': 'fail' if is_header else 'review'})
+                    break
             # shading
             shd = tcPr.find(_w('shd')) if tcPr is not None else None
             fill = shd.get(_w('fill')) if shd is not None else None
@@ -139,9 +203,9 @@ def effective_table_issues(tbl_xml, nsdecls=None):
     return issues
 
 
-def table_conformant(tbl_xml, nsdecls=None):
+def table_conformant(tbl_xml, nsdecls=None, styles_xml=None):
     """True ONLY when the table was evaluated and no 'fail' or 'unresolved' issue remains. An
     unevaluated/unparsed table is NOT conformant — unknown never counts as conformant. ('review' issues
     are surfaced but do not by themselves fail conformance.)"""
-    issues = effective_table_issues(tbl_xml, nsdecls)
+    issues = effective_table_issues(tbl_xml, nsdecls, styles_xml)
     return not any(i['severity'] in ('fail', 'unresolved') for i in issues)

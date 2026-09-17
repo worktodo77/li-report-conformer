@@ -51,8 +51,10 @@ def test_correct_style_name_but_direct_cell_border_fails():
 
 
 def test_direct_table_borders_fail():
+    # a NON-house direct table border (red, thick) overrides the grey grid and must fail
     t = _conformant_table().replace('<w:tblStyle w:val="LITable"/>',
-                                    '<w:tblStyle w:val="LITable"/><w:tblBorders><w:top w:val="single"/></w:tblBorders>')
+                                    '<w:tblStyle w:val="LITable"/><w:tblBorders>'
+                                    '<w:top w:val="single" w:sz="18" w:color="FF0000"/></w:tblBorders>')
     assert any(i['kind'] == 'grid-overridden' for i in effective_table_issues(t))
 
 

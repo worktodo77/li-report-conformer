@@ -1659,7 +1659,7 @@ class Conformer:
             if not it.startswith('<w:tbl'):
                 continue
             loc = self._locator(i)
-            issues = tablespec.effective_table_issues(it, nsdecls=ns)
+            issues = tablespec.effective_table_issues(it, nsdecls=ns, styles_xml=self.styles)
             f = [x for x in issues if x['severity'] == 'fail']
             u = [x for x in issues if x['severity'] == 'unresolved']
             rv = [x for x in issues if x['severity'] == 'review']
@@ -1745,6 +1745,12 @@ class Conformer:
             # a nested table adds another <w:tbl> ELEMENT (not a <w:tblPr>/<w:tblGrid>/… property, which
             # also start with '<w:tbl'); match the element start only
             nested = len(re.findall(r'<w:tbl[ >]', masked)) > 1
+            if nested:
+                # do NOT speculatively edit a table containing a nested table with flat regexes — leave it
+                # untouched and report it (with a locator) for independent review (issue #1 R5).
+                self._table_notes.append(f'{self._locator(i)}: nested table left untouched for independent '
+                                         'review')
+                continue
             # Remove direct table AND cell borders that would override the LITable grey grid (a correct
             # style name does not conform if a direct <w:tcBorders> defeats it). Masked revision content
             # is untouched (its borders are behind sentinels).
@@ -1773,18 +1779,13 @@ class Conformer:
                               lambda mm: mm.group(1) + '<w:pPr><w:pStyle w:val="TableData"/></w:pPr>',
                               p, count=1)
             nx = re.sub(r'<w:p\b.*?</w:p>', cell_para, nx, flags=re.S)
-            # First row repeats as a header — but ONLY for a flat table. With a nested table, the naive
-            # 'first <w:tr>' match can span the nested row and corrupt it, so we do not force a header on
-            # it and instead REPORT it as unresolved (identify the table, don't claim conformance).
-            if not nested:
-                fr = re.search(r'<w:tr\b.*?</w:tr>', nx, re.S)
-                if fr and '<w:tblHeader' not in fr.group(0):
-                    hdr = (fr.group(0).replace('<w:tr>', '<w:tr><w:trPr><w:cantSplit/><w:tblHeader/></w:trPr>', 1)
-                           if '<w:trPr>' not in fr.group(0)
-                           else fr.group(0).replace('<w:trPr>', '<w:trPr><w:tblHeader/>', 1))
-                    nx = nx.replace(fr.group(0), hdr, 1)
-            else:
-                self._table_notes.append('nested table left for independent review (header not forced)')
+            # First (flat) table row repeats as a header. Nested tables never reach here (handled above).
+            fr = re.search(r'<w:tr\b.*?</w:tr>', nx, re.S)
+            if fr and '<w:tblHeader' not in fr.group(0):
+                hdr = (fr.group(0).replace('<w:tr>', '<w:tr><w:trPr><w:cantSplit/><w:tblHeader/></w:trPr>', 1)
+                       if '<w:trPr>' not in fr.group(0)
+                       else fr.group(0).replace('<w:trPr>', '<w:trPr><w:tblHeader/>', 1))
+                nx = nx.replace(fr.group(0), hdr, 1)
             nx = self._unmask(nx, masks)
             if nx != x:
                 self.set(i, nx); cnt += 1
