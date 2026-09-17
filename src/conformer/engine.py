@@ -2119,6 +2119,44 @@ class Conformer:
             xml = xml.replace(tok, masks[tok])
         return xml
 
+    def _repair_stray_header_formatting(self, tbl_xml, locator):
+        """Repair the header row's NON-house direct formatting to let the LITable navy/white/bold header
+        render — but only on header cells that carry NO tracked change (issue #1 R5). A header fill/size
+        that is itself a tracked formatting edit (tcPrChange / ins / del / rPrChange / pPrChange) is a
+        reviewer's pending decision and is PRESERVED and flagged for human review, never rewritten (that
+        would silently alter tracked review history). Returns (xml, repaired_cells, flagged_tracked_cells)."""
+        m = re.search(r'<w:tr\b.*?</w:tr>', tbl_xml, re.S)
+        if not m or '<w:tblHeader' not in m.group(0):
+            return tbl_xml, 0, 0
+        row = m.group(0)
+        rep = [0]; flag = [0]
+        _nonhouse = re.compile(r'<w:shd\b[^>]*w:fill="([0-9A-Fa-f]{6})"[^>]*/>')
+
+        def _fix_cell(cm):
+            tc = cm.group(0)
+            has_nonhouse_fill = any(f.upper() not in ('054F8A', 'FFFFFF', 'AUTO')
+                                    for f in _nonhouse.findall(tc))
+            if re.search(r'<w:tcPrChange|<w:rPrChange|<w:pPrChange|<w:ins\b|<w:del\b', tc):
+                if has_nonhouse_fill:
+                    flag[0] += 1                       # tracked reviewer edit -> preserve + flag
+                return tc
+            new = tc
+            new = _nonhouse.sub(lambda sm: '' if sm.group(1).upper() not in ('054F8A', 'FFFFFF', 'AUTO')
+                                else sm.group(0), new)
+            new = re.sub(r'<w:sz w:val="\d+"/>', '', new)     # let the style supply the house size
+            new = re.sub(r'<w:szCs w:val="\d+"/>', '', new)
+            new = re.sub(r'<w:color w:val="[^"]+"/>', '', new)  # let the style supply white header text
+            if new != tc:
+                rep[0] += 1
+            return new
+
+        newrow = re.sub(r'<w:tc\b.*?</w:tc>', _fix_cell, row, flags=re.S)
+        out = tbl_xml.replace(row, newrow, 1) if newrow != row else tbl_xml
+        if flag[0]:
+            self._table_notes.append(f'{locator}: {flag[0]} header cell(s) have a non-house fill that is a '
+                                     'TRACKED formatting change — preserved for human accept/reject')
+        return out, rep[0], flag[0]
+
     def _conform_tables_preserving(self):
         """Make every table USE the (now-repaired) LI table style so its built-in settings apply
         (Claire's 'tables not using the table style' / 'settings not used'). Table-level properties
@@ -2182,6 +2220,11 @@ class Conformer:
                        else fr.group(0).replace('<w:trPr>', '<w:trPr><w:tblHeader/>', 1))
                 nx = nx.replace(fr.group(0), hdr, 1)
             nx = self._unmask(nx, masks)
+            # R5 header repair: on the header row, strip a NON-house direct fill / run size / colour so the
+            # LITable navy+white+bold header renders — but ONLY on cells with NO tracked change. A header
+            # fill that is itself a tracked formatting edit (tcPrChange/ins/del) is a reviewer's in-progress
+            # decision: it is PRESERVED and flagged for human review, never silently rewritten.
+            nx, hrep, hflag = self._repair_stray_header_formatting(nx, self._locator(i))
             if nx != x:
                 self.set(i, nx); cnt += 1
         if cnt:
