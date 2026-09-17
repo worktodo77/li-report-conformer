@@ -18,6 +18,15 @@ per the plan-mode discipline already in the repo.
 
 ---
 
+## Build status (2026-09-17)
+- **P0-1 DONE** (commit `d3b57f5`) — tables conform to Grid Table 4 / "LI Table" teal; Warhoe 333/333
+  GridTable4, 0 navy, validate True, tracked records preserved.
+- **P0-2 DONE (pending final Warhoe confirm)** — heading-caps policy: never add `<w:caps/>`, honor the H2
+  initial-caps exception, flag (not force) inconsistent/wrong casing.
+- **P0-3 DONE (pending final Warhoe confirm)** — inch spelling-out (`2"`→`2-inch`) moved from the shared
+  typography transform into the house-style layer, so it fires in body prose only and never rewrites a
+  verbatim Excerpt/Quote or Caption (tables are whole-item, already untouched by the paragraph passes).
+
 ## Priority 0 — STOP the engine from degrading a conforming document
 
 These are cases where the conformer **actively makes a compliant report non-compliant** — the trust problem

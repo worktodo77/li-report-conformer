@@ -136,8 +136,9 @@ def _sentence_space(m):
 def typo_text(t):
     """The house typography transform on a single text token (smart quotes, en dashes, sentence
     spacing, date/ligature fixes). Shared by the typography pass AND the content-stream gate as the
-    ONLY authorized text change, so any other text edit is caught."""
-    t = re.sub(r'(\d)"', r'\1-inch', t)
+    ONLY authorized text change, so any other text edit is caught. NOTE: spelling out a measurement
+    (2" -> 2-inch) is NOT here — it is a house-style edit (_house_edit), so it applies to body prose
+    only and never rewrites a verbatim Excerpt/Quote or Caption (guideline §5, D-2)."""
     t = re.sub(r'(^|[\s(\[])"', '\\1\u201c', t); t = t.replace('"', '\u201d')
     t = re.sub(r"(^|[\s(\[])'", '\\1\u2018', t); t = t.replace("'", '\u2019')
     t = re.sub(r'(\w)--(\w)', '\\1\u2013\\2', t)
@@ -200,6 +201,7 @@ def house_norm(t):
     texts differ ONLY by house-style edits. Not the corrective transform \u2014 that is house_style().
     British->American is case-preserving here (as in the pass), so a capitalized 'Analysed'->'Analyzed'
     canonicalizes the same from both sides."""
+    t = re.sub(r'(\d)["”]', r'\1-inch', t)    # authorize the body-prose inch spelling-out (D-2)
     t = _BRIT_RE.sub(_brit_case, t)
     t = _USA_RE.sub('U.S.', t)
     t = re.sub(r'\b(%s)\b' % _LOWER_ALT, lambda m: m.group(0).lower(), t)
@@ -1195,6 +1197,7 @@ class Conformer:
         for seg in re.split(r'("[^"]*"|“[^”]*”)', t):
             if seg[:1] in ('"', '“'):
                 out.append(seg); continue          # a quotation span — never edited
+            seg = re.sub(r'(\d)["”]', r'\1-inch', seg)   # spell out a body-prose inch measurement (D-2)
             seg = _HOUSE_LOWER_RE.sub(lambda m: m.group(1) + m.group(2) + m.group(3).lower(), seg)
             seg = _HOUSE_CAP_RE.sub(lambda m: m.group(1) + m.group(2) + m.group(3).capitalize(), seg)
             seg = _BRIT_RE.sub(_brit_case, seg)
@@ -1454,7 +1457,7 @@ class Conformer:
             (self._repair_styles, 'stream', 'styles'), (self._conform_tables_preserving, 'stream', 'tables'),
             (self.classify, 'stream', 'structure'), (self.fix_levels, 'stream', 'structure'),
             (self._restore_suppressed_bullets, 'stream', 'structure'),
-            (self._caps_headings_preserving, 'stream', 'structure'), (self.strip_direct, 'stream', 'structure'),
+            (self._heading_caps_preserving, 'stream', 'structure'), (self.strip_direct, 'stream', 'structure'),
             (self.fix_footnotes, 'stream', 'structure'), (self.fix_sections, 'stream', 'structure'),
             (self._color_highlight_calls, 'stream', 'structure'),
             (self.typography, 'text', 'type'), (self.house_style, 'house', 'type'),
@@ -1564,25 +1567,35 @@ class Conformer:
                 self._restore(snap)
                 self.exceptions.append(('merge_pdf_lines', 'ledger backstop tripped (rolled back)'))
 
-    def _caps_headings_preserving(self):
-        """#9 as FORMATTING: display Heading1/2 uppercase via <w:caps/> on their runs, leaving the
-        letters exactly as typed (content-safe)."""
+    @staticmethod
+    def _text_is_upper(t):
+        letters = [c for c in t if c.isalpha()]
+        return bool(letters) and all(c.isupper() for c in letters)
+
+    def _heading_caps_preserving(self):
+        """Heading capitalization policy (guideline §3, P0-2): H1 & H2 are ALL CAPS via TRUE typed capitals,
+        with the documented exception that H2 may use initial caps when applied CONSISTENTLY (a long-title
+        report-wide choice). The engine NEVER adds a display <w:caps/> attribute: §3 warns it does not
+        propagate to the Table of Contents or PDF bookmarks, so it would desync the body from the TOC. In
+        the review-preserving pipeline this pass does not force a text change (a heading recasing would alter
+        the content stream); it FLAGS non-conforming casing for human correction:
+          - a Heading 1 not in ALL CAPS;
+          - Heading 2 casing that is INCONSISTENT (some all-caps, some initial-caps) — the exception has to
+            be applied consistently. Consistently-initial-caps H2s are the honored exception (no flag)."""
+        h2 = [(i, self.text(i).strip()) for i in range(self.n())
+              if self.is_par(i) and self.style(i) == 'Heading2' and self.text(i).strip()]
+        h2_caps = [i for i, t in h2 if self._text_is_upper(t)]
+        h2_initial = [i for i, t in h2 if not self._text_is_upper(t)]
+        if h2_caps and h2_initial:
+            self.say('J', h2_initial[0], f'Heading 2 capitalization is INCONSISTENT ({len(h2_caps)} all '
+                     f'caps, {len(h2_initial)} initial caps): the initial-caps exception must be applied '
+                     'consistently throughout (guideline §3) — review')
         for i in range(self.n()):
-            if not self.is_par(i) or self.style(i) not in ('Heading1', 'Heading2'):
-                continue
-            x = self.item(i)
-            if '<w:caps/>' in x:
-                continue
-            def add_caps(rm):
-                r = rm.group(0)
-                if '<w:t' not in r:
-                    return r
-                if '<w:rPr>' in r:
-                    return r.replace('<w:rPr>', '<w:rPr><w:caps/>', 1)
-                return re.sub(r'(<w:r\b[^>]*>)', lambda m: m.group(1) + '<w:rPr><w:caps/></w:rPr>', r, count=1)
-            nx = re.sub(r'<w:r\b[^>]*>.*?</w:r>', add_caps, x, flags=re.S)
-            if nx != x:
-                self.set(i, nx)
+            if self.is_par(i) and self.style(i) == 'Heading1':
+                t = self.text(i).strip()
+                if t and not self._text_is_upper(t):
+                    self.say('J', i, 'Heading 1 is not in ALL CAPS (guideline §3: Headings 1 and 2 in all '
+                             'caps) — review')
 
     @staticmethod
     def _keep_numpr(old, new):
