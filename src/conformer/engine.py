@@ -1461,6 +1461,69 @@ class Conformer:
                      'per-section numbering sequential')
         return findings
 
+    def _ensure_crossref_style(self):
+        """Import the 'Cross Reference' character style if the document lacks it (so the applied rStyle
+        resolves)."""
+        if re.search(r'<w:style\b[^>]*w:styleId="CrossReference"', self.styles):
+            return
+        m = re.search(r'<w:style\b[^>]*w:styleId="CrossReference".*?</w:style>', self.t_styles, re.S)
+        style = m.group(0) if m else ('<w:style w:type="character" w:customStyle="1" '
+                                      'w:styleId="CrossReference"><w:name w:val="Cross Reference"/></w:style>')
+        self.styles = self.styles.replace('</w:styles>', style + '</w:styles>', 1)
+
+    _CROSSREF_FIELD = re.compile(
+        r'(<w:instrText[^>]*>\s*REF\b.*?<w:fldChar w:fldCharType="separate"/>\s*</w:r>)'
+        r'(.*?)(<w:r\b[^>]*>\s*<w:fldChar w:fldCharType="end"/>\s*</w:r>)', re.S)
+
+    def _apply_crossref_style(self, x):
+        """Add the 'Cross Reference' character style to the DISPLAY runs of each REF (cross-reference)
+        field in x. Formatting only — the display TEXT is unchanged. Returns (xml, styled_runs, broken)."""
+        styled = [0]; broken = [0]
+
+        def one_run(rm):
+            r = rm.group(0)
+            if '<w:t' not in r or 'w:val="CrossReference"' in r:
+                return r
+            styled[0] += 1
+            if '<w:rPr>' in r:
+                return r.replace('<w:rPr>', '<w:rPr><w:rStyle w:val="CrossReference"/>', 1)
+            return re.sub(r'(<w:r\b[^>]*>)',
+                          lambda m: m.group(1) + '<w:rPr><w:rStyle w:val="CrossReference"/></w:rPr>', r, count=1)
+
+        def one_field(fm):
+            pre, disp, post = fm.group(1), fm.group(2), fm.group(3)
+            if 'Reference source not found' in disp:
+                broken[0] += 1
+            return pre + re.sub(r'<w:r\b[^>]*>.*?</w:r>', one_run, disp, flags=re.S) + post
+
+        return self._CROSSREF_FIELD.sub(one_field, x), styled[0], broken[0]
+
+    def _style_crossreferences(self):
+        """§9 (P1): give every cross-reference (REF) field's display runs the 'Cross Reference' character
+        style — applied to EXISTING fields, not only ones the engine builds from literal text (Warhoe:
+        515/515 REF fields lacked it though the style is defined). A broken reference (cached "Error!
+        Reference source not found") is flagged. Formatting-only: the display text is unchanged, revision
+        content is masked, so the content-stream gate holds."""
+        self._ensure_crossref_style()
+        styled = broken = 0
+        for i in range(self.n()):
+            x = self.item(i)
+            if 'REF ' not in x or 'fldChar' not in x:
+                continue
+            masked, masks = self._mask_revisions(x) if self.disposition == 'preserve' else (x, {})
+            nx, s, b = self._apply_crossref_style(masked)
+            nx = self._unmask(nx, masks)
+            if nx != x:
+                self.set(i, nx)
+            styled += s; broken += b
+        if broken:
+            self.audit = (self.audit or []) + [('xref-broken', f'{broken} cross-reference(s) display '
+                          '"Error! Reference source not found" (broken target) — review')]
+            self.say('J', -1, f'CROSS-REF AUDIT: {broken} broken cross-reference(s)')
+        if styled:
+            self.say('M', -1, f'applied the Cross Reference character style to {styled} cross-reference run(s)')
+        return styled, broken
+
     def _finalize_verdict(self, force=False):
         """Compute (or reuse) the conformance verdict tied to the CURRENT mutation generation (issue #1 E).
         A later edit bumps self._gen and invalidates a stale verdict. A verification exception is UNKNOWN
@@ -1531,7 +1594,7 @@ class Conformer:
         self._emit('structure')
         self.classify(); self.merge_pdf_lines()
         self.fix_headings(); self.fix_levels(); self._restore_suppressed_bullets(); self.strip_direct(); self.fix_tables(); self.fix_figures()
-        self.fix_footnotes(); self.rebuild_fields()
+        self.fix_footnotes(); self.rebuild_fields(); self._style_crossreferences()
         self._emit('type')
         self.typography(); self.house_style(); self.fix_sections(); self.replace_parts()
         # colour/highlight AFTER replace_parts so redundancy is judged against the FINAL (template) styles
@@ -1579,6 +1642,7 @@ class Conformer:
             (self._heading_caps_preserving, 'stream', 'structure'), (self.strip_direct, 'stream', 'structure'),
             (self.fix_footnotes, 'stream', 'structure'), (self.fix_sections, 'stream', 'structure'),
             (self._color_highlight_calls, 'stream', 'structure'),
+            (self._style_crossreferences, 'stream', 'structure'),
             (self.typography, 'text', 'type'), (self.house_style, 'house', 'type'),
             (self._prune_preserving, 'prune', 'type'),
         ]
