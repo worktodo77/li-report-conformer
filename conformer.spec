@@ -44,6 +44,8 @@ a = Analysis(
         'conformer.ui.preview',
         'conformer.ui.selftest',
         'conformer.audit_export',
+        'conformer.numbering',
+        'conformer.tablespec',
     ] + _export_hidden,
     hookspath=[],
     hooksconfig={},
