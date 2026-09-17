@@ -1010,8 +1010,10 @@ class MainWindow(QMainWindow):
         # Highlights are grouped (a real draft can have hundreds) — a single control, KEEP by default;
         # every other judgment call (incl. the few colour deviations) stays as an individual row.
         self.highlight_calls = [c for c in self.judgment_calls if c.kind == 'highlight']
-        self.highlight_remove = set()         # highlight call ids the user chose to remove
-        self.remove_all_highlights = False
+        # authoritative per-id decision map (True=remove, absent/False=keep): a per-item choice always
+        # wins over the bulk toggle, and the bulk toggle updates EVERY id, not just the rendered page.
+        self.highlight_decision = {}
+        self._highlight_btns = {}             # id -> its per-item button (for bulk sync)
         other_calls = [c for c in self.judgment_calls if c.kind != 'highlight']
 
         # ── JUDGMENT CALLS (substantive) ──
@@ -1038,32 +1040,57 @@ class MainWindow(QMainWindow):
         self.tally_bar.setVisible(bool(self.judgment_calls) or bool(edits) or bool(self.conf_rows))
         self._update_tally()
 
+    def _set_highlight(self, cid, remove):
+        """Authoritative per-item decision (wins over the bulk toggle); syncs the rendered button."""
+        self.highlight_decision[cid] = bool(remove)
+        btn = getattr(self, '_highlight_btns', {}).get(cid)
+        if btn is not None and btn.isChecked() != bool(remove):
+            btn.blockSignals(True); btn.setChecked(bool(remove)); btn.blockSignals(False)
+
+    def _set_all_highlights(self, remove):
+        """A TRUE bulk update across EVERY highlight id (not just the rendered page)."""
+        for c in getattr(self, 'highlight_calls', []):
+            self._set_highlight(c.id, remove)
+
+    def _highlight_decisions(self):
+        """The applied decision for every highlight: accept = remove, skip = keep (default keep)."""
+        return {c.id: ('accept' if self.highlight_decision.get(c.id, False) else 'skip')
+                for c in getattr(self, 'highlight_calls', [])}
+
+    def _highlight_decision_log(self):
+        """Audit rows for the grouped highlights so the saved decision map is faithfully recorded."""
+        rows = []
+        for c in getattr(self, 'highlight_calls', []):
+            remove = self.highlight_decision.get(c.id, False)
+            rows.append({'status': 'REMOVED' if remove else 'KEPT',
+                         'text': f'"{c.short_text}"',
+                         'action': 'Removed highlight' if remove else 'Kept highlight'})
+        return rows
+
     def _build_highlights_content(self, calls):
-        """One grouped control for highlights (default KEEP): a 'Remove all highlights' toggle plus a
-        paginated per-item list, so hundreds of review markers don't flood the screen and aren't stripped
-        unless chosen. Each row shows the highlighted snippet + a Remove toggle."""
+        """One grouped control for highlights (default KEEP): a 'Remove all' toggle plus a paginated
+        per-item list, so hundreds of review markers don't flood the screen and aren't stripped unless
+        chosen. Scope note: this covers highlights in ordinary body text (revised paragraphs, table cells
+        and footnotes are handled elsewhere), so 'all' means all body-text highlights."""
+        self._highlight_btns = {}
         w = QWidget()
         v = QVBoxLayout(w); v.setContentsMargins(0, 4, 0, 8); v.setSpacing(6)
-        intro = QLabel('Highlights are review markers, so they are KEPT by default. Remove them all, or '
-                       'remove individual ones.')
+        intro = QLabel('Highlights in body text are review markers, so they are KEPT by default. Remove '
+                       'them all, or remove individual ones — a per-item choice always wins.')
         intro.setWordWrap(True); intro.setStyleSheet('font-size: 11.5px; color: #66707a;')
         v.addWidget(intro)
 
         remove_all = QPushButton('Remove all highlights')
         remove_all.setObjectName('skipBtn'); remove_all.setCheckable(True); remove_all.setFixedWidth(180)
 
-        rows_holder = QWidget()
-        rl = QVBoxLayout(rows_holder); rl.setContentsMargins(0, 0, 0, 0); rl.setSpacing(4)
-        item_rows = []
-
         def on_remove_all():
-            self.remove_all_highlights = remove_all.isChecked()
-            remove_all.setText('Removing all — undo' if self.remove_all_highlights else 'Remove all highlights')
-            for btn, cid in item_rows:
-                btn.setChecked(self.remove_all_highlights)
-                (self.highlight_remove.add if self.remove_all_highlights else self.highlight_remove.discard)(cid)
+            self._set_all_highlights(remove_all.isChecked())
+            remove_all.setText('Removing all — undo' if remove_all.isChecked() else 'Remove all highlights')
         remove_all.clicked.connect(on_remove_all)
         v.addWidget(remove_all, 0, Qt.AlignLeft)
+
+        rows_holder = QWidget()
+        rl = QVBoxLayout(rows_holder); rl.setContentsMargins(0, 0, 0, 0); rl.setSpacing(4)
         v.addWidget(rows_holder)
 
         more_btn = QPushButton(); more_btn.setObjectName('viewBtn')
@@ -1080,13 +1107,11 @@ class MainWindow(QMainWindow):
                 snip.setTextFormat(Qt.RichText); snip.setWordWrap(True)
                 snip.setStyleSheet('font-size: 12px; color: #1c2733;')
                 btn = QPushButton('Remove'); btn.setObjectName('skipBtn'); btn.setCheckable(True)
-                btn.setFixedWidth(80); btn.setChecked(self.remove_all_highlights or c.id in self.highlight_remove)
-
-                def _toggle(checked, cid=c.id):
-                    (self.highlight_remove.add if checked else self.highlight_remove.discard)(cid)
-                btn.toggled.connect(_toggle)
+                btn.setFixedWidth(80); btn.setChecked(self.highlight_decision.get(c.id, False))
+                btn.toggled.connect(lambda checked, cid=c.id: self._set_highlight(cid, checked))
+                self._highlight_btns[c.id] = btn
                 hl.addWidget(snip, 1); hl.addWidget(btn, 0, Qt.AlignTop)
-                rl.addWidget(row); item_rows.append((btn, c.id))
+                rl.addWidget(row)
             page['shown'] = end
             remaining = len(calls) - page['shown']
             more_btn.setVisible(remaining > 0)
@@ -1428,10 +1453,8 @@ class MainWindow(QMainWindow):
         decisions = {}
         for row in self.judgment_rows:
             decisions[row.call.id] = row.get_decision_string()
-        # highlights (grouped): accept = remove, skip = keep; default keep
-        for c in getattr(self, 'highlight_calls', []):
-            remove = self.remove_all_highlights or c.id in self.highlight_remove
-            decisions[c.id] = 'accept' if remove else 'skip'
+        # highlights (grouped): the authoritative per-id decision map (accept=remove, skip=keep)
+        decisions.update(self._highlight_decisions())
         if getattr(self, 'skip_all_cleanup', False):
             # skip EVERY cosmetic edit, including pages the user never scrolled to
             for e in getattr(self, 'edits', []):
@@ -1508,6 +1531,8 @@ class MainWindow(QMainWindow):
                 'text': f'"{row.call.short_text}"',
                 'action': action,
             })
+        # grouped highlight decisions are recorded too, so the audit matches the actual applied map
+        decisions_log.extend(self._highlight_decision_log())
 
         self._build_complete_state(output_path, decisions_log, getattr(fresh, 'audit', []), fresh)
 
