@@ -189,3 +189,54 @@ earlier — listed for completeness).
    spec from the template, not hardcoded constants.
 3. Excerpt/Quote normalization; heading "lead-in before bullets" and new-page rules; en/em dash + non-
    breaking + table prime-mark typography; footnote period/blank-line; cross-reference field coverage.
+
+## FULL gap analysis of Section 10 "ADDITIONAL CHECKS" (every item)
+Legend: ✅ engine conforms · ⚠️ partial · ❌ in-scope gap (deterministic, engine COULD do) · 🈚 language/
+editorial (needs a human or the LLM editorial layer, not the deterministic conformer).
+
+| # | Section-10 check | Engine status |
+|---|---|---|
+| 1 | Centering tables/figures/titles; indent 0.5" under numbered paragraphs, or full-width no indent | ❌ centers captions but does NOT do the 0.5"-under-numbered-paragraph positioning rule |
+| 2 | "this" without a following noun | 🈚 language |
+| 3 | Capitalize "Report" (the subject Report) | 🈚 language (context) |
+| 4 | Capitalize "Project" (and not the modifier "project") | 🈚 language (context) |
+| 5 | Colon-led list → `;` each item, `; and` penultimate, `.` last | 🈚 punctuation/editorial |
+| 6 | **Footnotes: period at end; remove a line space after** | ❌ IN SCOPE — 34/1,507 Warhoe footnotes lack an end period; trailing blank line not removed |
+| 7 | Use spell check | 🈚 manual |
+| 8 | **Double periods** (accidental `..`) | ❌ IN SCOPE (deterministic; must spare `…` ellipsis and `etc.`+end) |
+| 9 | **Extra spaces between words** (3+ / mid-sentence doubles) | ❌ IN SCOPE (deterministic; must respect the house 2-spaces-after-sentence rule) |
+| 10 | Use the defined acronym thereafter | 🈚 language |
+| 11 | Appendices in separate files | 🈚 process |
+| 12 | **Line spacing single (preferred) or 1.5, consistent** | ❌ IN SCOPE — engine does not set/verify line spacing |
+| 13 | "below." with a period, not a colon | 🈚 language |
+| 14 | "since" vs "because" | 🈚 language |
+| 15 | "all of the" → "all the" | 🈚 language |
+| 16 | "man-hours" hyphen | 🈚 language |
+| 17 | id. / ibid. usage | 🈚 language |
+| 18 | Long International / LI naming convention | 🈚 language |
+| 19 | **`30"` → "30-inch" (except in excerpts/quotes)** | ⚠️ engine converts every `N"`→`N-inch` — but over-applies inside TABLES (prime marks allowed there per §8.2.2) and EXCERPTS (rule excludes them) |
+| 20 | Spell out an abbreviation on first use | 🈚 language |
+| 21 | Past-tense verbs for actions | 🈚 language |
+| 22 | **Dates `DD Month YYYY`, no leading zero on days 1–9** | ✅/⚠️ engine strips leading zero (`03 April`→`3 April`); cannot convert `3/4/11` (ambiguous) |
+| 23 | Oxford comma before "and" | 🈚 language |
+| 24 | Attachment (LI-prepared) vs Exhibit (others) numbering | 🈚 semantic |
+| 25 | Capitalize first word of a bullet unless a continuation | 🈚 language |
+| 26 | Single-word lists no `;`; multi-word lists `;` + `; and` | 🈚 punctuation |
+| 27 | **Sentences/multi-line bullets use "List bullet as a sentence"** | ⚠️ `classify` picks it when a bullet is long / ends with `;`/`.`/`:` — heuristic, not verified |
+| 28 | Possessive of "…s" → `ULS'` not `ULS's` | 🈚 language |
+| 29 | Plural of acronym → `P&IDs` not `P&ID's` | 🈚 language |
+| 30 | "which" (after comma) vs "that" | 🈚 language |
+| 31 | "who" not "that" for a person | 🈚 language |
+| 32 | Avoid ambiguous pronouns | 🈚 language |
+| 33 | "farther" (distance) vs "further" (degree) | 🈚 language |
+| 34 | Don't start with "this" without a noun | 🈚 language |
+| 35 | Company takes singular verb/pronoun | 🈚 language |
+| 36 | Minimize "in order to" | 🈚 language |
+| 37 | Singular pronoun with singular subject | 🈚 language |
+| 38 | Avoid split infinitives | 🈚 language |
+
+**Section 10 summary:** ~32 of ~38 items are LANGUAGE/editorial (out of the deterministic conformer's scope
+— these belong to the planned LLM editorial layer or human review). The DETERMINISTIC, in-scope items the
+engine could add are only: **#1 table/figure centering-indent, #6 footnote end-period + trailing-blank-line,
+#8 double periods, #9 extra spaces, #12 line spacing**, plus tightening **#19** ("N-inch" must skip tables
+and excerpts). #22 (dates) and #27 (sentence bullets) are already partially handled.
