@@ -463,3 +463,64 @@ a numbered list. (Note: attorneys dislike bullets; the numbered styles are prefe
 - **Filenames/footers (§8 File Names):** the project-number/title/initials/date filename convention is
   external to the document body — the conformer could *suggest* a conforming output filename (advisory), but
   it is not a document-content conformance item.
+
+## 17. Section 9 — Cross-References (deep audit)
+
+**Guideline (§9 "CROSS-REFERENCES TO HEADINGS, TABLES, FIGURES, NUMBERED PARAGRAPHS, ETC."):** cross-
+references fall into five categories — **Numbered item, Heading, Footnote, Figure, Table**. Insert via
+Insert → Cross-reference; check **"Insert as hyperlink"**. **"Cross-references are 'fields' in Word."** and
+**"Give your references the 'Cross Reference' style."** §8.11 (Updating Fields) adds: Ctrl+A + F9 updates
+cross-refs/captions/TOC/lists, but **footnote fields are updated separately** (Ctrl+A selects the body, not
+footnotes).
+
+### Engine cross-reference machinery
+`_xrefs_preserving` / `_xref_targets` / `_rebuild_xrefs_in` (engine.py ~2685) rewrite **literal** reference
+text ("Table 3-1", "Section 5") into live `REF … \h` fields carrying the `CrossReference` character style,
+masking revision content, only when the target already has a bookmark, one JudgmentCall per paragraph. The
+concept is right (field + hyperlink + Cross Reference style), but coverage and verification are narrow.
+
+### Findings against the real Warhoe report
+- **[OK] The report already uses proper fields:** 515 `REF` fields, **all 515 with `\h`** (hyperlink), 0
+  cached "Error! Reference source not found" — i.e. every cross-reference resolves. The author did this
+  correctly; there is essentially no literal-text-to-field conversion work to do on Warhoe.
+- **[X] "Cross Reference" style is MISSING on all 515 fields (real).** The `CrossReference` style IS defined
+  in the report's `styles.xml`, but **0 runs carry it** — none of the 515 REF fields are styled per §9. The
+  engine cannot fix this: `_xrefs_preserving` applies `CrossReference` **only to fields it creates from
+  literal text**; it has **no pass that adds the Cross Reference style to existing REF fields**. Because
+  Warhoe's refs are already fields, the engine rewrites none of them and all 515 stay unstyled. This is a
+  concrete, report-wide §9 non-conformance the conformer neither detects nor repairs.
+- **[X] Conversion coverage is narrow (matters for reports with literal refs):**
+  - Table/Figure detection is `(Table|Figure) (\d+-\d+)` — **single-level `N-N` only**. Warhoe's captions
+    are H3-based `3.4.2-1` (546 multi-level occurrences, 0 single-level), so a *literal* multi-level table
+    reference could never be converted. (Compounds the §8.6 H3-basis problem.)
+  - Heading detection is `Sections? (\d+)(?!\.\d)` — **a bare integer only**, mapped to the Nth `Heading1`
+    by ordinal. It misses all **107 multi-level `Section N.N`** references in Warhoe and every H2–H6 target
+    (only Heading1 bookmarks are offered by `_xref_targets`).
+  - **Numbered-item** (paragraph) and **Footnote** cross-references — two of the five §9 categories — are
+    **not handled at all** (Warhoe has ~6 "paragraph N" phrases).
+- **[X] No verification of EXISTING fields.** The engine trusts existing REF fields blindly — it never
+  confirms they resolve to a live bookmark, never flags a broken/stale reference, never checks the switches
+  or style. (Warhoe happens to be clean — 0 broken — but a report with a deleted target would ship the
+  "Error! Reference source not found" text unflagged.)
+- **[X] Targets must be pre-bookmarked.** `_xref_targets` only offers already-bookmarked captions/Heading1s;
+  it will not create a bookmark to enable a reference, so a reference to an unbookmarked heading/paragraph
+  cannot be built even where the literal text is detected.
+- **[~] Minor:** existing Warhoe REF fields carry a redundant double switch (`\r \r \h`) — harmless, Word
+  ignores the duplicate; not worth a rewrite (rewriting would touch field content unnecessarily).
+- **Field-refresh interplay (§8.11):** because `settings.xml` has `updateFields=False` and captions are
+  stale in 13 sections (§8.6), the REF fields that display those caption numbers can also show stale text
+  until F9. Arming `updateFields=true` (the §8.6 fix) makes Word refresh the REF fields too — but note the
+  guideline's caveat that **footnote** fields need a separate update, which a single `updateFields` flag on
+  the main document covers on open (Word updates all fields including footnotes on an updateFields-driven
+  refresh), so this is satisfied by the flag rather than the manual two-step.
+
+### What a correct §9 pass would do (deferred to the realignment, no code change yet)
+1. **Normalize the character style on ALL cross-reference fields** (existing + created): ensure every `REF`
+   field's display runs carry the `CrossReference` style — the single biggest real gap (515/515 on Warhoe).
+2. **Broaden literal→field conversion:** multi-level Table/Figure (`N.N-N`, `N.N.N-N`) and multi-level
+   Section (`N.N`, `N.N.N`) references, resolving to H1–H6 targets (offer H2–H6 bookmarks, create one where
+   missing), plus the Numbered-item and Footnote categories.
+3. **Verify existing fields:** flag any REF whose target bookmark is missing (broken reference) and any
+   cross-reference left as static text; report rather than silently trust.
+4. Share the heading/caption bookmark + number resolution with the §3/§8.6 sequence verifier so references,
+   captions, and headings are checked against one consistent numbering model.
