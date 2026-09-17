@@ -260,17 +260,25 @@ and excerpts). #22 (dates) and #27 (sentence bullets) are already partially hand
 
 ## 11. Section 8.6 — Captions for Tables and Figures (numbering consistency + section-based numbering)
 
-**Guideline (§8.6 "Captions for Tables and Figures"):** captions are auto-number *fields* keyed to the
-section (STYLEREF to the heading level + SEQ), so a table/figure reads `<section>-<n>` (e.g. `Table 3-1`,
-`Figure 5-2`); numbering must be **consistent** (all captions of a kind based on the same heading level)
-and **sequential within a section**. §8.11 "Updating Fields" says the fields must be refreshed so the
-displayed numbers match reality.
+**Guideline (§8.6 "Captions for Tables and Figures"):** "Your numbering will be based on **Heading 1 or 2**.
+Note: Word does not allow you to use both Heading 1 and 2 numbering options at the same time." Two sanctioned
+forms only: **H1-based `N-N`** (e.g. `Table 1-1`, `1-2`, `1-3` within each section — "the simplest
+approach") or **H2-based `N.N-N`** (e.g. `Table 1.1-1`). Captions are auto-number *fields* (STYLEREF to the
+chosen heading level + SEQ). Numbering must be **consistent** (all captions of a kind on the same basis) and
+**sequential within a section**. §8.11 "Updating Fields" says fields must be refreshed so the displayed
+numbers match reality.
 
 ### Findings against the real Warhoe report
-- **Basis INCONSISTENCY (real):** 311 **Table** captions use `STYLEREF 3` + `SEQ Table \* ARABIC \s 3`
-  (Heading-3-based, e.g. `Table 3.4.2-1`), but the 2 **Figure** captions use `STYLEREF 1` (Heading-1-based).
-  The two caption families are numbered off *different* heading levels. The guideline wants a single,
-  consistent numbering basis. [X] engine has no check for caption-basis consistency.
+- **[X] NON-CONFORMING BASIS (real, strong):** the guideline sanctions **only Heading 1 or Heading 2** as the
+  caption basis, but all 311 **Table** captions use `STYLEREF 3` + `SEQ Table \* ARABIC \s 3` — a
+  **Heading-3** basis (e.g. `Table 3.4.2-1`, a three-level prefix). H3 is not a permitted basis at all; the
+  two allowed forms are `N-N` (H1) or `N.N-N` (H2). The 2 **Figure** captions meanwhile use `STYLEREF 1`
+  (H1). So the report is both (a) using a disallowed H3 basis for tables and (b) mixing bases (tables H3,
+  figures H1). [X] the engine has no check for caption basis at all.
+- **[X] Engine `rebuild_fields` can't even parse these captions:** its regex is
+  `(Table|Figure) (\d+)[-‑‐](\d+)` — single-level `N-N` (the H1 form) ONLY. Warhoe's H3-based `3.4.2-1`
+  (and any H2-based `N.N-N`) does not match, so the engine silently skips rebuilding them — it neither
+  detects nor repairs the disallowed basis.
 - **0 static captions** — every caption is a field (good; section prefix auto-matches on field update).
 - **STALE cached numbers (real):** 13 of 50 sections show non-sequential cached SEQ results — confirmed
   stale fields, e.g. Table 3.6.3 sequence `[1,2,3,4,5,6,5]` (duplicate 5), Table 3.6.5 `[...,6,8]` (gap),
@@ -357,3 +365,101 @@ first.** Long heading: break with Shift+Enter and delete the created space.
    confirm 1/1.1/1.1.1 increments per section, flag duplicates, gaps, and H2–6 not linked to their H1.
 3. Flag (advisory) sections nested to H5/H6 as "deeper than the preferred four levels."
 4. Flag a bullet that immediately follows a heading with no lead-in paragraph.
+
+## 13. Section 4 — Numbered Paragraphs and Sublevels
+
+**Guideline (§4):** "Numbered Paragraph" style auto-numbers and inserts a blank line between paragraphs; use
+it **only** for numbered paragraphs, not other numbered lists. Four sublevels — L1 `1`, L2 `a`, L3 `i`,
+L4 `-` — for a numerical list *within* a numbered paragraph; single words/short phrases get **no blank line
+between items**. **"Do not use these levels (1, a, i, -) out of sequence or skip a level, such as starting
+with 'a' rather than '1.'"**
+
+### Findings (Warhoe: L1=199, L2=71, L3=5, L4=0)
+- **[!] No-skip / sequence rule only PARTIALLY enforced.** `fix_levels` (engine.py ~577) catches exactly one
+  case — a `NumberedParagraphL2` immediately following a `NumberedParagraph` (promotes the run to L1) — and
+  one L1-colon-lead-in case. It does **not** verify the general rule: a sublist must start at L1 and must not
+  jump levels (L1→L3). Warhoe has **2 sublists that start at L2** (from no-sublevel straight to L2, e.g.
+  "Contemporaneous Period Analysis") — a "started at 'a' not '1'" violation the general rule targets; only
+  the subset whose predecessor is literally a `NumberedParagraph` is caught. [X] no L1/L2/L3/L4 sequence
+  verifier; skipped/again-out-of-order levels elsewhere are missed.
+- **[!] Blank-line-between-items rule** (short items → no blank line; the style controls this via
+  `contextualSpacing`/spacing) is not verified per-item. Advisory.
+- **Cross-check with §8.6:** the "only use Numbered Paragraph for numbered paragraphs, not other numbered
+  lists" rule means a toolbar/manual numbered list masquerading as body numbering should be reclassified —
+  related to the direct-numPr handling already in `_functioning_direct_numpr`.
+
+## 14. Section 5 — Excerpts and Quotes
+
+**Guideline (§5):** short quote → inline (comma before the quote unless the lead-in ends in "that"; smart
+quotes, never prime marks). Longer quote → **"Excerpt or Quote"** style (indented + italic). **"Do not use
+quotation marks when using this style."** Footnote number goes **after the quotation**, not after the
+introducing sentence. **"Remove italics from footnotes following italicized quotes."**
+
+### Findings against the real Warhoe report (15 ExcerptorQuote paragraphs)
+- **[X] Quotation marks inside excerpts NOT stripped (real).** §5 forbids quote marks in the Excerpt style;
+  Warhoe has **1** ExcerptorQuote paragraph wrapped in smart quotes (`"an amount added to an estimate to
+  allow… managed using contingency."`). `classify` assigns the ExcerptorQuote style (engine.py ~514) but no
+  pass removes the surrounding quotation marks. Deterministic auto-fix (strip a leading open-quote and a
+  trailing close-quote — keeping interior quotes) that the engine currently misses.
+- **[~] Italic-in-footnote rule is context-dependent, not a blanket strip.** Warhoe: 55 of 1,480 footnotes
+  contain an italic run. Many are legitimate **case names / titles** (which `fix_footnotes` deliberately
+  keeps via `keep_rpr_children`). §5 targets only italics that **leaked from an italicized excerpt**, which
+  cannot be distinguished from a case-name italic without context — so this is FLAG-for-review, not auto-fix.
+- **[~] Footnote-after-quotation placement** (§5) — verifying the reference mark sits after the quotation vs
+  the intro sentence needs sentence/quote-boundary parsing; flag-tier at best.
+- **Smart-quotes-not-prime** for inline quotes is handled by the typography layer (`typo_text`); note the
+  measurement exception below (§7).
+
+## 15. Section 6 — Other Bulleted and Numbered Lists
+
+**Guideline (§6):** use the LI list styles from the Styles pane, **not the bullet/numbering icon tools** in
+the Paragraph toolbar. **List Bullet** = short phrases/single words (left-aligned with paragraph text, not
+indented). **List Bullet as a Sentence** = lists containing sentences (adds 6 pt below each item).
+**Dash under a bullet** = a sublist beneath a bullet. **List bullet under a numbered list** = bullets inside
+a numbered list. (Note: attorneys dislike bullets; the numbered styles are preferred.)
+
+### Findings
+- **[~] classify's ListBullet vs List-bullet-as-a-Sentence split is a heuristic** (engine.py ~510: length
+  > 45 or ends with `;`/`.`/`:` → sentence style). The guideline's real criterion is "contains sentences"
+  vs "single words/short phrases" — the length/punctuation proxy will misfile a long noun phrase or a
+  short sentence. Works often, not verified.
+- **[OK/~] Sublevel bullet styles are known** — `Dashunderabullet` and `Listbulletunderanumberedlist` are in
+  `LISTS`/`RECOMMENDED` and classify can assign `Dashunderabullet` when a bullet sits at ilvl≥1
+  (engine.py ~508) and `Listbulletunderanumberedlist` under an L1 lead-in (~509). But there is no check that
+  a "dash under a bullet" actually *follows* a bullet, nor that a "list bullet under a numbered list"
+  actually sits under a numbered paragraph — the context invariants the guideline describes.
+- **[X] "use styles, not the icon tools" only partially covered** — a toolbar-icon bullet is a direct
+  `numPr` with no list style; `_restore_suppressed_bullets` + `_functioning_direct_numpr` handle
+  suppression/category, but there is no pass that positively **reclassifies a direct-numPr bullet to the
+  List Bullet style** (the icon-tool → house-style conversion the guideline asks for).
+
+## 16. Section 7 — Dashes, Prime Marks, Footnote mechanics (Misc/Keyboard/Footnotes)
+
+**Guideline (§7 Miscellaneous + Keyboard Shortcuts + Footnotes):**
+- **Dashes:** hyphen `-` (compounds/joint modifiers, no surrounding spaces), **en dash** `–` (ranges:
+  `June–August`, `pp. 178–180`; "to"/"through"), **em dash** `—` (parenthetical/emphasis, no spaces).
+- **Prime marks for measurements:** `2"` = 2 inches uses a **double prime** `″` (not a smart quote); `5'` =
+  5 feet uses a **single prime** `′`. "A smart single quote (5') is incorrect."
+- **`i.e.` / `e.g.`** should be **italicized** with a comma after the period.
+- **Footnotes follow punctuation** — the reference mark comes **after** the sentence-final period, **no
+  space before** it. Footnote number style = "Footnote Reference" (superscript); citation text style =
+  "FootnoteText". Prefer `para.`/`p.` over `paragraph`/`page`/`§`.
+
+### Findings
+- **[~] En/em-dash range conversion** is partly in the typography layer, but there is no rule that converts a
+  hyphen between a number range (`178-180`, `June-August`) to an **en dash**, nor that normalizes em-dash
+  spacing. Deterministic-with-risk (must skip document numbers like `L290-AB-RF`, phone numbers, etc.) →
+  flag-or-scoped-fix tier.
+- **[X] Prime-mark measurement rule CONFLICTS with the current `typo_text`.** `typo_text` rewrites `(\d)"`
+  → `\1-inch` everywhere, but §7 says a measurement should read `2"` with a **prime** mark (or be spelled
+  "2 inches"/"2-inch" per house preference). The blanket `"`→`-inch` also fires inside tables and excerpts
+  (already flagged as §10 #19). Needs scoping + a decision on prime vs spelled-out. [X]
+- **[X] Footnote-reference-after-punctuation NOT verified.** `fix_footnotes` formats the footnote *text*
+  (style, tab, keep b/i) but nothing checks that a body footnote reference mark sits **after** the period
+  with no leading space. Deterministic-ish (detect `<w:footnoteReference>` immediately before a sentence
+  period, or a space before it) → candidate auto-fix/flag.
+- **[~] Italicize `i.e.`/`e.g.`** — deterministic to find, but false-positive-prone (inside quotes, code,
+  filenames) → flag tier.
+- **Filenames/footers (§8 File Names):** the project-number/title/initials/date filename convention is
+  external to the document body — the conformer could *suggest* a conforming output filename (advisory), but
+  it is not a document-content conformance item.
