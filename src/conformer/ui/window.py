@@ -574,8 +574,12 @@ class MainWindow(QMainWindow):
         h.addLayout(col); h.addStretch()
         return card
 
-    def _collapsible(self, title, count_text, content_widget, expanded=False):
-        """A section with a clickable header (chevron + title + count) that toggles content_widget."""
+    def _collapsible(self, title, count_text, content_widget=None, expanded=False, content_builder=None):
+        """A section with a clickable header (chevron + title + count) that toggles its content.
+
+        Pass `content_widget` for eager content, or `content_builder` (a zero-arg callable returning a
+        widget) to build the content LAZILY the first time the section is expanded — so a large list
+        never blocks the initial render or freezes the UI while collapsed."""
         wrap = QWidget()
         v = QVBoxLayout(wrap); v.setContentsMargins(0, 0, 0, 0); v.setSpacing(0)
         header = QPushButton()
@@ -589,15 +593,81 @@ class MainWindow(QMainWindow):
         cnt = QLabel(count_text); cnt.setStyleSheet('font-size: 11px; color: #8a8f96;')
         hl.addWidget(chev); hl.addWidget(lab); hl.addWidget(cnt); hl.addStretch()
         v.addWidget(header)
-        content_widget.setVisible(expanded)
-        v.addWidget(content_widget)
+
+        holder = QWidget()
+        hv = QVBoxLayout(holder); hv.setContentsMargins(0, 0, 0, 0); hv.setSpacing(0)
+        state = {'built': False}
+
+        def ensure_built():
+            if state['built']:
+                return
+            state['built'] = True
+            if content_widget is not None:
+                hv.addWidget(content_widget)
+            elif content_builder is not None:
+                hv.addWidget(content_builder())
+
+        if expanded:
+            ensure_built()
+        holder.setVisible(expanded)
+        v.addWidget(holder)
 
         def toggle():
             vis = header.isChecked()
-            content_widget.setVisible(vis)
+            if vis:
+                ensure_built()          # build on first expand
+            holder.setVisible(vis)
             chev.setText('▼' if vis else '▶')
         header.clicked.connect(toggle)
         return wrap
+
+    def _build_mech_content(self, edits, fmt):
+        """Content for the MECHANICAL FIXES section, built lazily. Text-edit rows are PAGINATED so even
+        a report with thousands of edits (e.g. a heavily tracked draft) never freezes the UI — the first
+        page renders instantly and more load on demand. Unreviewed edits are applied by default."""
+        w = QWidget()
+        mc = QVBoxLayout(w); mc.setContentsMargins(0, 4, 0, 8); mc.setSpacing(6)
+        if edits:
+            cap = QLabel('Text edits — review each and Skip any you disagree with. '
+                         'Unreviewed edits are applied by default.')
+            cap.setWordWrap(True)
+            cap.setStyleSheet('font-size: 11.5px; color: #66707a;')
+            mc.addWidget(cap)
+
+            rows_holder = QWidget()
+            rl = QVBoxLayout(rows_holder); rl.setContentsMargins(0, 0, 0, 0); rl.setSpacing(6)
+            mc.addWidget(rows_holder)
+
+            more_btn = QPushButton(); more_btn.setObjectName('viewBtn')
+            page = {'shown': 0}
+            CHUNK = 100
+
+            def render_more():
+                end = min(page['shown'] + CHUNK, len(edits))
+                for e in edits[page['shown']:end]:
+                    row = EditRow(e); self.edit_rows.append(row); rl.addWidget(row)
+                page['shown'] = end
+                remaining = len(edits) - page['shown']
+                if remaining > 0:
+                    more_btn.setText(f'Show {min(CHUNK, remaining)} more  ({remaining} remaining)')
+                    more_btn.setVisible(True)
+                else:
+                    more_btn.setVisible(False)
+
+            more_btn.clicked.connect(render_more)
+            mc.addWidget(more_btn, 0, Qt.AlignLeft)
+            render_more()
+
+        if fmt:
+            fl = QLabel('Formatting fixes applied automatically:')
+            fl.setStyleSheet('font-size: 11.5px; color: #66707a; padding-top: 6px;')
+            mc.addWidget(fl)
+            for entry in fmt:
+                line = QLabel('•  ' + entry['msg'])
+                line.setWordWrap(True)
+                line.setStyleSheet('font-size: 11.5px; color: #8a8f96; padding-left: 8px;')
+                mc.addWidget(line)
+        return w
 
     def _build_review_state(self):
         self._clear_body()
@@ -610,26 +680,12 @@ class MainWindow(QMainWindow):
             self.body_layout.addWidget(self._preserve_banner())
 
         # ── collapsible MECHANICAL FIXES: text edits (before/after + Skip) + formatting fixes ──
-        mech_content = QWidget()
-        mc = QVBoxLayout(mech_content); mc.setContentsMargins(0, 4, 0, 8); mc.setSpacing(6)
-        if edits:
-            cap = QLabel('Text edits — review each and Skip any you disagree with:')
-            cap.setStyleSheet('font-size: 11.5px; color: #66707a;')
-            mc.addWidget(cap)
-            for e in edits:
-                row = EditRow(e); self.edit_rows.append(row); mc.addWidget(row)
+        # Built LAZILY + paginated: with thousands of edits, eager construction froze the UI. Collapsed
+        # by default, so nothing is built until the user opens the section.
         fmt = [entry for entry in log if entry.get('msg')]
-        if fmt:
-            fl = QLabel('Formatting fixes applied automatically:')
-            fl.setStyleSheet('font-size: 11.5px; color: #66707a; padding-top: 6px;')
-            mc.addWidget(fl)
-            for entry in fmt:
-                line = QLabel('•  ' + entry['msg'])
-                line.setWordWrap(True)
-                line.setStyleSheet('font-size: 11.5px; color: #8a8f96; padding-left: 8px;')
-                mc.addWidget(line)
         self.body_layout.addWidget(self._collapsible(
-            'MECHANICAL FIXES', f'{len(edits)} text edits · {len(fmt)} formatting fixes', mech_content))
+            'MECHANICAL FIXES', f'{len(edits)} text edits · {len(fmt)} formatting fixes',
+            content_builder=lambda e=edits, f=fmt: self._build_mech_content(e, f)))
 
         if self.judgment_calls:
             judge_sec = QLabel(f'JUDGMENT CALLS ({len(self.judgment_calls)})')
@@ -646,7 +702,7 @@ class MainWindow(QMainWindow):
             self.body_layout.addWidget(no_judge)
 
         self.body_layout.addStretch()
-        self.tally_bar.setVisible(bool(self.judgment_calls) or bool(self.edit_rows))
+        self.tally_bar.setVisible(bool(self.judgment_calls) or bool(edits))
         self._update_tally()
 
     def _build_complete_state(self, output_path, decisions_log, audit=None, fresh=None):
