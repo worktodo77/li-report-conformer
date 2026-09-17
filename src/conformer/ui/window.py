@@ -1007,24 +1007,95 @@ class MainWindow(QMainWindow):
                 'FIGURE INTEGRITY', f'{len(audit)} to review',
                 content_widget=self._build_figure_integrity_content(audit), expanded=True))
 
+        # Highlights are grouped (a real draft can have hundreds) — a single control, KEEP by default;
+        # every other judgment call (incl. the few colour deviations) stays as an individual row.
+        self.highlight_calls = [c for c in self.judgment_calls if c.kind == 'highlight']
+        self.highlight_remove = set()         # highlight call ids the user chose to remove
+        self.remove_all_highlights = False
+        other_calls = [c for c in self.judgment_calls if c.kind != 'highlight']
+
         # ── JUDGMENT CALLS (substantive) ──
-        if self.judgment_calls:
-            judge_sec = QLabel(f'JUDGMENT CALLS ({len(self.judgment_calls)})')
+        if other_calls:
+            judge_sec = QLabel(f'JUDGMENT CALLS ({len(other_calls)})')
             judge_sec.setObjectName('sectionLabel')
             self.body_layout.addWidget(judge_sec)
-
-            for idx, call in enumerate(self.judgment_calls, 1):
+            for idx, call in enumerate(other_calls, 1):
                 row = JudgmentRow(idx, call)
                 self.judgment_rows.append(row)
                 self.body_layout.addWidget(row)
-        elif not conformance:
+        elif not conformance and not self.highlight_calls:
             no_judge = QLabel('No judgment calls — all fixes are mechanical.')
             no_judge.setStyleSheet('font-size: 12px; color: #66707a; padding: 8px 0;')
             self.body_layout.addWidget(no_judge)
 
+        # ── HIGHLIGHTS (grouped, collapsed, default keep) ──
+        if self.highlight_calls:
+            self.body_layout.addWidget(self._collapsible(
+                'HIGHLIGHTS', f'{len(self.highlight_calls)} — kept by default',
+                content_builder=lambda hc=self.highlight_calls: self._build_highlights_content(hc)))
+
         self.body_layout.addStretch()
         self.tally_bar.setVisible(bool(self.judgment_calls) or bool(edits) or bool(self.conf_rows))
         self._update_tally()
+
+    def _build_highlights_content(self, calls):
+        """One grouped control for highlights (default KEEP): a 'Remove all highlights' toggle plus a
+        paginated per-item list, so hundreds of review markers don't flood the screen and aren't stripped
+        unless chosen. Each row shows the highlighted snippet + a Remove toggle."""
+        w = QWidget()
+        v = QVBoxLayout(w); v.setContentsMargins(0, 4, 0, 8); v.setSpacing(6)
+        intro = QLabel('Highlights are review markers, so they are KEPT by default. Remove them all, or '
+                       'remove individual ones.')
+        intro.setWordWrap(True); intro.setStyleSheet('font-size: 11.5px; color: #66707a;')
+        v.addWidget(intro)
+
+        remove_all = QPushButton('Remove all highlights')
+        remove_all.setObjectName('skipBtn'); remove_all.setCheckable(True); remove_all.setFixedWidth(180)
+
+        rows_holder = QWidget()
+        rl = QVBoxLayout(rows_holder); rl.setContentsMargins(0, 0, 0, 0); rl.setSpacing(4)
+        item_rows = []
+
+        def on_remove_all():
+            self.remove_all_highlights = remove_all.isChecked()
+            remove_all.setText('Removing all — undo' if self.remove_all_highlights else 'Remove all highlights')
+            for btn, cid in item_rows:
+                btn.setChecked(self.remove_all_highlights)
+                (self.highlight_remove.add if self.remove_all_highlights else self.highlight_remove.discard)(cid)
+        remove_all.clicked.connect(on_remove_all)
+        v.addWidget(remove_all, 0, Qt.AlignLeft)
+        v.addWidget(rows_holder)
+
+        more_btn = QPushButton(); more_btn.setObjectName('viewBtn')
+        page = {'shown': 0}
+        CHUNK = 100
+
+        def render_more():
+            end = min(page['shown'] + CHUNK, len(calls))
+            for c in calls[page['shown']:end]:
+                row = QFrame(); row.setObjectName('editRow')
+                hl = QHBoxLayout(row); hl.setContentsMargins(10, 6, 10, 6); hl.setSpacing(10)
+                snip = QLabel('<span style="background:#fff29a;padding:0 2px">' +
+                              _esc_html((c.short_text or c.full_text)[:80]) + '</span>')
+                snip.setTextFormat(Qt.RichText); snip.setWordWrap(True)
+                snip.setStyleSheet('font-size: 12px; color: #1c2733;')
+                btn = QPushButton('Remove'); btn.setObjectName('skipBtn'); btn.setCheckable(True)
+                btn.setFixedWidth(80); btn.setChecked(self.remove_all_highlights or c.id in self.highlight_remove)
+
+                def _toggle(checked, cid=c.id):
+                    (self.highlight_remove.add if checked else self.highlight_remove.discard)(cid)
+                btn.toggled.connect(_toggle)
+                hl.addWidget(snip, 1); hl.addWidget(btn, 0, Qt.AlignTop)
+                rl.addWidget(row); item_rows.append((btn, c.id))
+            page['shown'] = end
+            remaining = len(calls) - page['shown']
+            more_btn.setVisible(remaining > 0)
+            if remaining > 0:
+                more_btn.setText(f'Show {min(CHUNK, remaining)} more  ({remaining} remaining)')
+        more_btn.clicked.connect(render_more)
+        v.addWidget(more_btn, 0, Qt.AlignLeft)
+        render_more()
+        return w
 
     def _build_figure_integrity_content(self, audit):
         """Advisory figure-audit findings (numbering drift, captions vs the Table of Figures). These
@@ -1357,6 +1428,10 @@ class MainWindow(QMainWindow):
         decisions = {}
         for row in self.judgment_rows:
             decisions[row.call.id] = row.get_decision_string()
+        # highlights (grouped): accept = remove, skip = keep; default keep
+        for c in getattr(self, 'highlight_calls', []):
+            remove = self.remove_all_highlights or c.id in self.highlight_remove
+            decisions[c.id] = 'accept' if remove else 'skip'
         if getattr(self, 'skip_all_cleanup', False):
             # skip EVERY cosmetic edit, including pages the user never scrolled to
             for e in getattr(self, 'edits', []):
