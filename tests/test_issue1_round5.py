@@ -439,3 +439,32 @@ def test_e_review_only_output_is_distinct_even_in_replace_mode():
     assert out != src and 'REVIEW COPY - UNVERIFIED' in out   # never overwrote the source
     assert getattr(_F, 'saved', None) == out
     assert getattr(_F, 'audit_path', None) == out            # audit written (failure would propagate)
+
+
+# =================================================================== numbering.xml schema order (Word oracle)
+def test_imported_definitions_keep_abstractnums_before_nums():
+    # CRITICAL: a repair that imports new numbering definitions must keep EVERY <w:abstractNum> before
+    # EVERY <w:num> in numbering.xml (CT_Numbering order). If they interleave Word drops ALL numbering,
+    # even though the XML is well-formed and the resolver (order-blind) sees numbering fine.
+    import re as _re
+    from conformer.numbering import NumberingGraph
+    num = (f'<w:numbering {W}><w:abstractNum w:abstractNumId="50">'
+           '<w:lvl w:ilvl="0"><w:start w:val="1"/><w:numFmt w:val="decimal"/><w:lvlText w:val="BROKEN"/></w:lvl>'
+           '</w:abstractNum><w:num w:numId="5"><w:abstractNumId w:val="50"/></w:num></w:numbering>')
+    sty = (f'<w:styles {W}><w:style w:type="paragraph" w:styleId="NumberedParagraph">'
+           '<w:name w:val="NumberedParagraph"/><w:pPr><w:numPr><w:ilvl w:val="0"/><w:numId w:val="5"/>'
+           '</w:numPr></w:pPr></w:style></w:styles>')
+    tnum = (f'<w:numbering {W}><w:abstractNum w:abstractNumId="70">'
+            '<w:lvl w:ilvl="0"><w:start w:val="1"/><w:numFmt w:val="decimal"/><w:lvlText w:val="%1."/></w:lvl>'
+            '</w:abstractNum><w:num w:numId="9"><w:abstractNumId w:val="70"/></w:num></w:numbering>')
+    tsty = sty.replace('w:numId w:val="5"', 'w:numId w:val="9"')
+    c = _bconf(num, sty, tnum, tsty)
+    c._repair_styles()
+    out = c.num
+    assert '<w:num w:numId=' in out and '<w:abstractNum ' in out
+    abs_last = max(m.start() for m in _re.finditer(r'<w:abstractNum\b', out))
+    num_first = min(m.start() for m in _re.finditer(r'<w:num\b(?![a-zA-Z])', out))
+    assert abs_last < num_first, 'imported <w:abstractNum> ended up AFTER a <w:num> (Word drops all numbering)'
+    # and every num still resolves (no dangling references)
+    g = NumberingGraph(out, c.styles)
+    assert g.resolve_style('NumberedParagraph').resolved

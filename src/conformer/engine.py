@@ -1922,7 +1922,19 @@ class Conformer:
                                    'lvlRestart': t_lv.get('lvlRestart')}}
 
         if new_defs:
-            self.num = self.num.replace('</w:numbering>', ''.join(new_defs) + '</w:numbering>', 1)
+            # CT_Numbering REQUIRES every <w:abstractNum> BEFORE every <w:num> (Word drops ALL numbering
+            # when they interleave). Insert new abstractNums before the first existing <w:num>, and new
+            # <w:num> instances before </w:numbering> — never appended after the existing nums.
+            new_abs = ''.join(d for d in new_defs if d.lstrip().startswith('<w:abstractNum'))
+            new_num = ''.join(d for d in new_defs if d.lstrip().startswith('<w:num '))
+            if new_abs:
+                m = re.search(r'<w:num\b(?![a-zA-Z])', self.num)
+                if m:
+                    self.num = self.num[:m.start()] + new_abs + self.num[m.start():]
+                else:
+                    self.num = self.num.replace('</w:numbering>', new_abs + '</w:numbering>', 1)
+            if new_num:
+                self.num = self.num.replace('</w:numbering>', new_num + '</w:numbering>', 1)
 
         pinned = self._preserve_inherited_numbering(ograph)
 
@@ -3064,6 +3076,16 @@ class Conformer:
                             ET.fromstring(z.read(name))
                         except ET.ParseError as e:
                             return False, f'Malformed XML in {name}: {e}'
+                # CT_Numbering schema order: every <w:abstractNum> must precede every <w:num>. Word drops
+                # ALL numbering when they interleave, so this is an output-invalidating structural error
+                # even though the XML is well-formed (the resolver is blind to order).
+                if 'word/numbering.xml' in names:
+                    num = z.read('word/numbering.xml').decode('utf8', 'replace')
+                    abs_last = max([m.start() for m in re.finditer(r'<w:abstractNum\b', num)] or [-1])
+                    num_first = min([m.start() for m in re.finditer(r'<w:num\b(?![a-zA-Z])', num)] or [1 << 62])
+                    if abs_last > num_first:
+                        return False, ('numbering.xml order invalid: an <w:abstractNum> appears after a '
+                                       '<w:num> (Word would drop all numbering)')
             return True, 'Output validated'
         except Exception as e:
             return False, str(e)
