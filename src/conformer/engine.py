@@ -308,6 +308,7 @@ class Conformer:
         self.items = split_body(body)
         self.b0 = next(i for i, it in enumerate(self.items) if 'w:val="Heading1"' in it)
         self.log = []; self.judgment = []; self.audit = []
+        self._table_notes = []       # tables the table pass could not conform reliably (nested/complex)
         self.pending_judgments = []
         self.decisions = None
         from conformer import revisions as _rev
@@ -601,7 +602,7 @@ class Conformer:
         for i in range(self.n()):
             x = self.item(i)
             if not x.startswith('<w:tbl'): continue
-            x = re.sub(r'<w:tblBorders>.*?</w:tblBorders>|<w:shd [^>]*/>', '', x, flags=re.S)
+            x = re.sub(r'<w:tblBorders>.*?</w:tblBorders>|<w:tcBorders>.*?</w:tcBorders>|<w:shd [^>]*/>', '', x, flags=re.S)
             if '<w:tblStyle' not in x: x = x.replace('<w:tblPr>', '<w:tblPr><w:tblStyle w:val="LITable"/>', 1)
             else: x = re.sub(r'<w:tblStyle w:val="[^"]+"/>', '<w:tblStyle w:val="LITable"/>', x)
             x = re.sub(r'<w:tblLook [^>]*/>', '<w:tblLook w:val="04A0" w:firstRow="1" w:lastRow="0" w:firstColumn="0" w:lastColumn="0" w:noHBand="0" w:noVBand="1"/>', x)
@@ -1442,7 +1443,12 @@ class Conformer:
             if not x.startswith('<w:tbl'):
                 continue
             masked, masks = self._mask_revisions(x)   # protect snapshots AND cell revision content
+            nested = masked.count('<w:tbl') > 1       # this table contains a nested table
+            # Remove direct table AND cell borders that would override the LITable grey grid (a correct
+            # style name does not conform if a direct <w:tcBorders> defeats it). Masked revision content
+            # is untouched (its borders are behind sentinels).
             nx = re.sub(r'<w:tblBorders>.*?</w:tblBorders>', '', masked, flags=re.S)
+            nx = re.sub(r'<w:tcBorders>.*?</w:tcBorders>', '', nx, flags=re.S)
             if '<w:tblStyle' in nx:
                 nx = re.sub(r'<w:tblStyle w:val="[^"]+"/>', '<w:tblStyle w:val="LITable"/>', nx, count=1)
             else:
@@ -1466,18 +1472,26 @@ class Conformer:
                               lambda mm: mm.group(1) + '<w:pPr><w:pStyle w:val="TableData"/></w:pPr>',
                               p, count=1)
             nx = re.sub(r'<w:p\b.*?</w:p>', cell_para, nx, flags=re.S)
-            # first row repeats as a header
-            fr = re.search(r'<w:tr\b.*?</w:tr>', nx, re.S)
-            if fr and '<w:tblHeader' not in fr.group(0):
-                hdr = (fr.group(0).replace('<w:tr>', '<w:tr><w:trPr><w:cantSplit/><w:tblHeader/></w:trPr>', 1)
-                       if '<w:trPr>' not in fr.group(0)
-                       else fr.group(0).replace('<w:trPr>', '<w:trPr><w:tblHeader/>', 1))
-                nx = nx.replace(fr.group(0), hdr, 1)
+            # First row repeats as a header — but ONLY for a flat table. With a nested table, the naive
+            # 'first <w:tr>' match can span the nested row and corrupt it, so we do not force a header on
+            # it and instead REPORT it as unresolved (identify the table, don't claim conformance).
+            if not nested:
+                fr = re.search(r'<w:tr\b.*?</w:tr>', nx, re.S)
+                if fr and '<w:tblHeader' not in fr.group(0):
+                    hdr = (fr.group(0).replace('<w:tr>', '<w:tr><w:trPr><w:cantSplit/><w:tblHeader/></w:trPr>', 1)
+                           if '<w:trPr>' not in fr.group(0)
+                           else fr.group(0).replace('<w:trPr>', '<w:trPr><w:tblHeader/>', 1))
+                    nx = nx.replace(fr.group(0), hdr, 1)
+            else:
+                self._table_notes.append('nested table left for independent review (header not forced)')
             nx = self._unmask(nx, masks)
             if nx != x:
                 self.set(i, nx); cnt += 1
         if cnt:
             self.say('M', -1, f'preserve mode: {cnt} tables set to the LI table style', 'tables')
+        if self._table_notes:
+            self.say('M', -1, f'{len(self._table_notes)} table(s) need independent review '
+                              '(nested/complex) — not claimed conformant', 'tables-unresolved')
 
     # ================================================================ interactive ASK structural
     # The five ASK structural changes (#3 unwrap wrapper table, #5 extract floating image, #6 split
