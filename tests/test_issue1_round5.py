@@ -191,3 +191,113 @@ def test_b_independent_instances_sharing_abstract_stay_independent():
     a = g.style_numpr('ListNumber')[0]; b = g.style_numpr('ListNumber2')[0]
     assert a != b, 'independent instances (5 vs 6) were merged'
     assert '6' == b or b != a   # B keeps its own instance
+
+
+# =================================================================== C. Exact authorization
+def _scan_conf(onum, osty, num, sty, oitems, items, repaired=None):
+    from conformer.engine import Conformer
+    c = Conformer.__new__(Conformer)
+    c._orig_num0 = onum; c._orig_styles0 = osty
+    c.num = num; c.styles = sty
+    c._orig_items0 = list(oitems); c._orig_b0 = 0
+    c.items = list(items); c.b0 = 0
+    c._house_repaired = repaired or {}
+    return c
+
+
+_C_STYLES = (f'<w:styles {W}>'
+             '<w:style w:type="paragraph" w:styleId="Decimal"><w:name w:val="Decimal"/>'
+             '<w:pPr><w:numPr><w:ilvl w:val="0"/><w:numId w:val="5"/></w:numPr></w:pPr></w:style>'
+             '<w:style w:type="paragraph" w:styleId="Bullet"><w:name w:val="Bullet"/>'
+             '<w:pPr><w:numPr><w:ilvl w:val="0"/><w:numId w:val="6"/></w:numPr></w:pPr></w:style></w:styles>')
+_C_NUM = (f'<w:numbering {W}>'
+          '<w:abstractNum w:abstractNumId="50"><w:lvl w:ilvl="0"><w:start w:val="1"/>'
+          '<w:numFmt w:val="decimal"/><w:lvlText w:val="%1."/></w:lvl></w:abstractNum>'
+          '<w:abstractNum w:abstractNumId="60"><w:lvl w:ilvl="0"><w:start w:val="1"/>'
+          '<w:numFmt w:val="bullet"/><w:lvlText w:val="o"/></w:lvl></w:abstractNum>'
+          '<w:num w:numId="5"><w:abstractNumId w:val="50"/></w:num>'
+          '<w:num w:numId="6"><w:abstractNumId w:val="60"/></w:num></w:numbering>')
+
+
+def _p(paraid, pstyle=None, numid=None, ilvl='0', text='item'):
+    ppr = ''
+    if pstyle:
+        ppr += f'<w:pStyle w:val="{pstyle}"/>'
+    if numid:
+        ppr += f'<w:numPr><w:ilvl w:val="{ilvl}"/><w:numId w:val="{numid}"/></w:numPr>'
+    ppr = f'<w:pPr>{ppr}</w:pPr>' if ppr else ''
+    return f'<w:p w14:paraId="{paraid}">{ppr}<w:r><w:t>{text}</w:t></w:r></w:p>'
+
+
+def test_c_pstyle_change_without_manifest_fails():
+    before = [_p('AAAA', pstyle='Decimal')]
+    after = [_p('AAAA', pstyle='Bullet')]                 # style changed Decimal -> Bullet, no repair
+    c = _scan_conf(_C_NUM, _C_STYLES, _C_NUM, _C_STYLES, before, after)
+    assert c._paragraph_reference_scan()['flips'], 'unauthorized pStyle numbering change not caught'
+
+
+def test_c_dropping_functioning_direct_decimal_over_bullet_style_fails():
+    before = [_p('BBBB', pstyle='Bullet', numid='5')]     # functioning direct decimal on a bullet style
+    after = [_p('BBBB', pstyle='Bullet')]                 # direct numbering dropped -> becomes bullets
+    c = _scan_conf(_C_NUM, _C_STYLES, _C_NUM, _C_STYLES, before, after)
+    assert c._paragraph_reference_scan()['flips'], 'dropping a functioning direct decimal not caught'
+
+
+def test_c_same_format_instance_swap_changes_continuation_fails():
+    # two instances, identical LEVEL PROPERTIES but different instances (independent counters). Swapping a
+    # paragraph from one to the other changes continuation and must fail even though numFmt/lvlText match.
+    num = (f'<w:numbering {W}>'
+           '<w:abstractNum w:abstractNumId="50"><w:lvl w:ilvl="0"><w:start w:val="1"/>'
+           '<w:numFmt w:val="decimal"/><w:lvlText w:val="%1."/></w:lvl></w:abstractNum>'
+           '<w:num w:numId="5"><w:abstractNumId w:val="50"/></w:num>'
+           '<w:num w:numId="9"><w:abstractNumId w:val="50"/></w:num></w:numbering>')
+    sty = f'<w:styles {W}></w:styles>'
+    before = [_p('CCCC', numid='5')]
+    after = [_p('CCCC', numid='9')]
+    c = _scan_conf(num, sty, num, sty, before, after)
+    assert c._paragraph_reference_scan()['flips'], 'same-format instance swap (continuation change) not caught'
+
+
+def _repair_pkg():
+    onum = (f'<w:numbering {W}><w:abstractNum w:abstractNumId="50"><w:lvl w:ilvl="0"><w:start w:val="1"/>'
+            '<w:numFmt w:val="decimal"/><w:lvlText w:val="BROKEN"/></w:lvl></w:abstractNum>'
+            '<w:num w:numId="5"><w:abstractNumId w:val="50"/></w:num></w:numbering>')
+    osty = (f'<w:styles {W}><w:style w:type="paragraph" w:styleId="ListX"><w:name w:val="ListX"/>'
+            '<w:pPr><w:numPr><w:ilvl w:val="0"/><w:numId w:val="5"/></w:numPr></w:pPr></w:style></w:styles>')
+    return onum, osty
+
+
+def test_c_valid_label_repair_passes():
+    onum, osty = _repair_pkg()
+    num = onum.replace('</w:numbering>',
+                       '<w:abstractNum w:abstractNumId="60"><w:lvl w:ilvl="0"><w:start w:val="1"/>'
+                       '<w:numFmt w:val="decimal"/><w:lvlText w:val="%1."/></w:lvl></w:abstractNum>'
+                       '<w:num w:numId="6"><w:abstractNumId w:val="60"/></w:num></w:numbering>')
+    sty = osty.replace('<w:numId w:val="5"/>', '<w:numId w:val="6"/>')     # ListX rewired 5 -> 6 (label fixed)
+    repaired = {'ListX': {'ilvl': '0', 'shared_new_numId': '6',
+                          'before': {'numFmt': 'decimal', 'lvlText': 'BROKEN', 'start': '1', 'isLgl': False,
+                                     'lvlRestart': None},
+                          'after_expected': {'numFmt': 'decimal', 'lvlText': '%1.', 'start': '1',
+                                             'isLgl': False, 'lvlRestart': None}}}
+    before = [_p('DDDD', pstyle='ListX')]
+    after = [_p('DDDD', pstyle='ListX')]
+    c = _scan_conf(onum, osty, num, sty, before, after, repaired)
+    assert c._paragraph_reference_scan()['flips'] == [], 'a valid recorded label repair must pass'
+
+
+def test_c_repair_plus_start_alteration_fails():
+    onum, osty = _repair_pkg()
+    num = onum.replace('</w:numbering>',
+                       '<w:abstractNum w:abstractNumId="60"><w:lvl w:ilvl="0"><w:start w:val="9"/>'   # start reset!
+                       '<w:numFmt w:val="decimal"/><w:lvlText w:val="%1."/></w:lvl></w:abstractNum>'
+                       '<w:num w:numId="6"><w:abstractNumId w:val="60"/></w:num></w:numbering>')
+    sty = osty.replace('<w:numId w:val="5"/>', '<w:numId w:val="6"/>')
+    repaired = {'ListX': {'ilvl': '0', 'shared_new_numId': '6',
+                          'before': {'numFmt': 'decimal', 'lvlText': 'BROKEN', 'start': '1', 'isLgl': False,
+                                     'lvlRestart': None},
+                          'after_expected': {'numFmt': 'decimal', 'lvlText': '%1.', 'start': '1',   # expected start 1
+                                             'isLgl': False, 'lvlRestart': None}}}
+    before = [_p('EEEE', pstyle='ListX')]
+    after = [_p('EEEE', pstyle='ListX')]
+    c = _scan_conf(onum, osty, num, sty, before, after, repaired)
+    assert c._paragraph_reference_scan()['flips'], 'a repair that also alters start must fail'

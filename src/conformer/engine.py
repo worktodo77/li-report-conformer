@@ -570,13 +570,19 @@ class Conformer:
                 if self._decision_for(jc) == 'accept':
                     self.set_style(i, 'NumberedParagraph')
 
+    @staticmethod
+    def _is_bullet_fmt(level):
+        """The format CATEGORY of a level: True = bullet, False = a number format (issue #1 C). A category
+        flip (number<->bullet) is meaning-bearing and never a mere normalization."""
+        return (level or {}).get('numFmt') == 'bullet'
+
     def _functioning_direct_numpr(self, x, st, graph):
-        """The paragraph's direct <w:numPr> element when it carries FUNCTIONING numbering the style does
-        not already provide — i.e. removing it would change the paragraph's resolved list. Returns the
-        element to keep, or None when there is no direct numPr or it is redundant with the style (safe to
-        drop). This stops strip_direct from silently deleting a numbered heading's number (issue #1 R3):
-        the number is real content, not a stray direct override, whenever the style carries no equivalent
-        list."""
+        """The paragraph's direct <w:numPr> element to KEEP, or None to strip (issue #1 C). A direct numPr
+        is removable ONLY when removal does not change the format CATEGORY: it is stripped for an equivalent
+        or same-category (glyph/label) normalization to the style, and KEPT when removing it would leave the
+        paragraph unnumbered OR would FLIP number<->bullet (a functioning direct list the style does not
+        provide). Meaning-bearing direct instance information is preserved unless a specific repair replaces
+        it."""
         pcur = re.sub(r'<w:pPrChange\b.*?</w:pPrChange>', '', x, flags=re.S)  # ignore historical snapshot
         dnpr = re.search(r'<w:numPr>.*?</w:numPr>', pcur, re.S)
         if not dnpr:
@@ -590,11 +596,11 @@ class Conformer:
             return None                                  # not a functioning list (incl. numId 0)
         style_np = graph.style_numpr(st)
         style_lv = graph.resolve_level(*style_np) if style_np else None
-        # Keep the direct numPr ONLY when removing it would leave the paragraph with NO numbering at all —
-        # the true "loss" (e.g. a numbered heading whose style, even through list→style linkage, supplies no
-        # list). When the STYLE supplies any list, a differing direct override is a non-house glyph override
-        # to normalise to the style (house rule: numbering comes from styles), and stripping loses no number.
-        return dnpr.group(0) if style_lv is None else None
+        if style_lv is None:
+            return dnpr.group(0)                          # style supplies no list -> keep (loss prevention)
+        if self._is_bullet_fmt(direct_lv) != self._is_bullet_fmt(style_lv):
+            return dnpr.group(0)                          # category flip -> keep the functioning direct list
+        return None                                      # same category -> normalize to the style
 
     def strip_direct(self):
         from conformer.numbering import NumberingGraph
@@ -2067,23 +2073,29 @@ class Conformer:
             # every <w:p> in the body, INCLUDING those inside table cells (paragraphs do not nest)
             return re.findall(r'<w:p(?: [^>]*)?>.*?</w:p>', ''.join(items[b0:]), re.S)
 
-        def _sig(graph, info, ref):
+        def _res(graph, info, ref):
             nid, il = info[ref]
             if ref == 'hist' and nid is None:
                 return None
-            pn = graph.paragraph_numbering(nid, il, info['style'])
-            if not pn:
-                return None
-            lv = graph.resolve_level(*pn)
-            return tuple(lv.get(k) for k in self._LEVEL_KEYS) if lv else 'UNRESOLVED'
+            return graph.resolve_paragraph(nid, il, info['style'])
 
-        def _style_sig(graph, info):
-            """What the paragraph resolves to through its STYLE alone (ignoring a direct override)."""
-            sp = graph.style_numpr(info['style'])
-            if not sp:
-                return None
-            lv = graph.resolve_level(*sp)
-            return tuple(lv.get(k) for k in self._LEVEL_KEYS) if lv else 'UNRESOLVED'
+        def _sig_of(res):
+            return res.signature(self._LEVEL_KEYS) if res is not None else None
+
+        def _inst_of(res):
+            return res.numId if (res is not None and res.resolved) else None
+
+        def _strip_authorized(bi, ai, a_res):
+            """A policy-approved SAME-CATEGORY strip (issue #1 C): the paragraph's style is UNCHANGED, its
+            direct numPr existed before and is gone now, removing it did not FLIP number<->bullet, and it now
+            resolves through that style. Two different instances or a category flip are NOT interchangeable."""
+            if bi['style'] != ai['style'] or bi['cur'][0] is None or ai['cur'][0] is not None:
+                return False
+            bd = before.resolve_paragraph(bi['cur'][0], bi['cur'][1], bi['style'])
+            bs = before.resolve_style(bi['style'])
+            if not (bd.resolved and bs.resolved) or a_res is None or not a_res.resolved:
+                return False
+            return self._is_bullet_fmt(bd.level) == self._is_bullet_fmt(bs.level)
 
         b_list = [_info(p) for p in _paras(self._orig_items0, self._orig_b0)]
         a_list = [_info(p) for p in _paras(self.items, self.b0)]
@@ -2112,25 +2124,27 @@ class Conformer:
 
         flips, unresolved = [], []
         for bi, ai in pairs:
-            bsig = _sig(before, bi, 'cur'); asig = _sig(after, ai, 'cur')
-            if bsig != asig:
+            b_res = _res(before, bi, 'cur'); a_res = _res(after, ai, 'cur')
+            bsig = _sig_of(b_res); asig = _sig_of(a_res)
+            # Unchanged semantic resolution AND instance relationship passes. A changed level OR a changed
+            # INSTANCE (two lists with identical level properties are NOT interchangeable — continuation
+            # differs) requires EXACT authorization: a recorded house-repair delta, or a policy-approved
+            # same-category strip. The blanket "follows its output style" exemption is removed (issue #1 C).
+            if not (bsig == asig and _inst_of(b_res) == _inst_of(a_res)):
                 exp = _repair_expected(ai['style'])
-                style_after = _style_sig(after, ai)
-                # Authorized when the paragraph now follows its OWN style's numbering (the house rule that
-                # numbering comes from styles — a redundant/non-house direct override was normalised away,
-                # no number is lost), or follows a recorded house repair. A rogue direct reassignment to a
-                # DIFFERENT list, or an outright loss of numbering, is not authorized (issue #1 R3).
-                authorized = (asig is not None and asig == style_after) or (exp is not None and asig == exp)
+                authorized = (exp is not None and asig == exp) or _strip_authorized(bi, ai, a_res)
                 if not authorized:
                     flips.append({'scope': 'current', 'text': (ai['text'] or bi['text'])[:60],
                                   'before_style': bi['style'], 'style': ai['style'],
-                                  'before_level': bsig, 'after_level': asig})
-            hb = _sig(before, bi, 'hist'); ha = _sig(after, ai, 'hist')
-            if (bi['hist'][0] or ai['hist'][0]) and hb != ha:
+                                  'before_level': bsig, 'after_level': asig,
+                                  'before_instance': _inst_of(b_res), 'after_instance': _inst_of(a_res)})
+            hb_res = _res(before, bi, 'hist'); ha_res = _res(after, ai, 'hist')
+            hb = _sig_of(hb_res); ha = _sig_of(ha_res)
+            if (bi['hist'][0] or ai['hist'][0]) and not (hb == ha and _inst_of(hb_res) == _inst_of(ha_res)):
                 flips.append({'scope': 'historical', 'text': (ai['text'] or bi['text'])[:60],
                               'style': ai['style'], 'before_level': hb, 'after_level': ha})
         for bi in unmatched:                       # a content paragraph that carried numbering must not vanish
-            if bi['text'] and (_sig(before, bi, 'cur') is not None or bi['hist'][0]):
+            if bi['text'] and (_inst_of(_res(before, bi, 'cur')) is not None or bi['hist'][0]):
                 unresolved.append({'text': bi['text'][:60], 'style': bi['style'],
                                    'reason': 'numbered paragraph has no stable correspondence in the output '
                                              '(merged/split/removed or identity lost); numbering not verified'})
