@@ -1,6 +1,30 @@
 # Closure record — corrective-work review (GitHub issue #1)
 
-## Round 3 (this round) — failure-safety and actual-reference verification
+## Round 4 (this round) — list-instance semantics, complete reference coverage, honest artifacts, heading repair
+
+The reviewer accepted R2 and R6 as closed (with R4/R7), and kept R1/R3/R5 open. Round 4 addresses the R1
+and R3 reproductions and repairs the heading numbering; R5 (effective table repair) is staged with honest,
+non-false-clean reporting. Reproductions are in `tests/test_issue1_round4.py` (+ `test_issue1_regressions.py`),
+watched RED before each fix, GREEN after. Fast suite **177 passed**; local real-report suite **4 passed**.
+
+| Finding | Round-4 P1 reproduction | Fix |
+|---|---|---|
+| R1 | repairing two levels of ONE shared multilevel list split it into two independent instances (continuation/parent-child lost) | house repair is planned PER ORIGINAL NUMBERING INSTANCE: styles sharing a source numId are rewired to ONE shared imported instance; independent lists stay independent; template instance overrides are dropped when preserving original starts. `engine.py _repair_styles` |
+| R3 (typography) | ordinary typography (an apostrophe) changed a paragraph's text, so text-keyed correspondence dropped it and an unauthorized numbering mutation went unchecked | correspondence is now by stable `w14:paraId` first, then same-style typography-FOLDED text; an original numbered paragraph with no stable match is surfaced UNRESOLVED, never silently dropped. `engine.py _paragraph_reference_scan` |
+| R3 (coverage) | a paragraph INSIDE a table cell had its numId reassigned and was not checked (scan only saw top-level `<w:p>`) | the scan traverses every `<w:p>` in the body INCLUDING table cells, and resolves current AND historical (`pPrChange`) references. `engine.py _paragraph_reference_scan` |
+| R3 (heading repair) | functioning heading numbering appeared stripped (the 51 "changes") | it was a resolver gap: heading numbering comes from the list→style `pStyle` linkage, so the redundant direct `numPr` is safely normalised away (house rule) with NO number lost. `NumberingGraph` now resolves pStyle-linked numbering; `strip_direct` keeps a direct `numPr` only when removing it would leave the paragraph with no numbering at all. On real Warhoe: **0 reference flips, 0 number loss.** `numbering.py`, `engine.py strip_direct` |
+| R3 (P2 artifact) | after confirming an unverified save, the normal filename/label were used and the label still claimed "conformed and verified" | the actual verdict + the explicit review-only decision are carried into the artifact: a distinct `REVIEW COPY - UNVERIFIED` filename, a verdict-based `docProps` contentStatus, and an audit recording the verdict, reason counts and the review-only flag; the completion view and dialogs no longer claim conformance for a not-clean copy, and human counts include paragraph-reference and unresolved-import reasons. `engine.py verdict_label/_artifact_label/build_audit`, `window.py` |
+| R5 | effective table repair | STAGED, R5 kept open. Verification strengthened (round 3); the real report is honestly **blocking** on 1,479 non-house header fills + 550 header font-size conflicts (repair needs merged-cell-aware header detection), never claimed clean. |
+
+Authoritative Warhoe verdict this round: **not clean / blocking** — 0 unintended style flips, 0 paragraph-
+reference flips, 0 uncorresponded numbered paragraphs, 3 dysfunctional list styles repaired (start
+preserved, shared instances kept), definition integrity clean, 0 unresolved imports; blocking remains ONLY
+on residual effective-table conflicts (R5, staged). No accidental numbering loss is authorized to make the
+gate pass; the heading numbering is genuinely preserved, not waived.
+
+---
+
+## Round 3 — failure-safety and actual-reference verification
 
 Round-2 improvements are retained; the reviewer accepted R4/R7 and confirmed several concrete fixes but
 kept R1/R2/R3/R5/R6 open with new P1 reproductions. Round 3 closes those reproductions with boundary /

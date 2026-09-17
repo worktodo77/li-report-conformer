@@ -570,7 +570,35 @@ class Conformer:
                 if self._decision_for(jc) == 'accept':
                     self.set_style(i, 'NumberedParagraph')
 
+    def _functioning_direct_numpr(self, x, st, graph):
+        """The paragraph's direct <w:numPr> element when it carries FUNCTIONING numbering the style does
+        not already provide — i.e. removing it would change the paragraph's resolved list. Returns the
+        element to keep, or None when there is no direct numPr or it is redundant with the style (safe to
+        drop). This stops strip_direct from silently deleting a numbered heading's number (issue #1 R3):
+        the number is real content, not a stray direct override, whenever the style carries no equivalent
+        list."""
+        pcur = re.sub(r'<w:pPrChange\b.*?</w:pPrChange>', '', x, flags=re.S)  # ignore historical snapshot
+        dnpr = re.search(r'<w:numPr>.*?</w:numPr>', pcur, re.S)
+        if not dnpr:
+            return None
+        nid = re.search(r'<w:numId w:val="([^"]+)"', dnpr.group(0))
+        il = re.search(r'<w:ilvl w:val="([^"]+)"', dnpr.group(0))
+        d_nid = nid.group(1) if nid else None
+        d_il = il.group(1) if il else '0'
+        direct_lv = graph.resolve_level(d_nid, d_il) if d_nid and d_nid != '0' else None
+        if direct_lv is None:
+            return None                                  # not a functioning list (incl. numId 0)
+        style_np = graph.style_numpr(st)
+        style_lv = graph.resolve_level(*style_np) if style_np else None
+        # Keep the direct numPr ONLY when removing it would leave the paragraph with NO numbering at all —
+        # the true "loss" (e.g. a numbered heading whose style, even through list→style linkage, supplies no
+        # list). When the STYLE supplies any list, a differing direct override is a non-house glyph override
+        # to normalise to the style (house rule: numbering comes from styles), and stripping loses no number.
+        return dnpr.group(0) if style_lv is None else None
+
     def strip_direct(self):
+        from conformer.numbering import NumberingGraph
+        _numgraph = NumberingGraph(self.num, self.styles)
         i = 0
         while i < self.n():
             x = self.item(i)
@@ -584,9 +612,12 @@ class Conformer:
                 del self.items[self.b0 + i]; self.say('M', i, 'deleted empty numbered paragraph'); continue
             m = re.search(r'<w:pPr>(.*?)</w:pPr>', x, re.S)
             if m:
+                keep_numpr = self._functioning_direct_numpr(x, st, _numgraph)
                 keep = []
                 for tag, cx in children(m.group(1)):
                     ok = tag in ALLOWED_PPR or tag in ALLOWED_PPR_BY_STYLE.get(st, set())
+                    if tag == 'numPr' and keep_numpr is not None:
+                        ok = True; cx = keep_numpr        # preserve functioning numbering (e.g. a numbered heading)
                     if tag == 'spacing' and st == 'Heading1' and 'pageBreakBefore' not in m.group(1): ok = False
                     if tag == 'rPr': cx = '<w:rPr>' + ''.join(c for t2, c in children(re.search(r'<w:rPr>(.*?)</w:rPr>', cx, re.S).group(1) or '') if t2 in ('vanish',)) + '</w:rPr>' if re.search(r'<w:rPr>(.+?)</w:rPr>', cx, re.S) else ''
                     if ok: keep.append(cx)
@@ -1215,6 +1246,10 @@ class Conformer:
         return findings
 
     def save(self, path):
+        # Stamp the artifact's document-status from the ACTUAL verdict if one was recorded for this save
+        # (issue #1 R3): an explicit decision to save a not-clean/unknown copy must not be labelled verified.
+        if getattr(self, '_save_verdict', 'unset') != 'unset':
+            self._stamp_status(self._artifact_label(self._save_verdict, getattr(self, '_save_forced_review', False)))
         parts = self._output_parts()
         if os.path.exists(path): os.remove(path)
         with zipfile.ZipFile(path, 'w', zipfile.ZIP_DEFLATED) as z:
@@ -1471,6 +1506,7 @@ class Conformer:
         styles.xml only — orthogonal to every tracked change in the body."""
         if self._skip('styles-repair'):
             return
+        from collections import defaultdict
         from conformer.numbering import NumberingGraph
         tgraph = NumberingGraph(self.t_num, self.t_styles)
         tmpl = {m.group(1): m.group(0) for m in
@@ -1542,6 +1578,11 @@ class Conformer:
                         lambda mm: mm.group(1) + new_nid + mm.group(2), raw_num, count=1)
             nn = re.sub(r'(<w:abstractNumId w:val=")[^"]+(")',
                         lambda mm: mm.group(1) + new_aid + mm.group(2), nn, count=1)
+            if preserve:
+                # drop the template instance's level overrides so the PRESERVED original start/restart on the
+                # abstract level is authoritative (handle template instance overrides consistently, R1).
+                nn = re.sub(r'<w:lvlOverride\b.*?</w:lvlOverride>', '', nn, flags=re.S)
+                nn = re.sub(r'<w:lvlOverride\b[^>]*/>', '', nn)
             new_defs.append(nn)
             return new_nid
 
@@ -1611,6 +1652,21 @@ class Conformer:
                     or sid.startswith(('ListNumber', 'ListBullet', 'NumberedParagraph')))
 
         self._house_repaired = {}
+
+        def _record_house_repair(c):
+            t_lv, o_lv = c['t_lv'], c['o_lv']
+            self._house_repaired[c['sid']] = {
+                'ilvl': c['ilvl'], 'shared_new_numId': c.get('new_nid'),
+                'before': {k: (o_lv or {}).get(k) for k in self._LEVEL_KEYS},
+                'after_expected': {'numFmt': t_lv.get('numFmt'), 'lvlText': t_lv.get('lvlText'),
+                                   'isLgl': t_lv.get('isLgl'),
+                                   'start': (o_lv or t_lv).get('start'),
+                                   'lvlRestart': (o_lv or t_lv).get('lvlRestart')}}
+
+        # Collect repair candidates, then plan PER ORIGINAL NUMBERING INSTANCE (issue #1 R1): styles that
+        # share one multilevel list in the source are rewired to ONE shared imported instance so continuation
+        # and parent/child numbering survive; originally independent lists stay independent.
+        candidates = []
         for sid in ograph.styles:
             if sid not in tmpl or not _house_list_target(sid, ograph.styles[sid].get('name')):
                 continue
@@ -1625,28 +1681,43 @@ class Conformer:
             o_house = tuple((o_lv or {}).get(k) for k in _HOUSE_LEVEL_KEYS)
             t_house = tuple(t_lv.get(k) for k in _HOUSE_LEVEL_KEYS)
             if o_house != t_house:      # wrong format OR wrong glyph OR missing -> dysfunctional
-                raw_num, raw_abs = _resolved_tpl_blocks(t_np[0])
-                # Import the template's HOUSE-CONTROLLED format/glyph but PRESERVE the original instance's
-                # start/lvlRestart (issue #1 R1): repairing a corrupt label must not also silently reset a
-                # list that legitimately starts at 9.
-                new_nid = _emit_import(raw_num, raw_abs, preserve=(ograph, o_np[0]) if o_np else None)
+                candidates.append({'sid': sid, 'o_np': o_np, 't_np': t_np, 'ilvl': ilvl,
+                                   'o_lv': o_lv, 't_lv': t_lv})
+
+        groups = defaultdict(list)
+        for c in candidates:
+            key = c['o_np'][0] if c['o_np'] else ('__nostyle__', c['sid'])
+            groups[key].append(c)
+
+        for key, group in groups.items():
+            tpl_nums = {c['t_np'][0] for c in group}
+            shared = len(tpl_nums) == 1 and all(c['o_np'] for c in group) and not isinstance(key, tuple)
+            if shared:
+                tpl_nid = next(iter(tpl_nums))
+                raw_num, raw_abs = _resolved_tpl_blocks(tpl_nid)
+                new_nid = _emit_import(raw_num, raw_abs, preserve=(ograph, group[0]['o_np'][0]))
                 if not new_nid:
-                    self._unresolved_imports.append(
-                        {'style': sid, 'numId': t_np[0], 'context': 'house-repair',
-                         'detail': f'dysfunctional house list style {sid} could not be repaired: template '
-                                   f'numbering {t_np[0]} did not resolve; left unchanged'})
+                    for c in group:
+                        self._unresolved_imports.append(
+                            {'style': c['sid'], 'numId': tpl_nid, 'context': 'house-repair',
+                             'detail': f"shared house list for {c['sid']} could not be repaired: template "
+                                       f"numbering {tpl_nid} did not resolve; left unchanged"})
                     continue
-                self._set_style_numpr(sid, new_nid, ilvl)
-                # The FULL expected before->after level, so verification authorizes ONLY the house-property
-                # change (format/glyph) and the preserved start/restart — not any other numbering change.
-                after_expected = {'numFmt': t_lv.get('numFmt'), 'lvlText': t_lv.get('lvlText'),
-                                  'isLgl': t_lv.get('isLgl'),
-                                  'start': (o_lv or t_lv).get('start'),
-                                  'lvlRestart': (o_lv or t_lv).get('lvlRestart')}
-                self._house_repaired[sid] = {
-                    'ilvl': ilvl,
-                    'before': {k: (o_lv or {}).get(k) for k in self._LEVEL_KEYS},
-                    'after_expected': after_expected}
+                for c in group:                      # every level of the shared list -> ONE imported instance
+                    self._set_style_numpr(c['sid'], new_nid, c['ilvl'])
+                    c['new_nid'] = new_nid; _record_house_repair(c)
+            else:
+                for c in group:
+                    raw_num, raw_abs = _resolved_tpl_blocks(c['t_np'][0])
+                    new_nid = _emit_import(raw_num, raw_abs, preserve=(ograph, c['o_np'][0]) if c['o_np'] else None)
+                    if not new_nid:
+                        self._unresolved_imports.append(
+                            {'style': c['sid'], 'numId': c['t_np'][0], 'context': 'house-repair',
+                             'detail': f"dysfunctional house list style {c['sid']} could not be repaired: "
+                                       f"template numbering {c['t_np'][0]} did not resolve; left unchanged"})
+                        continue
+                    self._set_style_numpr(c['sid'], new_nid, c['ilvl'])
+                    c['new_nid'] = new_nid; _record_house_repair(c)
 
         if new_defs:
             self.num = self.num.replace('</w:numbering>', ''.join(new_defs) + '</w:numbering>', 1)
@@ -1785,15 +1856,25 @@ class Conformer:
                                  'before': {k: b.get(k) for k in _keys}, 'after': {k: a.get(k) for k in _keys}})
         return viol
 
-    def paragraph_reference_report(self):
-        """Verify each paragraph still USES the numbering it used before (issue #1 R3). Unchanged
-        DEFINITIONS do not prove unchanged REFERENCES: a paragraph's own numId/pStyle can be reassigned to
-        a different list while every definition stays byte-identical. For every body paragraph matched by
-        its run text between the pristine input and the conformed output, resolve the numbering it actually
-        uses (direct numPr, else its style) and compare the level MEANING. A change is authorized only when
-        the paragraph's style follows a recorded house repair to exactly its expected delta; any other
-        change is an unauthorized reference flip. Returns a list of unauthorized changes."""
+    @staticmethod
+    def _fold_typography(t):
+        """Fold the characters the engine's own typography pass rewrites (curly quotes/apostrophes, en/em
+        dashes, nbsp) so a paragraph's IDENTITY survives authorized typography and is not silently dropped
+        from reference verification (issue #1 R3)."""
+        return (t.replace('’', "'").replace('‘', "'").replace('“', '"')
+                 .replace('”', '"').replace('–', '-').replace('—', '-')
+                 .replace(' ', ' '))
+
+    def _paragraph_reference_scan(self):
+        """Resolve each paragraph's ACTUAL numbering (direct numPr else style; current AND historical
+        snapshot) before vs after, across the whole body INCLUDING table cells (issue #1 R3). Correspondence
+        is by stable w14:paraId first (so authorized typography does not drop a paragraph), then same-style
+        typography-folded text; an original content paragraph with numbering that has NO stable match is
+        surfaced as UNRESOLVED, never silently unchecked. A current-reference change is authorized only when
+        the paragraph's style follows a recorded house repair to its expected delta. Returns
+        {'flips': [...unauthorized changes...], 'unresolved': [...uncorresponded numbered paragraphs...]}."""
         from conformer.numbering import NumberingGraph
+        from collections import defaultdict
         before = NumberingGraph(self._orig_num0, self._orig_styles0)
         after = NumberingGraph(self.num, self.styles)
         repaired = getattr(self, '_house_repaired', {})
@@ -1811,73 +1892,104 @@ class Conformer:
                 s = st.get('basedOn')
             return None
 
-        def _info(item):
-            ppr = re.search(r'<w:pPr>.*?</w:pPr>', item, re.S)
-            pxml = ppr.group(0) if ppr else ''
-            st = re.search(r'<w:pStyle w:val="([^"]+)"', pxml)
-            npr = re.search(r'<w:numPr>.*?</w:numPr>', pxml, re.S)
-            d_nid = d_il = None
-            if npr:
-                nm = re.search(r'<w:numId w:val="([^"]+)"', npr.group(0))
-                im = re.search(r'<w:ilvl w:val="([^"]+)"', npr.group(0))
-                d_nid = nm.group(1) if nm else None
-                d_il = im.group(1) if im else None
-            text = ''.join(re.findall(r'<w:t[^>]*>([^<]*)</w:t>', item))
-            return (st.group(1) if st else None, d_nid, d_il, ' '.join(text.split()))
+        def _numref(frag):
+            npr = re.search(r'<w:numPr>.*?</w:numPr>', frag, re.S)
+            if not npr:
+                return (None, None)
+            nm = re.search(r'<w:numId w:val="([^"]+)"', npr.group(0))
+            im = re.search(r'<w:ilvl w:val="([^"]+)"', npr.group(0))
+            return (nm.group(1) if nm else None, im.group(1) if im else None)
 
-        def _sig(graph, info):
-            pn = graph.paragraph_numbering(info[1], info[2], info[0])
+        def _info(p):
+            open_tag = p[:p.find('>') + 1]
+            pid = re.search(r'w14:paraId="([^"]+)"', open_tag)
+            ppr = re.search(r'<w:pPr>.*?</w:pPr>', p, re.S)
+            pxml = ppr.group(0) if ppr else ''
+            cur = re.sub(r'<w:pPrChange\b.*?</w:pPrChange>', '', pxml, flags=re.S)   # current props
+            histm = re.search(r'<w:pPrChange\b.*?</w:pPrChange>', pxml, re.S)         # historical snapshot
+            st = re.search(r'<w:pStyle w:val="([^"]+)"', cur)
+            text = ''.join(re.findall(r'<w:t[^>]*>([^<]*)</w:t>', p))
+            return {'id': pid.group(1) if pid else None,
+                    'style': st.group(1) if st else None,
+                    'cur': _numref(cur), 'hist': _numref(histm.group(0)) if histm else (None, None),
+                    'text': self._fold_typography(' '.join(text.split()))}
+
+        def _paras(items, b0):
+            # every <w:p> in the body, INCLUDING those inside table cells (paragraphs do not nest)
+            return re.findall(r'<w:p(?: [^>]*)?>.*?</w:p>', ''.join(items[b0:]), re.S)
+
+        def _sig(graph, info, ref):
+            nid, il = info[ref]
+            if ref == 'hist' and nid is None:
+                return None
+            pn = graph.paragraph_numbering(nid, il, info['style'])
             if not pn:
                 return None
             lv = graph.resolve_level(*pn)
             return tuple(lv.get(k) for k in self._LEVEL_KEYS) if lv else 'UNRESOLVED'
 
-        from collections import defaultdict
+        def _style_sig(graph, info):
+            """What the paragraph resolves to through its STYLE alone (ignoring a direct override)."""
+            sp = graph.style_numpr(info['style'])
+            if not sp:
+                return None
+            lv = graph.resolve_level(*sp)
+            return tuple(lv.get(k) for k in self._LEVEL_KEYS) if lv else 'UNRESOLVED'
 
-        def _by_text(items, b0):
-            buckets = defaultdict(list)
-            for it in items[b0:]:
-                if not it.startswith('<w:p'):
-                    continue
-                info = _info(it)
-                if not info[3]:                  # only paragraphs with real text can be corresponded
-                    continue
-                buckets[info[3]].append(info)
-            return buckets
+        b_list = [_info(p) for p in _paras(self._orig_items0, self._orig_b0)]
+        a_list = [_info(p) for p in _paras(self.items, self.b0)]
+        a_by_id = defaultdict(list); a_by_txt = defaultdict(list)
+        for j, ai in enumerate(a_list):
+            if ai['id']:
+                a_by_id[ai['id']].append(j)
+            if ai['text']:                         # empty-text paragraphs correspond ONLY by paraId
+                a_by_txt[(ai['style'], ai['text'])].append(j)
 
-        bb = _by_text(self._orig_items0, self._orig_b0)
-        ab = _by_text(self.items, self.b0)
-        flips = []
-        for text, binfos in bb.items():
-            ainfos = ab.get(text)
-            if not ainfos:
-                continue                          # paragraph deleted/edited — no stable correspondence
-            # Stable correspondence within identical text: pair SAME-style occurrences first (so a TOC
-            # entry is never matched against a like-named heading), then pair any residue in order — which
-            # is where a genuine pStyle reassignment shows up.
-            b_by = defaultdict(list); a_by = defaultdict(list)
-            for i in binfos:
-                b_by[i[0]].append(i)
-            for i in ainfos:
-                a_by[i[0]].append(i)
-            pairs, b_res, a_res = [], [], []
-            for st in set(b_by) | set(a_by):
-                bl, al = b_by[st], a_by[st]
-                m = min(len(bl), len(al))
-                pairs += list(zip(bl[:m], al[:m]))
-                b_res += bl[m:]; a_res += al[m:]
-            pairs += list(zip(b_res, a_res))      # residue: likely a pStyle change on the same text
-            for bi, ai in pairs:
-                bsig = _sig(before, bi)
-                asig = _sig(after, ai)
-                if bsig == asig:
-                    continue
-                exp = _repair_expected(ai[0])
-                if exp is not None and asig == exp:
-                    continue                      # authorized: follows a recorded house repair exactly
-                flips.append({'text': text[:60], 'before_style': bi[0], 'style': ai[0],
-                              'before_level': bsig, 'after_level': asig})
-        return flips
+        used, pairs, unmatched = set(), [], []
+        for bi in b_list:
+            j = None
+            if bi['id']:
+                cand = [k for k in a_by_id.get(bi['id'], []) if k not in used]
+                if len(cand) == 1:
+                    j = cand[0]
+            if j is None and bi['text']:           # fallback: same-style, typography-folded NON-empty text
+                cand = [k for k in a_by_txt.get((bi['style'], bi['text']), []) if k not in used]
+                if cand:
+                    j = cand[0]
+            if j is None:
+                unmatched.append(bi)
+            else:
+                used.add(j); pairs.append((bi, a_list[j]))
+
+        flips, unresolved = [], []
+        for bi, ai in pairs:
+            bsig = _sig(before, bi, 'cur'); asig = _sig(after, ai, 'cur')
+            if bsig != asig:
+                exp = _repair_expected(ai['style'])
+                style_after = _style_sig(after, ai)
+                # Authorized when the paragraph now follows its OWN style's numbering (the house rule that
+                # numbering comes from styles — a redundant/non-house direct override was normalised away,
+                # no number is lost), or follows a recorded house repair. A rogue direct reassignment to a
+                # DIFFERENT list, or an outright loss of numbering, is not authorized (issue #1 R3).
+                authorized = (asig is not None and asig == style_after) or (exp is not None and asig == exp)
+                if not authorized:
+                    flips.append({'scope': 'current', 'text': (ai['text'] or bi['text'])[:60],
+                                  'before_style': bi['style'], 'style': ai['style'],
+                                  'before_level': bsig, 'after_level': asig})
+            hb = _sig(before, bi, 'hist'); ha = _sig(after, ai, 'hist')
+            if (bi['hist'][0] or ai['hist'][0]) and hb != ha:
+                flips.append({'scope': 'historical', 'text': (ai['text'] or bi['text'])[:60],
+                              'style': ai['style'], 'before_level': hb, 'after_level': ha})
+        for bi in unmatched:                       # a content paragraph that carried numbering must not vanish
+            if bi['text'] and (_sig(before, bi, 'cur') is not None or bi['hist'][0]):
+                unresolved.append({'text': bi['text'][:60], 'style': bi['style'],
+                                   'reason': 'numbered paragraph has no stable correspondence in the output '
+                                             '(merged/split/removed or identity lost); numbering not verified'})
+        return {'flips': flips, 'unresolved': unresolved}
+
+    def paragraph_reference_report(self):
+        """Unauthorized paragraph-numbering reference changes (issue #1 R3). See _paragraph_reference_scan."""
+        return self._paragraph_reference_scan()['flips']
 
     def conformance_status(self):
         """The single authoritative verdict consumed by production save, UI and audit (issue #1 R3).
@@ -1899,6 +2011,7 @@ class Conformer:
             'tables_unresolved': unres.get('tables_unresolved') or [],
             'tables_needing_review': unres.get('tables_needing_review') or [],
             'unresolved_imports': unres.get('unresolved_imports') or [],
+            'paragraph_reference_unresolved': unres.get('paragraph_reference_unresolved') or [],
             'rolled_back_passes': unres.get('rolled_back_passes') or [],
         }
         blocking = any(blocking_reasons.values())
@@ -1943,16 +2056,18 @@ class Conformer:
             if rv:
                 table_review.append({'item': i, 'locator': loc, 'issues': rv})
         num_changes = self.numbering_report()
+        pref = self._paragraph_reference_scan()
         conformance = {'numbering_flips': [c for c in num_changes if not c.get('intended')],
                        'numbering_intended_repairs': [c for c in num_changes if c.get('intended')],
                        'definition_integrity_violations': self.definition_integrity_report(),
-                       'paragraph_reference_flips': self.paragraph_reference_report(),
+                       'paragraph_reference_flips': pref['flips'],
                        'tables_failing_effective_format': table_fails,
                        'tables_review': table_review}
 
         unresolved = {'rolled_back_passes': list(getattr(self, 'exceptions', []) or []),
                       'tables_needing_review': list(getattr(self, '_table_notes', []) or []),
                       'unresolved_imports': list(getattr(self, '_unresolved_imports', []) or []),
+                      'paragraph_reference_unresolved': pref['unresolved'],
                       'tables_unresolved': table_unresolved}
         return {'preservation': preservation, 'conformance': conformance, 'unresolved': unresolved}
 
@@ -2530,16 +2645,45 @@ class Conformer:
                          'template; tracked changes, comments and authorship preserved and verified. '
                          'Not a fully-conformed reading copy.')
 
+    @staticmethod
+    def verdict_label(status, forced_review=False):
+        """An HONEST document-status label for the artifact based on the ACTUAL conformance verdict (issue
+        #1 R3): a confirmation to save does not complete verification, so a not-clean/unknown copy is
+        labelled UNVERIFIED, never 'conformed and verified'."""
+        if status is None:
+            return ('UNVERIFIED review copy — conformance verification did NOT complete; this file is NOT a '
+                    'verified conformed document.')
+        if status.get('blocking'):
+            return ('UNVERIFIED review copy — contains formatting changes (numbering, paragraph references, '
+                    'definitions or tables) that could not be verified as authorized; NOT a conformed '
+                    'reading copy.')
+        if not status.get('clean', False):
+            return ('Review copy — conforms except for unresolved items that still need a manual look; not '
+                    'certified fully clean.')
+        return 'Conformed copy — conformance verified clean.'
+
+    def _artifact_label(self, verdict, forced=False):
+        """The artifact's document-status: the verdict-based honesty label, with the review-preserving
+        framing kept for preserve-mode output (it is a review copy regardless of the conformance verdict)."""
+        label = self.verdict_label(verdict, forced)
+        if getattr(self, 'disposition', None) == 'preserve':
+            return ('Normalized-formatting review copy — tracked changes, comments and authorship '
+                    'preserved. ' + label)
+        return label
+
     def _label_review_copy(self):
-        """GPT-6 2a: stamp the output as a normalized-formatting review copy. Written to the
-        docProps/core.xml <cp:contentStatus> — the schema's own document-status field, shown in
-        Word's file properties — so the file is never mistaken for a fully-conformed reading copy.
-        core.xml is not a story part, so this never affects the preservation gate."""
+        """GPT-6 2a: stamp the output as a normalized-formatting review copy (default, pre-verdict)."""
+        self._stamp_status(self.REVIEW_COPY_LABEL)
+
+    def _stamp_status(self, label):
+        """Write `label` to docProps/core.xml <cp:contentStatus> — the schema's own document-status field,
+        shown in Word's file properties — so the file's true status travels with it. core.xml is not a
+        story part, so this never affects the preservation gate."""
         core = self.parts.get('docProps/core.xml')
         if not core:
             return
         text = core.decode('utf8')
-        status = esc(self.REVIEW_COPY_LABEL)
+        status = esc(label)
         if '<cp:contentStatus>' in text:
             text = re.sub(r'<cp:contentStatus>.*?</cp:contentStatus>',
                           f'<cp:contentStatus>{status}</cp:contentStatus>', text, flags=re.S)
@@ -2564,10 +2708,25 @@ class Conformer:
                 src_sha = hashlib.sha256(fh.read()).hexdigest()
         except OSError:
             src_sha = None
+        # the ACTUAL conformance verdict (issue #1 R3): recorded for this save if set, else computed now
+        verdict = getattr(self, '_save_verdict', 'unset')
+        if verdict == 'unset':
+            try:
+                verdict = self.conformance_status()
+            except Exception:
+                verdict = None
+        forced = getattr(self, '_save_forced_review', False)
+        conformance = None
+        if verdict is not None:
+            conformance = {'clean': verdict.get('clean'), 'blocking': verdict.get('blocking'),
+                           'reason_counts': {k: len(v) for k, v in (verdict.get('reasons') or {}).items() if v}}
         return {
             'tool': 'LI Report Conformer',
             'disposition': self.disposition or 'clean',
-            'label': self.REVIEW_COPY_LABEL if self.disposition == 'preserve' else 'Conformed copy',
+            'label': self._artifact_label(verdict, forced),
+            'conformance_verdict': conformance,
+            'verification_completed': verdict is not None,
+            'saved_as_review_only': bool(forced),
             'generated': datetime.datetime.now().isoformat(timespec='seconds'),
             'source_file': os.path.basename(self.input_path),
             'source_sha256': src_sha,

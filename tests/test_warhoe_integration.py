@@ -52,6 +52,17 @@ def test_warhoe_numbering_and_integrity():
     assert ok, msg
 
 
+def test_warhoe_no_paragraph_reference_flips_and_no_number_loss():
+    # PRODUCT-ACCEPTANCE assertion (issue #1 R3): on the real report, no paragraph's numbering is silently
+    # reassigned or lost — heading auto-numbering (via list->style linkage) survives, and the only numbering
+    # changes are authorized house repairs. Also: every original numbered content paragraph corresponds in
+    # the output (nothing dropped from verification).
+    c = _conform(_warhoe())
+    scan = c._paragraph_reference_scan()
+    assert scan['flips'] == [], f"unauthorized paragraph-reference changes: {scan['flips'][:5]}"
+    assert scan['unresolved'] == [], f"uncorresponded numbered paragraphs: {scan['unresolved'][:5]}"
+
+
 def test_warhoe_preserves_meaning_bearing_formatting():
     # STRUCTURAL, per-occurrence, per-story invariant (issue #1). Using the same value- and location-
     # sensitive extractor whose sensitivity is proven by unit tests in test_issue1_regressions

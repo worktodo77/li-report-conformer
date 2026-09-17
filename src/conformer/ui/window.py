@@ -1191,11 +1191,14 @@ class MainWindow(QMainWindow):
                 conf = rep.get('conformance', {})
                 unres = rep.get('unresolved', {})
                 nflip = len(conf.get('numbering_flips', []) or [])
+                npref = len(conf.get('paragraph_reference_flips', []) or [])
                 ninteg = len(conf.get('definition_integrity_violations', []) or [])
                 ntbl = len(conf.get('tables_failing_effective_format', []) or [])
                 nreview = len(conf.get('tables_review', []) or [])
+                nimp = len(unres.get('unresolved_imports', []) or [])
+                npru = len(unres.get('paragraph_reference_unresolved', []) or [])
                 nrev = (len(unres.get('tables_needing_review', []) or []) + len(unres.get('tables_unresolved', []) or [])
-                        + nreview)
+                        + nreview + nimp + npru)
                 nroll = len(unres.get('rolled_back_passes', []) or [])
                 # the SAME authoritative verdict the audit uses (includes unadjudicated review deviations).
                 # An exception is UNKNOWN, never an inferred pass — the older count-based predicate would
@@ -1210,14 +1213,17 @@ class MainWindow(QMainWindow):
                     ('Review history preserved', rep.get('preservation', {}).get('clean') is True,
                      'Every tracked change and comment intact'),
                     ('Formatting conforms', formatting_ok is True,
-                     'Numbering, definitions and table formatting resolve as intended' if formatting_ok
+                     'Numbering, references, definitions and table formatting resolve as intended'
+                     if formatting_ok
                      else ('Conformance could not be verified — treat this as an unverified review copy'
                            if formatting_ok is None
-                           else f'{nflip} list-meaning flip(s), {ninteg} definition issue(s), {ntbl} table(s) '
-                                f'off, {nreview} table(s) with unadjudicated review deviations')),
+                           else f'{nflip} list-meaning flip(s), {npref} paragraph-reference change(s), '
+                                f'{ninteg} definition issue(s), {ntbl} table(s) off, '
+                                f'{nreview} table(s) with unadjudicated review deviations')),
                     ('Nothing left unresolved', not (nrev or nroll),
                      'No exceptions' if not (nrev or nroll)
-                     else f'{nroll} pass(es) held back, {nrev} table(s) need a manual look')):
+                     else f'{nroll} pass(es) held back, {nrev} item(s) need a manual look '
+                          f'({nimp} unresolved import(s), {npru} uncorresponded paragraph(s))')):
                     row = QLabel(f'{"✓" if ok else "⚠"}  <b>{label}</b> — {detail}')
                     row.setTextFormat(Qt.RichText); row.setWordWrap(True)
                     row.setStyleSheet('font-size: 12px; color: %s;' % ('#1f7a34' if ok else '#b26a00'))
@@ -1528,8 +1534,8 @@ class MainWindow(QMainWindow):
             default = QMessageBox.Cancel
         else:   # review — non-blocking, but something is unadjudicated/unresolved
             title = 'Unresolved items remain'
-            body = ('The copy conforms, but some deviations or tables need a manual look and were not '
-                    'adjudicated. Save it as a review copy?')
+            body = ('Some deviations, tables or references need a manual look and were not adjudicated, so '
+                    'this copy is NOT certified fully clean. Save it as a review copy?')
             default = QMessageBox.Save
         r = QMessageBox.warning(self, title, body, QMessageBox.Save | QMessageBox.Cancel, default)
         return r == QMessageBox.Save
@@ -1567,6 +1573,13 @@ class MainWindow(QMainWindow):
             if not self._confirm_unverified_save('review', status):
                 self._build_review_state()
                 return
+
+        # Carry the ACTUAL verdict and the explicit review-only decision into the artifact so its label,
+        # filename and audit are accurate (issue #1 R3): a confirmation to save does not complete
+        # verification. forced_review = anything not verified clean (exception, blocking or unresolved).
+        fresh._save_verdict = status
+        fresh._save_forced_review = (status_error is not None
+                                     or status is None or not status.get('clean', False))
 
         try:
             output_path = self._save_output(fresh)
@@ -1608,12 +1621,21 @@ class MainWindow(QMainWindow):
         backup = os.path.join(backup_dir, f'{name}_{ts}{ext}')
         shutil.copy2(src, backup)
 
+        review_only = bool(getattr(fresh, '_save_forced_review', False))
+        stamp = datetime.datetime.now().strftime('%d%m%y')
         if self.output_mode == 'replace':
             output_path = src
         elif getattr(self, '_chosen_output', None):
             output_path = self._chosen_output          # user-chosen location + filename
+            if review_only:
+                # keep a promised review copy visibly distinct from a verified conformed file
+                cstem, cext = os.path.splitext(output_path)
+                if 'REVIEW COPY' not in cstem.upper():
+                    output_path = f'{cstem} (REVIEW COPY - UNVERIFIED){cext}'
+        elif review_only:
+            output_path = os.path.join(d, f'{name} REVIEW COPY - UNVERIFIED {stamp}{ext}')
         else:
-            output_path = os.path.join(d, f'{name} CONFORMED {datetime.datetime.now().strftime("%d%m%y")}{ext}')
+            output_path = os.path.join(d, f'{name} CONFORMED {stamp}{ext}')
 
         fresh.save(output_path)
 
@@ -1630,10 +1652,10 @@ class MainWindow(QMainWindow):
         with open(log_path, 'w') as f:
             json.dump(log_data, f, indent=2)
 
-        # Review-preserving output: write the normalized-formatting-review-copy audit record beside
-        # the file (disposition, honest label, original SHA-256, preservation verdict, rolled-back
-        # passes). The docx itself is stamped as a review copy by the engine (core.xml contentStatus).
-        if getattr(fresh, 'disposition', None) == 'preserve':
+        # Write the audit record beside the file (disposition, HONEST verdict-based label, conformance
+        # verdict + reason counts, original SHA-256, preservation verdict, rolled-back passes) for any
+        # preserve-mode output AND for any review-only copy, so the artifact's true status travels with it.
+        if getattr(fresh, 'disposition', None) == 'preserve' or review_only:
             try:
                 fresh.write_audit(output_path)
             except Exception:

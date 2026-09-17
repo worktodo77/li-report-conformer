@@ -40,8 +40,10 @@ class NumberingGraph:
         self.styles = {}        # styleId -> {'basedOn', 'name', 'type', 'numId', 'ilvl'}
         self._abs_raw = {}      # abstractNumId -> exact source <w:abstractNum>…</w:abstractNum>
         self._num_raw = {}      # numId -> exact source <w:num>…</w:num>
+        self.pstyle_link = {}   # styleId -> (numId, ilvl) via a level's <w:pStyle> back-linkage
         self._parse_numbering()
         self._parse_styles()
+        self._build_pstyle_links()
 
     # ---- parsing -------------------------------------------------------------------------------
     def _parse_numbering(self):
@@ -89,6 +91,21 @@ class NumberingGraph:
             self.styles[sid] = {'basedOn': _val(st, 'basedOn'), 'name': _val(st, 'name'),
                                 'type': st.get(_w('type')), 'numId': numId, 'ilvl': ilvl}
 
+    def _build_pstyle_links(self):
+        """Word links a multilevel list to paragraph styles: a level carrying <w:pStyle w:val="HeadingN"/>
+        means paragraphs of that style are numbered by this list at this level (no direct numPr needed).
+        Build styleId -> (numId, ilvl) so numbering resolves through this linkage too — otherwise a
+        heading numbered only through the linkage appears to LOSE its number when a redundant direct numPr
+        is stripped (issue #1 R3 false positive). First numId referencing the abstract wins (stable)."""
+        for nid, num in self.nums.items():
+            ab = self.abstract.get(num.get('aid'))
+            if not ab:
+                continue
+            for ilvl, lv in (ab.get('levels') or {}).items():
+                ps = lv.get('pStyle')
+                if ps and ps not in self.pstyle_link:
+                    self.pstyle_link[ps] = (nid, ilvl)
+
     @staticmethod
     def _root(xml):
         if not xml or '<' not in xml:
@@ -116,11 +133,13 @@ class NumberingGraph:
         while sid and sid not in seen:
             seen.add(sid)
             s = self.styles.get(sid)
-            if not s:
-                return None
-            if s['numId'] is not None:
+            if s and s['numId'] is not None:
                 # numId 0 is an explicit "no numbering" override — it ends the chain with no list
                 return None if s['numId'] == '0' else (s['numId'], s['ilvl'] or '0')
+            if sid in self.pstyle_link:      # list→style linkage (heading numbering, list styles)
+                return self.pstyle_link[sid]
+            if not s:
+                return None
             sid = s['basedOn']
         return None
 
