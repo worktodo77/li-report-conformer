@@ -254,6 +254,83 @@ class JudgmentRow(QFrame):
             parent._open_in_word(self.call)
 
 
+import difflib as _difflib
+import re as _re
+
+
+def _esc_html(s):
+    return s.replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;')
+
+
+def diff_before_after(before, after):
+    """Word-level diff -> (before_html, after_html). Removed words in the BEFORE are struck through on
+    a faint red; inserted/changed words in the AFTER are highlighted yellow."""
+    a = _re.split(r'(\s+)', before)
+    b = _re.split(r'(\s+)', after)
+    sm = _difflib.SequenceMatcher(a=a, b=b, autojunk=False)
+    bo, ao = [], []
+    for tag, i1, i2, j1, j2 in sm.get_opcodes():
+        bt, at = _esc_html(''.join(a[i1:i2])), _esc_html(''.join(b[j1:j2]))
+        if tag == 'equal':
+            bo.append(bt); ao.append(at)
+        else:
+            if bt:
+                bo.append('<span style="background:#fbe4e4;text-decoration:line-through;'
+                          'color:#a3453c">%s</span>' % bt)
+            if at:
+                ao.append('<span style="background:#fff29a;">%s</span>' % at)
+    return ''.join(bo), ''.join(ao)
+
+
+class EditRow(QFrame):
+    """A mechanical TEXT edit shown as BEFORE -> AFTER with the changes highlighted yellow, plus a
+    per-fix Skip toggle (accepted by default)."""
+    def __init__(self, edit, parent=None):
+        super().__init__(parent)
+        self.edit = edit
+        self.skipped = False
+        self.setObjectName('editRow')
+        lay = QVBoxLayout(self)
+        lay.setContentsMargins(12, 8, 12, 8)
+        lay.setSpacing(4)
+
+        head = QHBoxLayout(); head.setSpacing(8)
+        chip = QLabel(edit['label'])
+        chip.setStyleSheet('font-size: 10px; font-weight: 600; color: #1f3a5f; background: #eaf0f7; '
+                           'border-radius: 4px; padding: 2px 7px;')
+        chip.setFixedHeight(18)
+        head.addWidget(chip, 0, Qt.AlignTop)
+        head.addStretch()
+        self.skip_btn = QPushButton('Skip')
+        self.skip_btn.setObjectName('skipBtn')
+        self.skip_btn.setCheckable(True)
+        self.skip_btn.setFixedWidth(64)
+        self.skip_btn.clicked.connect(self._toggle_skip)
+        head.addWidget(self.skip_btn, 0, Qt.AlignTop)
+        lay.addLayout(head)
+
+        before_html, after_html = diff_before_after(edit['before'], edit['after'])
+        self.before_lbl = QLabel('<span style="color:#8a8f96;">Before</span>&nbsp;&nbsp;' + before_html)
+        self.after_lbl = QLabel('<span style="color:#1c7a34;">After</span>&nbsp;&nbsp;&nbsp;' + after_html)
+        for lbl in (self.before_lbl, self.after_lbl):
+            lbl.setWordWrap(True)
+            lbl.setTextFormat(Qt.RichText)
+            lbl.setStyleSheet('font-size: 12.5px; color: #2b2b2b;')
+        lay.addWidget(self.before_lbl)
+        lay.addWidget(self.after_lbl)
+
+    def _toggle_skip(self):
+        self.skipped = self.skip_btn.isChecked()
+        # dim the row when skipped
+        self.after_lbl.setEnabled(not self.skipped)
+        parent = self.window()
+        if hasattr(parent, '_update_tally'):
+            parent._update_tally()
+
+    def decision_id(self):
+        return self.edit['id']
+
+
 class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
@@ -478,28 +555,81 @@ class MainWindow(QMainWindow):
         self.body_layout.addWidget(self.status_label)
         self.body_layout.addStretch()
 
+    def _preserve_banner(self):
+        """An elegant review-preserving banner: a shield with the tracked-change / comment / author
+        counts that will be preserved and verified."""
+        s = self.conformer.revision_ledger.summary()
+        card = QFrame(); card.setObjectName('preserveBanner')
+        h = QHBoxLayout(card); h.setContentsMargins(14, 10, 14, 10); h.setSpacing(12)
+        icon = QLabel('\U0001F6E1'); icon.setStyleSheet('font-size: 20px;')
+        h.addWidget(icon, 0, Qt.AlignVCenter)
+        col = QVBoxLayout(); col.setSpacing(1)
+        t = QLabel('Review-preserving mode')
+        t.setStyleSheet('font-size: 12.5px; font-weight: 600; color: #005088;')
+        d = QLabel(f"<b>{s['total']:,}</b> tracked changes &nbsp;·&nbsp; <b>{s['comments']}</b> "
+                   f"comments &nbsp;·&nbsp; <b>{len(s['authors'])}</b> authors — preserved and verified")
+        d.setTextFormat(Qt.RichText)
+        d.setStyleSheet('font-size: 12px; color: #4a5a6a;')
+        col.addWidget(t); col.addWidget(d)
+        h.addLayout(col); h.addStretch()
+        return card
+
+    def _collapsible(self, title, count_text, content_widget, expanded=False):
+        """A section with a clickable header (chevron + title + count) that toggles content_widget."""
+        wrap = QWidget()
+        v = QVBoxLayout(wrap); v.setContentsMargins(0, 0, 0, 0); v.setSpacing(0)
+        header = QPushButton()
+        header.setObjectName('collapseHeader')
+        header.setCursor(Qt.PointingHandCursor)
+        header.setCheckable(True); header.setChecked(expanded)
+        hl = QHBoxLayout(header); hl.setContentsMargins(2, 6, 2, 6); hl.setSpacing(8)
+        chev = QLabel('▼' if expanded else '▶'); chev.setFixedWidth(14)
+        chev.setStyleSheet('font-size: 10px; color: #66707a;')
+        lab = QLabel(title); lab.setObjectName('sectionLabel'); lab.setStyleSheet('padding:0;')
+        cnt = QLabel(count_text); cnt.setStyleSheet('font-size: 11px; color: #8a8f96;')
+        hl.addWidget(chev); hl.addWidget(lab); hl.addWidget(cnt); hl.addStretch()
+        v.addWidget(header)
+        content_widget.setVisible(expanded)
+        v.addWidget(content_widget)
+
+        def toggle():
+            vis = header.isChecked()
+            content_widget.setVisible(vis)
+            chev.setText('▼' if vis else '▶')
+        header.clicked.connect(toggle)
+        return wrap
+
     def _build_review_state(self):
         self._clear_body()
         self.judgment_rows = []
-
-        mech_sec = QLabel('MECHANICAL FIXES')
-        mech_sec.setObjectName('sectionLabel')
-        self.body_layout.addWidget(mech_sec)
-
-        mech_count = len(self.conformer.log) if self.conformer else 0
-        mech_label = QLabel(f'{mech_count} fixes applied automatically')
-        mech_label.setStyleSheet('font-size: 12px; color: #66707a; padding-bottom: 8px;')
-        self.body_layout.addWidget(mech_label)
+        self.edit_rows = []
+        edits = getattr(self, 'edits', [])
+        log = list(self.conformer.log) if self.conformer else []
 
         if self.conformer and getattr(self.conformer, 'disposition', None) == 'preserve':
-            s = self.conformer.revision_ledger.summary()
-            notice = QLabel(
-                f"Review-preserving mode — {s['total']:,} tracked changes · {s['comments']} "
-                f"comments · {len(s['authors'])} authors will be preserved and verified.")
-            notice.setWordWrap(True)
-            notice.setStyleSheet('font-size: 12px; color: #1f3a5f; background: #eef2f7; '
-                                 'border-radius: 6px; padding: 8px 10px; margin-bottom: 8px;')
-            self.body_layout.addWidget(notice)
+            self.body_layout.addWidget(self._preserve_banner())
+
+        # ── collapsible MECHANICAL FIXES: text edits (before/after + Skip) + formatting fixes ──
+        mech_content = QWidget()
+        mc = QVBoxLayout(mech_content); mc.setContentsMargins(0, 4, 0, 8); mc.setSpacing(6)
+        if edits:
+            cap = QLabel('Text edits — review each and Skip any you disagree with:')
+            cap.setStyleSheet('font-size: 11.5px; color: #66707a;')
+            mc.addWidget(cap)
+            for e in edits:
+                row = EditRow(e); self.edit_rows.append(row); mc.addWidget(row)
+        fmt = [entry for entry in log if entry.get('msg')]
+        if fmt:
+            fl = QLabel('Formatting fixes applied automatically:')
+            fl.setStyleSheet('font-size: 11.5px; color: #66707a; padding-top: 6px;')
+            mc.addWidget(fl)
+            for entry in fmt:
+                line = QLabel('•  ' + entry['msg'])
+                line.setWordWrap(True)
+                line.setStyleSheet('font-size: 11.5px; color: #8a8f96; padding-left: 8px;')
+                mc.addWidget(line)
+        self.body_layout.addWidget(self._collapsible(
+            'MECHANICAL FIXES', f'{len(edits)} text edits · {len(fmt)} formatting fixes', mech_content))
 
         if self.judgment_calls:
             judge_sec = QLabel(f'JUDGMENT CALLS ({len(self.judgment_calls)})')
@@ -516,7 +646,7 @@ class MainWindow(QMainWindow):
             self.body_layout.addWidget(no_judge)
 
         self.body_layout.addStretch()
-        self.tally_bar.setVisible(bool(self.judgment_calls))
+        self.tally_bar.setVisible(bool(self.judgment_calls) or bool(self.edit_rows))
         self._update_tally()
 
     def _build_complete_state(self, output_path, decisions_log, audit=None, fresh=None):
@@ -716,6 +846,7 @@ class MainWindow(QMainWindow):
     def _on_analysis_done(self, conformer, calls):
         self.conformer = conformer
         self.judgment_calls = calls
+        self.edits = [e for e in getattr(conformer, 'pending_edits', []) if e['before'] != e['after']]
         self._build_review_state()
 
     def _on_analysis_error(self, msg):
@@ -736,6 +867,9 @@ class MainWindow(QMainWindow):
         decisions = {}
         for row in self.judgment_rows:
             decisions[row.call.id] = row.get_decision_string()
+        for row in getattr(self, 'edit_rows', []):
+            if row.skipped:
+                decisions[row.decision_id()] = 'skip'
 
         self._build_analyzing_state()
         self.status_label.setText('Applying decisions and conforming document...')

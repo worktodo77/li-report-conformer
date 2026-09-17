@@ -1,10 +1,14 @@
-"""Document preview: renders the .docx body as HTML with the target paragraph highlighted."""
-import re, zipfile
+"""Document preview: renders a WINDOW of the .docx body as HTML around the target paragraph, which is
+highlighted. Only a window is rendered (not the whole doc) so it is fast and never hits QWebEngine's
+setHtml size limit; the HTML is loaded from a temp file for the same reason."""
+import os, re, tempfile, zipfile
 from PySide6.QtWidgets import QDialog, QVBoxLayout, QLabel, QPushButton, QHBoxLayout
 from PySide6.QtWebEngineWidgets import QWebEngineView
-from PySide6.QtCore import Qt, QSize
+from PySide6.QtCore import Qt, QSize, QUrl
 
 from conformer.engine import JudgmentCall, text_of
+
+_WINDOW = 25   # paragraphs of context on each side of the target
 
 
 def _docx_to_html(path, highlight_index=None):
@@ -15,40 +19,37 @@ def _docx_to_html(path, highlight_index=None):
     if not body:
         return '<html><body><p>Could not read document body.</p></body></html>'
 
-    items = []
-    i = 0
     content = body.group(1)
+    rows = []            # (body_idx, css_class, text)
     para_idx = 0
     b0 = None
-
     for m in re.finditer(r'<w:p\b[^>]*>(.*?)</w:p>', content, re.S):
         ppr = m.group(1)
         style_m = re.search(r'<w:pStyle w:val="([^"]+)"', ppr)
         style = style_m.group(1) if style_m else 'Normal'
-        text = re.sub(r'<[^>]+>', '', re.sub(r'<w:instrText.*?</w:instrText>', '', m.group(0), flags=re.S))
-        text = text.strip()
-
+        text = re.sub(r'<[^>]+>', '', re.sub(r'<w:instrText.*?</w:instrText>', '', m.group(0), flags=re.S)).strip()
         if b0 is None and style == 'Heading1':
             b0 = para_idx
-
-        if b0 is not None:
-            body_idx = para_idx - b0
-        else:
-            body_idx = para_idx
-
-        is_highlighted = (highlight_index is not None and b0 is not None
-                          and body_idx == highlight_index)
-
-        css_class = _style_to_css(style)
-        highlight_style = ' style="background-color: #fff3cd; border-left: 3px solid #f59e0b; padding-left: 8px;"' if is_highlighted else ''
-        anchor = f' id="target"' if is_highlighted else ''
-
+        body_idx = (para_idx - b0) if b0 is not None else para_idx
         if text:
-            items.append(f'<div class="{css_class}"{highlight_style}{anchor}>{_html_esc(text)}</div>')
-
+            rows.append((body_idx, _style_to_css(style), text))
         para_idx += 1
 
-    html_body = '\n'.join(items)
+    # keep only a window around the target (or the head of the doc if no target)
+    if highlight_index is not None:
+        rows = [r for r in rows if abs(r[0] - highlight_index) <= _WINDOW]
+    else:
+        rows = rows[:60]
+
+    items = []
+    for body_idx, css_class, text in rows:
+        hi = (highlight_index is not None and body_idx == highlight_index)
+        hs = (' style="background-color:#fff29a; border-left:3px solid #f59e0b; padding-left:8px;"'
+              if hi else '')
+        anchor = ' id="target"' if hi else ''
+        items.append(f'<div class="{css_class}"{hs}{anchor}>{_html_esc(text)}</div>')
+
+    html_body = '\n'.join(items) or '<div class="normal">(No renderable text near this paragraph.)</div>'
     return f'''<!DOCTYPE html>
 <html>
 <head>
@@ -126,5 +127,10 @@ class PreviewDialog(QDialog):
 
         self.web = QWebEngineView()
         html = _docx_to_html(docx_path, call.item_index)
-        self.web.setHtml(html)
+        # Load from a temp file (QWebEngineView.setHtml silently fails past ~2 MB and can render blank
+        # in a frozen build); a small windowed HTML from a file is reliable.
+        self._tmp = os.path.join(tempfile.mkdtemp(), 'preview.html')
+        with open(self._tmp, 'w', encoding='utf8') as fh:
+            fh.write(html)
+        self.web.load(QUrl.fromLocalFile(self._tmp))
         layout.addWidget(self.web, 1)

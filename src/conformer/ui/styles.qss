@@ -43,6 +43,30 @@ QWidget {
     letter-spacing: 0.2px;
 }
 
+/* ── Preserve banner / collapsible sections / edit rows ── */
+#preserveBanner {
+    background-color: #eef5fb;
+    border: 1px solid #cfe4f5;
+    border-left: 3px solid #28A0D8;
+    border-radius: 8px;
+    margin-bottom: 6px;
+}
+#collapseHeader {
+    background: transparent;
+    border: none;
+    text-align: left;
+    padding: 0;
+}
+#collapseHeader:hover {
+    background: #f1efe8;
+    border-radius: 6px;
+}
+#editRow {
+    background: #ffffff;
+    border: 1px solid #ececec;
+    border-radius: 8px;
+}
+
 /* ── Sections ── */
 #sectionLabel {
     font-family: "Public Sans", "Segoe UI", sans-serif;

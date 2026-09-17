@@ -235,6 +235,8 @@ class Conformer:
         self.disposition = None      # None/clean → legacy pipeline; 'preserve' → review-preserving
         self.exceptions = []         # (pass_name, reason) for passes rolled back in preserve mode
         self._jcall_counter = 0
+        self.pending_edits = []      # mechanical TEXT edits (before/after) for the UI, per-fix skippable
+        self._edit_counter = {}
         self.stname = dict(re.findall(r'<w:style [^>]*w:styleId="([^"]+)"[^>]*><w:name w:val="([^"]+)"', self.styles))
         self.numfmt = {}
         abs_fmt = {}
@@ -290,6 +292,29 @@ class Conformer:
         if self.decisions is None:
             return 'accept'
         return self.decisions.get(jc.id, 'skip')
+
+    def _next_edit_id(self, kind):
+        self._edit_counter[kind] = self._edit_counter.get(kind, 0) + 1
+        return f'{kind}_{self._edit_counter[kind]}'
+
+    def _edit_skipped(self, eid):
+        return self.decisions is not None and self.decisions.get(eid) == 'skip'
+
+    def _apply_text_edit(self, kind, label, i, before_xml, after_xml):
+        """Apply a per-paragraph mechanical TEXT edit unless the user skipped it, and record it
+        (before/after visible text) so the UI can show a before→after with the change highlighted and
+        offer a per-fix Skip. Deterministic id ('house_3'), so a skip survives the analyze→apply round
+        trip. Returns True if the edit was applied."""
+        eid = self._next_edit_id(kind)
+        before_t = text_of(before_xml)
+        after_t = text_of(after_xml)
+        skipped = self._edit_skipped(eid)
+        self.pending_edits.append({'id': eid, 'kind': kind, 'label': label, 'item': i,
+                                   'before': before_t, 'after': after_t, 'skipped': skipped})
+        if skipped:
+            return False
+        self.set(i, after_xml)
+        return True
 
     # ================================================================ passes
     def revert_tracked_formatting(self):
@@ -787,7 +812,7 @@ class Conformer:
             masked, masks = self._mask_revisions(x) if self.disposition == 'preserve' else (x, {})
             nx = re.sub(r'(<w:t(?: xml:space="preserve")?>)([^<]*)(</w:t>)', fix, masked)
             nx = self._unmask(nx, masks)
-            if nx != x: self.set(i, nx)
+            if nx != x: self._apply_text_edit('typo', 'Typography', i, x, nx)
         self.say('M', -1, 'typography normalised (smart quotes, en dashes, sentence spacing, dates, ligatures)')
 
     _HOUSE_SKIP_STYLES = {'ExcerptorQuote', 'Caption', 'TableofFigures', 'Title', 'TitleofProject',
@@ -829,8 +854,8 @@ class Conformer:
             nx = re.sub(r'(<w:t(?: xml:space="preserve")?>)([^<]*)(</w:t>)',
                         lambda m: m.group(1) + self._house_edit(m.group(2)) + m.group(3), masked)
             nx = self._unmask(nx, masks)
-            if nx != x:
-                self.set(i, nx); n += 1
+            if nx != x and self._apply_text_edit('house', 'House style', i, x, nx):
+                n += 1
         if n:
             self.say('M', -1, f'LI house style applied to {n} paragraphs (capitalization, '
                               f'terminology, American spelling)')
