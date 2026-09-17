@@ -1210,6 +1210,25 @@ class Conformer:
             if nx != x:
                 self.set(i, nx)
 
+    @staticmethod
+    def _keep_numpr(old, new):
+        """Return the template style `new` but carrying the document style `old`'s own <w:numPr> (its
+        list-numbering association). numId values are document-local, so importing the template's numPr
+        would point the style at a different (often bullet) list. If the doc style had no numbering, the
+        template's numPr is dropped so a non-list style is never turned into a list."""
+        om = re.search(r'<w:numPr>.*?</w:numPr>', old, re.S)
+        nm = re.search(r'<w:numPr>.*?</w:numPr>', new, re.S)
+        if nm:
+            return new[:nm.start()] + (om.group(0) if om else '') + new[nm.end():]
+        if om:
+            if '<w:pPr>' in new:
+                return new.replace('<w:pPr>', '<w:pPr>' + om.group(0), 1)
+            # no pPr in the template def — insert one carrying the doc's numbering
+            sm = re.search(r'<w:style\b[^>]*>', new)
+            if sm:
+                return new[:sm.end()] + '<w:pPr>' + om.group(0) + '</w:pPr>' + new[sm.end():]
+        return new
+
     def _repair_styles(self):
         """Fix corrupt LI style definitions (Claire's 'List Bullet dysfunctional' / 'table style
         corrupted'): overwrite the document's definition of any style the template defines with the
@@ -1222,10 +1241,16 @@ class Conformer:
                 re.finditer(r'<w:style\b[^>]*w:styleId="([^"]+)".*?</w:style>', self.t_styles, re.S)}
         fixed = [0]
         def repl(m):
-            sid = re.search(r'w:styleId="([^"]+)"', m.group(0)).group(1)
-            if sid in tmpl and tmpl[sid] != m.group(0):
-                fixed[0] += 1; return tmpl[sid]
-            return m.group(0)
+            orig = m.group(0)
+            sid = re.search(r'w:styleId="([^"]+)"', orig).group(1)
+            if sid in tmpl and tmpl[sid] != orig:
+                fixed[0] += 1
+                # Repair the style's formatting from the template, but KEEP the document's own numbering
+                # association: the template's <w:numId> values index the TEMPLATE's numbering.xml, and
+                # reusing them against the document's numbering silently reformats decimal lists as
+                # bullets (numId collision). Preserving the doc's numPr keeps every list's format intact.
+                return self._keep_numpr(orig, tmpl[sid])
+            return orig
         self.styles = re.sub(r'<w:style\b[^>]*w:styleId="([^"]+)".*?</w:style>', repl,
                              self.styles, flags=re.S)
         existing = set(re.findall(r'<w:style [^>]*w:styleId="([^"]+)"', self.styles))
