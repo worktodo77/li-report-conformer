@@ -1839,6 +1839,35 @@ class Conformer:
                     r'(<w:numPr>(?:(?!</w:numPr>).)*?<w:numId w:val=")[^"]+(")',
                     lambda mm: mm.group(1) + new_nid + mm.group(2), self.item(du['item']), count=1, flags=re.S))
 
+        # ORPHAN house styles that LOST their numbering entirely (resolve to NONE in the original, but the
+        # template numbers them) have no source instance to preserve — give each a FRESH imported template
+        # instance and an explicit numPr. This is the dysfunctional-style repair (Claire's 'List Bullet
+        # dysfunctional') for styles whose list association was removed, not merely mis-formatted.
+        for sid in ograph.styles:
+            if sid in self._house_repaired or not _house_target_style(sid):
+                continue
+            if ograph.resolve_style(sid).state != 'none':
+                continue                              # resolved / unresolved handled by the instance loop
+            traw = tgraph._style_numpr_raw(sid)
+            if not traw[0] or traw[0] == '0':
+                continue
+            t_ilvl = traw[1] or '0'
+            t_lv = tgraph.resolve_level(traw[0], t_ilvl)
+            raw_num, raw_abs = _resolved_tpl_blocks(traw[0])
+            new_nid = _emit_import(raw_num, raw_abs) if t_lv else None
+            if not new_nid:
+                self._unresolved_imports.append(
+                    {'style': sid, 'numId': traw[0], 'context': 'house-repair',
+                     'detail': f'{sid} lost its numbering and the template list {traw[0]} did not resolve'})
+                continue
+            self._set_style_numpr(sid, new_nid, t_ilvl)
+            self._house_repaired[sid] = {
+                'ilvl': t_ilvl, 'shared_new_numId': new_nid,
+                'before': {k: None for k in self._LEVEL_KEYS},
+                'after_expected': {'numFmt': t_lv.get('numFmt'), 'lvlText': t_lv.get('lvlText'),
+                                   'isLgl': t_lv.get('isLgl'), 'start': t_lv.get('start'),
+                                   'lvlRestart': t_lv.get('lvlRestart')}}
+
         if new_defs:
             self.num = self.num.replace('</w:numbering>', ''.join(new_defs) + '</w:numbering>', 1)
 
