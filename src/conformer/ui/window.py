@@ -398,6 +398,17 @@ _PHASES_CLEAN = ['read', 'structure', 'type', 'save']
 _SPINNER = '⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏'
 
 
+class _ClickFrame(QFrame):
+    """A QFrame that emits `clicked` — used for collapsible section headers (a QPushButton clips a
+    child layout, a QFrame sizes to it)."""
+    clicked = Signal()
+
+    def mouseReleaseEvent(self, e):
+        if e.button() == Qt.LeftButton and self.rect().contains(e.position().toPoint()):
+            self.clicked.emit()
+        super().mouseReleaseEvent(e)
+
+
 class ChecklistView(QFrame):
     """The live conforming screen: a preservation shield plus a vertical checklist of pipeline phases,
     each advancing from pending → a spinning current step → an animated green check as the engine
@@ -416,8 +427,14 @@ class ChecklistView(QFrame):
         self.keys = []
         self.current = -1
         self._preserve = True
+        self.is_apply = False
         self._spin_i = 0
         self._timer = QTimer(self); self._timer.timeout.connect(self._tick); self._timer.start(90)
+
+    def set_stage(self, is_apply):
+        """analyze stage (preview, nothing written) vs apply stage (commits + saves) — changes the final
+        phase label and the shield's finished wording."""
+        self.is_apply = bool(is_apply)
 
     def set_mode(self, mode):
         self._preserve = (mode == 'preserve')
@@ -430,6 +447,10 @@ class ChecklistView(QFrame):
         self.current = -1
         for key in self.keys:
             title, sub = _PHASE_INFO[key]
+            if key == 'save':
+                title, sub = (('Verifying & saving', 'Confirming every change is preserved, then writing the file')
+                              if self.is_apply
+                              else ('Preparing your review', 'Collecting the fixes and judgment calls'))
             row = QFrame(); row.setObjectName('clRow')
             hl = QHBoxLayout(row); hl.setContentsMargins(10, 8, 10, 8); hl.setSpacing(12)
             icon = QLabel('○'); icon.setFixedWidth(22)
@@ -509,8 +530,10 @@ class ChecklistView(QFrame):
             self.shield.setVisible(False); return
         self.shield.setVisible(True)
         if mode == 'verified':
+            msg = ('Tracked changes preserved &amp; verified — saved' if self.is_apply
+                   else 'Nothing lost — tracked changes intact, ready for your review')
             self.shield.setText('<span style="font-size:15px;">🛡</span>&nbsp;&nbsp;'
-                                '<b style="color:#0f6e56;">Tracked changes preserved &amp; verified</b>')
+                                f'<b style="color:#0f6e56;">{msg}</b>')
             self.shield.setStyleSheet('background:#e1f5ee; border:1px solid #5dcaa5; border-left:3px solid '
                                       '#0f6e56; border-radius:8px; padding:10px 14px; color:#0f6e56;')
         elif mode == 'safe':
@@ -735,15 +758,22 @@ class MainWindow(QMainWindow):
 
         self.body_layout.addStretch()
 
-    def _build_analyzing_state(self, heading='CONFORMING'):
+    def _build_analyzing_state(self, heading='CONFORMING', subtitle='', is_apply=False):
         self._clear_body()
 
         sec = QLabel(heading)
         sec.setObjectName('sectionLabel')
         self.body_layout.addWidget(sec)
 
+        if subtitle:
+            sub = QLabel(subtitle)
+            sub.setWordWrap(True)
+            sub.setStyleSheet('font-size: 12px; color: #66707a; padding: 0 0 6px 2px;')
+            self.body_layout.addWidget(sub)
+
         # Live checklist driven by real per-pass progress from the engine.
         self.checklist = ChecklistView()
+        self.checklist.set_stage(is_apply)
         self.checklist.set_mode('preserve')   # default; corrected by the first '__mode__' event
         self.body_layout.addWidget(self.checklist)
 
@@ -786,21 +816,23 @@ class MainWindow(QMainWindow):
         never blocks the initial render or freezes the UI while collapsed."""
         wrap = QWidget()
         v = QVBoxLayout(wrap); v.setContentsMargins(0, 0, 0, 0); v.setSpacing(0)
-        header = QPushButton()
+        # A clickable QFrame (not a QPushButton — a button ignores its child layout's size hint and
+        # clips the title). The frame sizes to its content, so the header text is never cut off.
+        header = _ClickFrame()
         header.setObjectName('collapseHeader')
         header.setCursor(Qt.PointingHandCursor)
-        header.setCheckable(True); header.setChecked(expanded)
-        hl = QHBoxLayout(header); hl.setContentsMargins(2, 6, 2, 6); hl.setSpacing(8)
+        hl = QHBoxLayout(header); hl.setContentsMargins(4, 10, 4, 10); hl.setSpacing(8)
         chev = QLabel('▼' if expanded else '▶'); chev.setFixedWidth(14)
         chev.setStyleSheet('font-size: 10px; color: #66707a;')
         lab = QLabel(title); lab.setObjectName('sectionLabel'); lab.setStyleSheet('padding:0;')
         cnt = QLabel(count_text); cnt.setStyleSheet('font-size: 11px; color: #8a8f96;')
-        hl.addWidget(chev); hl.addWidget(lab); hl.addWidget(cnt); hl.addStretch()
+        hl.addWidget(chev, 0, Qt.AlignVCenter); hl.addWidget(lab, 0, Qt.AlignVCenter)
+        hl.addWidget(cnt, 0, Qt.AlignVCenter); hl.addStretch()
         v.addWidget(header)
 
         holder = QWidget()
         hv = QVBoxLayout(holder); hv.setContentsMargins(0, 0, 0, 0); hv.setSpacing(0)
-        state = {'built': False}
+        state = {'built': False, 'open': expanded}
 
         def ensure_built():
             if state['built']:
@@ -817,34 +849,62 @@ class MainWindow(QMainWindow):
         v.addWidget(holder)
 
         def toggle():
-            vis = header.isChecked()
-            if vis:
+            state['open'] = not state['open']
+            if state['open']:
                 ensure_built()          # build on first expand
-            holder.setVisible(vis)
-            chev.setText('▼' if vis else '▶')
+            holder.setVisible(state['open'])
+            chev.setText('▼' if state['open'] else '▶')
         header.clicked.connect(toggle)
         return wrap
 
     def _build_conformance_content(self, entries):
         """The substantive structural conformance (corrupt-style repair, tables → LI table style, caption
         rebuilds, cross-references, figures, landscape). Repeated per-instance messages are aggregated
-        with a count so the list reads as a clean summary of what was actually done."""
-        from collections import Counter
+        with a count. Fixes that carry a category (`cat`) get a per-type Skip toggle, so the user can
+        turn off a whole class of change (e.g. 'delete empty paragraphs') before applying."""
         w = QWidget()
         v = QVBoxLayout(w); v.setContentsMargins(0, 4, 0, 8); v.setSpacing(4)
-        cap = QLabel('Structural conformance applied — tracked changes, comments and authorship preserved:')
+        cap = QLabel('Structural conformance applied — tracked changes, comments and authorship preserved. '
+                     'Skip any type you want left as-is.')
         cap.setWordWrap(True)
         cap.setStyleSheet('font-size: 11.5px; color: #66707a;')
         v.addWidget(cap)
-        counts = Counter(e['msg'] for e in entries)
-        for msg, c in counts.items():
-            text = msg if c == 1 else f'{msg}  (×{c})'
-            line = QLabel('<span style="color:#1f7a34;">✓</span>&nbsp;&nbsp;' + _esc_html(text))
-            line.setTextFormat(Qt.RichText)
-            line.setWordWrap(True)
-            line.setStyleSheet('font-size: 12.5px; color: #1c2733; padding-left: 2px;')
-            v.addWidget(line)
+
+        # Group by category (skippable) or by message text (static). Preserve first-seen order.
+        groups = {}
+        for e in entries:
+            key = ('cat', e['cat']) if e.get('cat') else ('msg', e['msg'])
+            g = groups.setdefault(key, {'msg': e['msg'], 'cat': e.get('cat'), 'n': 0})
+            g['n'] += 1
+        for g in groups.values():
+            text = g['msg'] if g['n'] == 1 else f"{g['msg']}  (×{g['n']})"
+            if g['cat']:
+                v.addWidget(self._conf_row(g['cat'], text))
+            else:
+                line = QLabel('<span style="color:#1f7a34;">✓</span>&nbsp;&nbsp;' + _esc_html(text))
+                line.setTextFormat(Qt.RichText); line.setWordWrap(True)
+                line.setStyleSheet('font-size: 12.5px; color: #1c2733; padding-left: 2px;')
+                v.addWidget(line)
         return w
+
+    def _conf_row(self, cat, text):
+        """One skippable conformance fix: a check + description + a Skip toggle. On Apply, a skipped
+        category becomes decisions['conf:<cat>']='skip' so the engine doesn't run it."""
+        row = QFrame(); row.setObjectName('editRow')
+        hl = QHBoxLayout(row); hl.setContentsMargins(10, 7, 10, 7); hl.setSpacing(10)
+        icon = QLabel('<span style="color:#1f7a34;">✓</span>'); icon.setTextFormat(Qt.RichText); icon.setFixedWidth(14)
+        lab = QLabel(_esc_html(text)); lab.setWordWrap(True)
+        lab.setStyleSheet('font-size: 12.5px; color: #1c2733;')
+        btn = QPushButton('Skip'); btn.setObjectName('skipBtn'); btn.setCheckable(True); btn.setFixedWidth(64)
+        def toggle():
+            skipped = btn.isChecked()
+            icon.setText('<span style="color:#9aa2ab;">—</span>' if skipped
+                         else '<span style="color:#1f7a34;">✓</span>')
+            lab.setStyleSheet('font-size: 12.5px; color: %s;' % ('#9aa2ab' if skipped else '#1c2733'))
+        btn.clicked.connect(toggle)
+        hl.addWidget(icon, 0, Qt.AlignTop); hl.addWidget(lab, 1); hl.addWidget(btn, 0, Qt.AlignTop)
+        self.conf_rows.append({'cat': cat, 'btn': btn})
+        return row
 
     def _build_cleanup_content(self, edits, summaries):
         """The demoted cosmetic bucket (typography + house style). Text-edit rows are PAGINATED so even a
@@ -911,6 +971,7 @@ class MainWindow(QMainWindow):
         self._clear_body()
         self.judgment_rows = []
         self.edit_rows = []
+        self.conf_rows = []
         self.skip_all_cleanup = False
         edits = getattr(self, 'edits', [])
         log = list(self.conformer.log) if self.conformer else []
@@ -931,7 +992,21 @@ class MainWindow(QMainWindow):
                 'CONFORMANCE FIXES', f'{len(conformance)} structural',
                 content_widget=self._build_conformance_content(conformance), expanded=True))
 
-        # ── JUDGMENT CALLS (substantive, kept near the top) ──
+        # ── TEXT CLEANUP (demoted, collapsed, lazy + paginated) — typography + house style ──
+        # Placed ABOVE judgment calls (Alex): the decisions the user must make sit closest to Apply.
+        if edits or cosmetic_summaries:
+            self.body_layout.addWidget(self._collapsible(
+                'TEXT CLEANUP', f'{len(edits)} cosmetic edits (typography + house style)',
+                content_builder=lambda e=edits, s=cosmetic_summaries: self._build_cleanup_content(e, s)))
+
+        # ── FIGURE INTEGRITY (advisory) — reviewed alongside the judgment calls, before applying ──
+        audit = list(getattr(self.conformer, 'audit', []) or []) if self.conformer else []
+        if audit:
+            self.body_layout.addWidget(self._collapsible(
+                'FIGURE INTEGRITY', f'{len(audit)} to review',
+                content_widget=self._build_figure_integrity_content(audit), expanded=True))
+
+        # ── JUDGMENT CALLS (substantive) ──
         if self.judgment_calls:
             judge_sec = QLabel(f'JUDGMENT CALLS ({len(self.judgment_calls)})')
             judge_sec.setObjectName('sectionLabel')
@@ -946,15 +1021,30 @@ class MainWindow(QMainWindow):
             no_judge.setStyleSheet('font-size: 12px; color: #66707a; padding: 8px 0;')
             self.body_layout.addWidget(no_judge)
 
-        # ── TEXT CLEANUP (demoted, collapsed, lazy + paginated) — typography + house style ──
-        if edits or cosmetic_summaries:
-            self.body_layout.addWidget(self._collapsible(
-                'TEXT CLEANUP', f'{len(edits)} cosmetic edits (typography + house style)',
-                content_builder=lambda e=edits, s=cosmetic_summaries: self._build_cleanup_content(e, s)))
-
         self.body_layout.addStretch()
-        self.tally_bar.setVisible(bool(self.judgment_calls) or bool(edits))
+        self.tally_bar.setVisible(bool(self.judgment_calls) or bool(edits) or bool(self.conf_rows))
         self._update_tally()
+
+    def _build_figure_integrity_content(self, audit):
+        """Advisory figure-audit findings (numbering drift, captions vs the Table of Figures). These
+        don't change the output — they tell the expert what to check — so they're shown for review
+        before applying, not buried in the completed screen."""
+        w = QWidget()
+        v = QVBoxLayout(w); v.setContentsMargins(0, 4, 0, 8); v.setSpacing(4)
+        cap = QLabel('Advisory checks on figure/table numbering and captions — these do not change the '
+                     'document; review them and update the source if needed.')
+        cap.setWordWrap(True); cap.setStyleSheet('font-size: 11.5px; color: #66707a;')
+        v.addWidget(cap)
+        for a in audit:
+            if isinstance(a, (tuple, list)) and len(a) == 2:
+                lvl, msg = a; text = f'[{lvl}] {msg}'
+            else:
+                text = str(a)
+            line = QLabel('<span style="color:#b26a00;">▲</span>&nbsp;&nbsp;' + _esc_html(text))
+            line.setTextFormat(Qt.RichText); line.setWordWrap(True)
+            line.setStyleSheet('font-size: 12px; color: #1c2733; padding-left: 2px;')
+            v.addWidget(line)
+        return w
 
     def _build_complete_state(self, output_path, decisions_log, audit=None, fresh=None):
         self._clear_body()
@@ -1154,7 +1244,11 @@ class MainWindow(QMainWindow):
             )
             return
 
-        self._build_analyzing_state('CONFORMING')
+        self._build_analyzing_state(
+            'ANALYZING',
+            'Scanning your document to find every fix and flag the judgment calls to review. '
+            'Nothing is saved yet — you review before anything is written.',
+            is_apply=False)
         self.worker = AnalyzeWorker(self.template_path, self.input_path)
         self.worker.progress.connect(self._on_progress)
         self.worker.finished.connect(self._on_analysis_done)
@@ -1193,8 +1287,31 @@ class MainWindow(QMainWindow):
             for row in getattr(self, 'edit_rows', []):
                 if row.skipped:
                     decisions[row.decision_id()] = 'skip'
+        # skipped CONFORMANCE fix types (e.g. delete empty paragraphs) → not applied by the engine
+        for cr in getattr(self, 'conf_rows', []):
+            if cr['btn'].isChecked():
+                decisions['conf:' + cr['cat']] = 'skip'
 
-        self._build_analyzing_state('APPLYING & CONFORMING')
+        # Ask where to save and under what name (default: "<name> CONFORMED DDMMYY.docx"). Replace-in-
+        # place mode overwrites the original, so it needs no prompt.
+        self._chosen_output = None
+        if self.output_mode != 'replace':
+            src = self.input_path
+            name, ext = os.path.splitext(os.path.basename(src))
+            default = os.path.join(os.path.dirname(src),
+                                   f'{name} CONFORMED {datetime.datetime.now().strftime("%d%m%y")}{ext}')
+            path, _ = QFileDialog.getSaveFileName(self, 'Save conformed report', default,
+                                                  'Word Document (*.docx)')
+            if not path:
+                return   # user cancelled — do not conform
+            if not path.lower().endswith('.docx'):
+                path += '.docx'
+            self._chosen_output = path
+
+        self._build_analyzing_state(
+            'APPLYING & SAVING',
+            'Applying your decisions, preserving every tracked change, and writing the conformed copy.',
+            is_apply=True)
 
         self.apply_worker = ApplyWorker(self.conformer, decisions)
         self.apply_worker.progress.connect(self._on_progress)
@@ -1254,8 +1371,10 @@ class MainWindow(QMainWindow):
 
         if self.output_mode == 'replace':
             output_path = src
+        elif getattr(self, '_chosen_output', None):
+            output_path = self._chosen_output          # user-chosen location + filename
         else:
-            output_path = os.path.join(d, f'{name} (conformed){ext}')
+            output_path = os.path.join(d, f'{name} CONFORMED {datetime.datetime.now().strftime("%d%m%y")}{ext}')
 
         fresh.save(output_path)
 

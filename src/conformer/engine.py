@@ -286,8 +286,15 @@ class Conformer:
         j = i - 1
         while j >= 0 and not self.is_par(j): j -= 1
         return j
-    def say(self, kind, i, msg):
-        (self.judgment if kind == 'J' else self.log).append({'item': i, 'text': self.text(i)[:50] if 0 <= i < self.n() else '', 'msg': msg})
+    def say(self, kind, i, msg, cat=None):
+        (self.judgment if kind == 'J' else self.log).append(
+            {'item': i, 'text': self.text(i)[:50] if 0 <= i < self.n() else '', 'msg': msg, 'cat': cat})
+
+    def _skip(self, cat):
+        """True when the user chose to skip a whole conformance-fix category on Apply. During analyze
+        self.decisions is None, so every fix is shown; the skip only takes effect on the apply re-run."""
+        d = self.decisions
+        return bool(d) and d.get('conf:' + cat) == 'skip'
 
     def _jcall(self, kind, i, msg, recommended, alternatives=None):
         self._jcall_counter += 1
@@ -713,6 +720,8 @@ class Conformer:
                     break
 
     def fix_footnotes(self):
+        if self._skip('footnotes'):
+            return
         preserve = self.disposition == 'preserve'
         def fix(m):
             f = m.group(0)
@@ -731,7 +740,8 @@ class Conformer:
             f = re.sub(r'<w:rPr>(.*?)</w:rPr>', lambda r: '<w:rPr>' + ''.join(cx for t2, cx in children(r.group(1)) if t2 in ('rStyle', 'i', 'b')) + '</w:rPr>', f, flags=re.S)
             return f
         self.fn = re.sub(r'<w:footnote w:id="[1-9]\d*".*?</w:footnote>', fix, self.fn, flags=re.S)
-        self.say('M', -1, 'footnotes normalised (Footnote Text, tab after number, direct formatting removed)')
+        self.say('M', -1, 'footnotes normalised (Footnote Text, tab after number, direct formatting removed)',
+                 'footnotes')
 
     def rebuild_fields(self):
         bm_id = [900]
@@ -1123,17 +1133,19 @@ class Conformer:
         content is untouched. The empty-paragraph branch requires no text AND no drawing AND no break
         AND no field, so a paragraph whose only content is a COLUMN or LINE break (or a field) is left
         alone — only the page-break branch removes a break, and only a page break (CAP-1)."""
+        drop_breaks = not self._skip('page-breaks')
+        drop_empty = not self._skip('empty-paras')
         i = 0
         while i < self.n():
             x = self.item(i)
             if self.is_par(i) and not self._para_has_revision(i) and '<w:sectPr' not in x:
-                if re.fullmatch(r'<w:p\b[^>]*>(<w:pPr>.*?</w:pPr>)?<w:r>(<w:rPr>.*?</w:rPr>)?'
+                if drop_breaks and re.fullmatch(r'<w:p\b[^>]*>(<w:pPr>.*?</w:pPr>)?<w:r>(<w:rPr>.*?</w:rPr>)?'
                                 r'<w:br w:type="page"/></w:r></w:p>', x, re.S):
-                    del self.items[self.b0 + i]; self.say('M', i, 'removed manual page break'); continue
-                if (self.style(i) in (NUMBERED | {'Normal', 'ListParagraph'})
+                    del self.items[self.b0 + i]; self.say('M', i, 'removed manual page break', 'page-breaks'); continue
+                if (drop_empty and self.style(i) in (NUMBERED | {'Normal', 'ListParagraph'})
                         and not self.text(i).strip() and '<w:drawing>' not in x
                         and '<w:br' not in x and '<w:fldChar' not in x and '<w:object' not in x):
-                    del self.items[self.b0 + i]; self.say('M', i, 'deleted empty paragraph'); continue
+                    del self.items[self.b0 + i]; self.say('M', i, 'deleted empty paragraph', 'empty-paras'); continue
             i += 1
 
     _MARKER_RE = re.compile(r'<w:(ins|del|moveFrom|moveTo|pPrChange|rPrChange|commentRangeStart'
@@ -1153,6 +1165,8 @@ class Conformer:
         skipped if EITHER paragraph carries any tracked change, comment or bookmark, so it can never
         disturb reviewed content; the merged text is BUILT as exactly the house join (the authorized
         edit, nothing else), and the ledger backstops the whole pass."""
+        if self._skip('pdf-merge'):
+            return
         snap = self._snapshot()
         merged = 0
         i = 0
@@ -1167,7 +1181,7 @@ class Conformer:
                     self.set(i, head + f'<w:r><w:t xml:space="preserve">{esc(joined)}</w:t></w:r></w:p>')
                     del self.items[self.b0 + i + 1]
                     merged += 1
-                    self.say('M', i, 'merged PDF line-break split excerpt (authorized text edit)')
+                    self.say('M', i, 'merged PDF line-break split excerpt (authorized text edit)', 'pdf-merge')
                     continue
             i += 1
         if merged:
@@ -1202,6 +1216,8 @@ class Conformer:
         template's correct definition, and add template styles the document lacks. Keep doc-only
         styles so revised paragraphs still resolve, and never touch docDefaults/theme. This is
         styles.xml only — orthogonal to every tracked change in the body."""
+        if self._skip('styles-repair'):
+            return
         tmpl = {m.group(1): m.group(0) for m in
                 re.finditer(r'<w:style\b[^>]*w:styleId="([^"]+)".*?</w:style>', self.t_styles, re.S)}
         fixed = [0]
@@ -1226,7 +1242,8 @@ class Conformer:
         if addnum:
             self.num = self.num.replace('</w:numbering>', ''.join(addnum) + '</w:numbering>', 1)
         self.say('M', -1, f'preserve mode: repaired {fixed[0]} corrupt style definitions + added '
-                          f'{len(add)} missing styles / {len(addnum)} numbering defs (docDefaults untouched)')
+                          f'{len(add)} missing styles / {len(addnum)} numbering defs (docDefaults untouched)',
+                 'styles-repair')
 
     _CHANGE_RE = re.compile(
         r'<w:(tblPrChange|trPrChange|tcPrChange|pPrChange|rPrChange|sectPrChange|tblPrExChange'
@@ -1264,6 +1281,8 @@ class Conformer:
         (Claire's 'tables not using the table style' / 'settings not used'). Table-level properties
         only, and tracked-formatting snapshots are masked out first, so no cell content and no reject
         target is touched."""
+        if self._skip('tables'):
+            return
         cnt = 0
         for i in range(self.n()):
             x = self.item(i)
@@ -1305,7 +1324,7 @@ class Conformer:
             if nx != x:
                 self.set(i, nx); cnt += 1
         if cnt:
-            self.say('M', -1, f'preserve mode: {cnt} tables set to the LI table style')
+            self.say('M', -1, f'preserve mode: {cnt} tables set to the LI table style', 'tables')
 
     # ================================================================ interactive ASK structural
     # The five ASK structural changes (#3 unwrap wrapper table, #5 extract floating image, #6 split
