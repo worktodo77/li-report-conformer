@@ -102,6 +102,31 @@ earlier — listed for completeness).
 |---|---|---|
 | Body Times New Roman 12 pt; Headings Arial Black; Table 11 pt; Footnote 10 pt | not asserted; relies on styles + strips direct fonts | ⚠️ not verified end-to-end |
 
+## Deeper audit addendum (per-style + template)
+- **The bundled `template.dotx` is essentially CORRECT** — it already contains `GridTable4`/"LI Table" with
+  the teal header, and its `Heading1`/`NumberedParagraph`/`ListBullet` match the July-2026 template. The
+  table defect is 100% engine-side: `engine.py` injects a hardcoded navy `LITABLE` style and stamps
+  `tblStyle="LITable"`, and `tablespec.py`'s `HOUSE` verifies navy/white/grey — both **ignore the real teal
+  `GridTable4`** the template already carries. (styles.xml differs slightly overall — worth syncing to
+  July-2026, but the key styles already match.)
+- **Per-style spec is correct in the template and the engine repairs styles FROM the template** (overwrites
+  the doc's style def with the template's via `_keep_numpr`), so font/size/colour/spacing/indent END UP
+  correct **for any paragraph that uses the right style** — the gaps are (a) tables (forced to the wrong
+  style), (b) NO verification that a paragraph is on the correct style or that effective formatting matches,
+  and (c) numbering/reference correctness handled separately.
+- Exact per-style values now captured (for a future verifier): Heading1-6 Arial Black / navy 054F8A / numId
+  16 / line 300 exact / before-after 240 / per-level hanging indents (H2 left720, H3 1080, H4 1350, H5 1710,
+  H6 2070); Title Arial Black 13pt center; Title of Project Arial 11pt CAPS; NumberedParagraph 12pt black
+  justified numId 18 before/after 240 (= the blank line); NumberedParagraph L1-L4 numId 18 before 120 with
+  growing right indent; ListBullet 12pt justified numId 4 right-indent 360 (NO left indent = left-aligned);
+  List bullet as a sentence before/after 120 (= 6pt); Dash under a bullet numId 15; List bullet under a
+  numbered list numId 14; Excerpt or Quote 12pt italic justified indent left1080/right360; FootnoteText
+  10pt after 0 indent hanging 360; TableData 11pt center before/after 60; Table or Figure Subtitle 11pt
+  center after 120.
+- **Cross-references (§9):** cross-references must be Word FIELDS (auto-updating); there is a `Cross Reference`
+  character style. Engine has partial field rebuild — needs a check that cross-refs are fields, not static
+  text (one of Claire's items: "not always using cross references").
+
 ## Priority to fix (structural/formatting, in scope)
 1. **Tables**: adopt Grid Table 4 identity + teal header `B6DDE8`/accent5, black bold 10 pt header text,
    `auto` sz-4 borders; per-column alignment (category left / numbers right); subtitle handling. (Rewrite
