@@ -212,7 +212,7 @@ editorial (needs a human or the LLM editorial layer, not the deterministic confo
 | 14 | "since" vs "because" | 🈚 language |
 | 15 | "all of the" → "all the" | 🈚 language |
 | 16 | "man-hours" hyphen | 🈚 language |
-| 17 | id. / ibid. usage | 🈚 language |
+| 17 | **id. / ibid. usage** | ❌ IN SCOPE (deterministic) — the rule is form/locator consistency, not citation meaning: `Ibid. at X`→`Id. at X` (Ibid. never takes a pinpoint) and bare `Id.`→`Ibid.` (same exact location). Regex-level on footnote text; leaves `Id. at X` and bare `Ibid.` alone. Caveat: normalizes the FORM, does not verify the prior source is identical. |
 | 18 | Long International / LI naming convention | 🈚 language |
 | 19 | **`30"` → "30-inch" (except in excerpts/quotes)** | ⚠️ engine converts every `N"`→`N-inch` — but over-applies inside TABLES (prime marks allowed there per §8.2.2) and EXCERPTS (rule excludes them) |
 | 20 | Spell out an abbreviation on first use | 🈚 language |
@@ -235,7 +235,22 @@ editorial (needs a human or the LLM editorial layer, not the deterministic confo
 | 37 | Singular pronoun with singular subject | 🈚 language |
 | 38 | Avoid split infinitives | 🈚 language |
 
-**Section 10 summary:** ~32 of ~38 items are LANGUAGE/editorial (out of the deterministic conformer's scope
+### Reconsidered classification (I was too coarse — "language" was over-used)
+Several items I first tagged 🈚 actually have a deterministic core; they split into three tiers:
+- **Deterministic & safe (auto-fix):** #6 footnote end-period/blank-line, #8 double periods, #9 extra spaces,
+  #12 line spacing, **#17 id./ibid. form-vs-locator**, #22 date leading-zero. (Table centering #1 is
+  deterministic but layout-complex.)
+- **Deterministic-with-risk (better as FLAG-for-review than silent auto-fix, because of false positives):**
+  #16 "man hours"→"man-hours" (skip quotes), #28 possessive of an acronym ending in s (`ULS's`→`ULS'`),
+  #36 "in order to"→"to", #15 "all of the [noun]"→"all the", #5 colon-led list semicolon/"; and" punctuation
+  (list structure is detectable via the existing ListBullet vs List-bullet-as-a-sentence classification).
+- **Genuinely non-deterministic (needs meaning / the LLM editorial layer):** #3/#4 capitalize Report/Project,
+  #13 below., #14 since/because, #10/#20 acronym-first-use, #21 past tense, #24 attachment vs exhibit,
+  #25/#26 bullet capitalization & list punctuation intent, #29 plural-vs-possessive of an acronym, #30 which/
+  that, #31 who, #32 ambiguous pronouns, #33 farther/further, #34 "this"+noun, #35 company-singular, #37
+  singular-pronoun, #38 split infinitives.
+
+**Section 10 summary:** ~20 of ~38 items are truly LANGUAGE/editorial (out of the deterministic conformer's scope
 — these belong to the planned LLM editorial layer or human review). The DETERMINISTIC, in-scope items the
 engine could add are only: **#1 table/figure centering-indent, #6 footnote end-period + trailing-blank-line,
 #8 double periods, #9 extra spaces, #12 line spacing**, plus tightening **#19** ("N-inch" must skip tables
