@@ -217,6 +217,71 @@ RECOMMENDED = NUMBERED | LISTS | HEADINGS | {'BodyText','Caption','ExcerptorQuot
 ALLOWED_PPR = {'pStyle','rPr','sectPr','keepNext','keepLines'}
 ALLOWED_PPR_BY_STYLE = {'Caption':{'jc'},'TableData':{'jc'},'BodyText':{'ind'},'SpacebehindafteraGraphic':{'jc'},'Heading1':{'pageBreakBefore','spacing'}}
 ALLOWED_RPR = {'rStyle','b','bCs','i','iCs','vanish','noProof','lang'}
+# Property-specific direct run-formatting policy (replaces blanket whitelist stripping). MEANING-BEARING
+# formatting (super/subscript, strike, hidden) and REVIEW formatting (highlight, meaningful colour) are
+# PRESERVED; only house-controlled appearance (font family, size, spacing, underline, caps, position, …)
+# is normalised to the paragraph style. Preserving these needs NO gate change — the content-stream gate is
+# formatting-blind — so the effect is purely to stop destroying formatting that carries meaning.
+KEEP_RPR = {'rStyle', 'b', 'bCs', 'i', 'iCs',       # character style / emphasis
+            'vertAlign',                            # super/subscript — H2S, ordinals (meaning)
+            'strike', 'dstrike',                    # strike-through (meaning)
+            'vanish', 'specVanish',                 # hidden text (meaning)
+            'highlight',                            # review highlight (meaning)
+            'noProof', 'lang'}                      # proofing / locale (harmless, carried)
+# NOTE colour is handled separately (keep_rpr_children's keep_color): meaningful colour preservation with
+# the style-redundancy + conflict-report refinement is a focused follow-up, since it changes output on
+# real reports (e.g. coloured headings). Until then colour follows the prior rule (kept for TableData
+# header runs, normalised elsewhere) so the golden reference stays valid.
+_SYMBOL_FONTS = {'Symbol', 'Wingdings', 'Wingdings 2', 'Wingdings 3', 'Webdings', 'Cambria Math', 'MT Extra'}
+
+
+_DEFAULT_COLORS = {'000000', 'auto', 'windowtext', 'black'}
+_DEFAULT_THEME = {'text1', 'dark1', 'windowtext'}
+
+
+def _keep_rfonts(cx):
+    """Keep an rFonts only when it carries a symbol/math font or a complex-script glyph (its font choice
+    IS the glyph — stripping it corrupts the character). Ordinary body fonts are normalised to the style."""
+    if 'w:hint="cs"' in cx or 'w:hint="eastAsia"' in cx:
+        return True
+    return any(m.group(1) in _SYMBOL_FONTS
+               for m in re.finditer(r'w:(?:ascii|hAnsi|cs)="([^"]+)"', cx))
+
+
+def _keep_color(cx):
+    """Keep a run colour only when it is MEANINGFUL — genuinely coloured text a reviewer should see.
+    Default black/auto (incl. themeColor text1) is the house appearance and is normalised away."""
+    val = re.search(r'w:val="([^"]+)"', cx)
+    theme = re.search(r'w:themeColor="([^"]+)"', cx)
+    v = val.group(1).lower() if val else None
+    if v and v not in _DEFAULT_COLORS:
+        return True                                   # an explicit non-black colour is meaningful
+    if v in _DEFAULT_COLORS or v is None:
+        # black/auto (optionally with a text theme) → default appearance, drop it
+        if theme is None or theme.group(1).lower() in _DEFAULT_THEME:
+            return False
+    return True
+
+
+def keep_rpr_children(rpr_inner, is_fnref=False, keep_color=False):
+    """Filter a run's rPr children by the property policy: keep meaning-bearing/review properties and
+    symbol fonts, drop house-controlled appearance. Shared by strip_direct and fix_footnotes so the H2S
+    subscript, ordinal superscripts and highlights survive in body text AND footnotes alike.
+
+    `keep_color`: keep the colour child (used for TableData header runs, whose white text is house). The
+    broader 'preserve meaningful colour everywhere + report conflicts' rule is a focused follow-up."""
+    kept = []
+    for tag, cx in children(rpr_inner):
+        if tag == 'color':
+            if keep_color:
+                kept.append(cx)
+        elif tag in KEEP_RPR:
+            if tag in ('i', 'iCs') and is_fnref:      # the in-text footnote reference stays upright
+                continue
+            kept.append(cx)
+        elif tag == 'rFonts' and _keep_rfonts(cx):
+            kept.append(cx)
+    return kept
 LITABLE = ('<w:style w:type="table" w:customStyle="1" w:styleId="LITable"><w:name w:val="LI Table"/><w:basedOn w:val="TableNormal"/><w:uiPriority w:val="1"/><w:qFormat/>'
   '<w:pPr><w:spacing w:before="60" w:after="60" w:line="240" w:lineRule="auto"/><w:jc w:val="center"/></w:pPr><w:rPr><w:color w:val="000000"/><w:sz w:val="22"/><w:szCs w:val="22"/></w:rPr>'
   '<w:tblPr><w:jc w:val="center"/><w:tblBorders><w:top w:val="single" w:sz="4" w:space="0" w:color="808080"/><w:left w:val="single" w:sz="4" w:space="0" w:color="808080"/><w:bottom w:val="single" w:sz="4" w:space="0" w:color="808080"/><w:right w:val="single" w:sz="4" w:space="0" w:color="808080"/><w:insideH w:val="single" w:sz="4" w:space="0" w:color="808080"/><w:insideV w:val="single" w:sz="4" w:space="0" w:color="808080"/></w:tblBorders><w:tblCellMar><w:left w:w="72" w:type="dxa"/><w:right w:w="72" w:type="dxa"/></w:tblCellMar></w:tblPr>'
@@ -523,12 +588,8 @@ class Conformer:
             def fixrun(rm):
                 r = rm.group(0); rp = re.search(r'<w:rPr>(.*?)</w:rPr>', r, re.S)
                 if not rp: return r
-                kept = []
-                for tag, cx in children(rp.group(1)):
-                    if tag in ALLOWED_RPR:
-                        if tag in ('i', 'iCs') and 'FootnoteReference' in rp.group(1): continue
-                        kept.append(cx)
-                    elif tag == 'color' and st == 'TableData': kept.append(cx)
+                kept = keep_rpr_children(rp.group(1), is_fnref='FootnoteReference' in rp.group(1),
+                                         keep_color=(st == 'TableData'))
                 return r.replace(rp.group(0), '<w:rPr>' + ''.join(kept) + '</w:rPr>' if kept else '', 1)
             x = re.sub(r'<w:r\b[^>]*>.*?</w:r>', fixrun, x, flags=re.S)
             if not preserve:   # these change the content stream (tab tokens / nbsp text)
@@ -741,7 +802,11 @@ class Conformer:
                 # content-stream gate stays green and footnote FORMATTING still gets fixed.
                 f = re.sub(r'(<w:footnoteRef/></w:r>)<w:r>(?:<w:rPr>.*?</w:rPr>)?<w:t xml:space="preserve"> +</w:t></w:r>', r'\1<w:r><w:tab/></w:r>', f, flags=re.S)
                 if '<w:footnoteRef/></w:r><w:r><w:tab/>' not in f: f = f.replace('<w:footnoteRef/></w:r>', '<w:footnoteRef/></w:r><w:r><w:tab/></w:r>', 1)
-            f = re.sub(r'<w:rPr>(.*?)</w:rPr>', lambda r: '<w:rPr>' + ''.join(cx for t2, cx in children(r.group(1)) if t2 in ('rStyle', 'i', 'b')) + '</w:rPr>', f, flags=re.S)
+            # Property policy: normalise house-controlled appearance but PRESERVE meaning-bearing/review
+            # formatting so a subscript (e.g. H2S), an ordinal superscript or a highlight in a footnote
+            # survives — matching the body-text policy via the shared filter.
+            f = re.sub(r'<w:rPr>(.*?)</w:rPr>',
+                       lambda r: '<w:rPr>' + ''.join(keep_rpr_children(r.group(1))) + '</w:rPr>', f, flags=re.S)
             return f
         self.fn = re.sub(r'<w:footnote w:id="[1-9]\d*".*?</w:footnote>', fix, self.fn, flags=re.S)
         self.say('M', -1, 'footnotes normalised (Footnote Text, tab after number, direct formatting removed)',
