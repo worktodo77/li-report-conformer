@@ -127,6 +127,25 @@ earlier — listed for completeness).
   character style. Engine has partial field rebuild — needs a check that cross-refs are fields, not static
   text (one of Claire's items: "not always using cross references").
 
+## Concrete scan of the real Warhoe report (what's actually non-conformant)
+- **Tables (333) — the dominant, systemic defect.** NONE use the house `GridTable4`/"LI Table": 265 have
+  NO table style at all, 56 use built-in `TableGrid`, 12 use the wrong navy `LITable`. The conformer makes
+  it WORSE by stamping navy `LITable` + white text instead of applying `GridTable4` (teal/black). Data-column
+  alignment is author-centered (a deviation), and the guideline wants category-left / number-right — the
+  engine forces center either way.
+- **Font sizes:** thousands of non-house sizes (sz 21/17/18/19 = 10.5/8.5/9/9.5 pt), overwhelmingly in
+  tables; the house set is 24/22/20. `strip_direct` removes direct sizes on body paragraphs (→ style's
+  12 pt), which is correct; table text sizes are handled only partially and the header should be 10 pt.
+- **Paragraph styles are mostly house-correct** — only `FrameContents` (12) is non-house. So per-paragraph
+  reclassification is a small job; the author used the template styles.
+- **Bullets are mostly correct** — of 218 `ListBullet` paragraphs, only 1 has a stray left indent (guideline:
+  no left indent); `strip_direct` would remove it.
+- **Cross-references are already fields** — 539 `REF _Ref…` + 371 `STYLEREF`. Good; verify none are static.
+- **Bottom line:** the one large, systemic non-conformance in a real report is TABLES (wrong style identity,
+  colours, text, borders, sizes, alignment). Most other formatting is already conformed by style-repair +
+  direct-format stripping, or already correct in the source. Fixing tables to the real `GridTable4`/"LI
+  Table" spec is the highest-leverage change.
+
 ## Priority to fix (structural/formatting, in scope)
 1. **Tables**: adopt Grid Table 4 identity + teal header `B6DDE8`/accent5, black bold 10 pt header text,
    `auto` sz-4 borders; per-column alignment (category left / numbers right); subtitle handling. (Rewrite
