@@ -188,6 +188,53 @@ def test_r1_dysfunctional_bullet_repaired_numbered_unchanged():
     assert g1.effective_format(*g1.style_numpr('NumberedParagraph')) == 'decimal'   # numbered stays numbered
 
 
+# ---------------------------------------------------------------- R3: enforcing, complete verification
+_R3_BASE = (f'<w:numbering {W}><w:abstractNum w:abstractNumId="40"><w:lvl w:ilvl="0">'
+            '<w:start w:val="1"/><w:numFmt w:val="decimal"/><w:lvlText w:val="%1."/></w:lvl>'
+            '<w:lvl w:ilvl="1"><w:start w:val="1"/><w:numFmt w:val="lowerLetter"/><w:lvlText w:val="%2)"/></w:lvl>'
+            '</w:abstractNum><w:num w:numId="7"><w:abstractNumId w:val="40"/></w:num></w:numbering>')
+_R3_STY = f'<w:styles {W}></w:styles>'
+
+
+def test_r3_definition_integrity_catches_documented_mutations():
+    from conformer.engine import Conformer
+    mutations = {
+        'removed': lambda x: x.replace('<w:num w:numId="7"><w:abstractNumId w:val="40"/></w:num>', ''),
+        'start 1->9': lambda x: x.replace('<w:start w:val="1"/><w:numFmt w:val="decimal"/>',
+                                          '<w:start w:val="9"/><w:numFmt w:val="decimal"/>'),
+        'label %1.->Article %1:': lambda x: x.replace('%1.', 'Article %1:'),
+        'deep level (ilvl 1) fmt': lambda x: x.replace('lowerLetter', 'bullet'),
+    }
+    for name, mut in mutations.items():
+        c = Conformer.__new__(Conformer)
+        c._orig_num0 = _R3_BASE; c._orig_styles0 = _R3_STY
+        c.num = mut(_R3_BASE); c.styles = _R3_STY
+        viol = c.definition_integrity_report()
+        assert viol, f'mutation not caught: {name}'
+
+
+def test_r3_unchanged_definition_is_clean():
+    from conformer.engine import Conformer
+    c = Conformer.__new__(Conformer)
+    c._orig_num0 = _R3_BASE; c._orig_styles0 = _R3_STY
+    c.num = _R3_BASE; c.styles = _R3_STY
+    assert c.definition_integrity_report() == []
+
+
+def test_r3_conformance_clean_gate_reflects_issues():
+    from conformer.engine import Conformer
+    c = Conformer.__new__(Conformer)
+    empty = {'numbering_flips': [], 'definition_integrity_violations': [], 'tables_failing_effective_format': []}
+    empty_u = {'rolled_back_passes': [], 'tables_needing_review': [], 'tables_unresolved': []}
+    c.outcome_report = lambda: {'conformance': empty, 'unresolved': empty_u}
+    assert c.conformance_clean() is True
+    for bad in ('numbering_flips', 'definition_integrity_violations', 'tables_failing_effective_format'):
+        c.outcome_report = lambda b=bad: {'conformance': {**empty, b: [{'x': 1}]}, 'unresolved': empty_u}
+        assert c.conformance_clean() is False, bad
+    c.outcome_report = lambda: {'conformance': empty, 'unresolved': {**empty_u, 'tables_unresolved': [{'x': 1}]}}
+    assert c.conformance_clean() is False   # an unresolved table is never clean
+
+
 # ---------------------------------------------------------------- R7: highlight decision honesty
 def test_r7_per_item_keep_survives_remove_all():
     import os as _os

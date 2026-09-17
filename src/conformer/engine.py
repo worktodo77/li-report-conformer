@@ -1609,13 +1609,35 @@ class Conformer:
         before = NumberingGraph(self._orig_num0, self._orig_styles0)
         after = NumberingGraph(self.num, self.styles)
         viol = []
+        _keys = ('numFmt', 'lvlText', 'start', 'isLgl')
         for nid in before.nums:
-            for ilvl in ('0', '1', '2'):
-                bf = before.effective_format(nid, ilvl)
-                af = after.effective_format(nid, ilvl)
-                if bf and af and bf != af:
-                    viol.append({'numId': nid, 'ilvl': ilvl, 'before': bf, 'after': af})
+            aid = before.abstract_of(nid)
+            levels = set((before.abstract.get(aid, {}) or {}).get('levels', {}) or {})
+            levels |= set((before.nums[nid].get('overrides') or {}))
+            levels |= {'0'}
+            for ilvl in levels:
+                b = before.resolve_level(nid, ilvl)
+                if b is None:
+                    continue
+                a = after.resolve_level(nid, ilvl)
+                if a is None:
+                    viol.append({'numId': nid, 'ilvl': ilvl, 'issue': 'definition removed or unresolvable'})
+                elif tuple(b.get(k) for k in _keys) != tuple(a.get(k) for k in _keys):
+                    viol.append({'numId': nid, 'ilvl': ilvl, 'issue': 'definition meaning changed',
+                                 'before': {k: b.get(k) for k in _keys}, 'after': {k: a.get(k) for k in _keys}})
         return viol
+
+    def conformance_clean(self):
+        """Enforcing conformance verdict: True ONLY when there are no unintended numbering flips, no
+        definition-integrity violations, no tables failing effective formatting, and nothing unresolved.
+        A partial/unresolved result is NOT clean — the callers (audit + UI) gate the 'conforms' claim on
+        this rather than on ZIP/XML validity."""
+        rep = self.outcome_report()
+        conf, unres = rep['conformance'], rep['unresolved']
+        return not (conf['numbering_flips'] or conf['definition_integrity_violations']
+                    or conf['tables_failing_effective_format']
+                    or unres['rolled_back_passes'] or unres['tables_needing_review']
+                    or unres.get('tables_unresolved'))
 
     def outcome_report(self):
         """The three outcomes reported SEPARATELY (a clean preservation result never stands in for
