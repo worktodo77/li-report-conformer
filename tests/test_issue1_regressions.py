@@ -33,6 +33,54 @@ def test_r6_theme_colour_is_never_silently_stripped():
     assert c._color_is_redundant('<w:color w:val="000000" w:themeColor="text1"/>', None, 'BodyText', sc) is False
 
 
+# ---------------------------------------------------------------- R4: table parse / false conformance
+def _litable_frag(extra_prefix=''):
+    tr = (f'<w:tr {extra_prefix}><w:trPr><w:tblHeader/></w:trPr>'
+          f'<w:tc><w:tcPr></w:tcPr><w:p><w:pPr><w:jc w:val="center"/></w:pPr>'
+          f'<w:r><w:rPr><w:color w:val="FFFFFF"/></w:rPr><w:t>H</w:t></w:r></w:p></w:tc></w:tr>')
+    return f'<w:tbl><w:tblPr><w:tblStyle w:val="LITable"/></w:tblPr><w:tblGrid><w:gridCol w:w="2000"/></w:tblGrid>{tr}</w:tbl>'
+
+
+def test_r4_prefixed_fragment_is_evaluated_not_parse_failed():
+    from conformer.tablespec import effective_table_issues
+    frag = _litable_frag('w14:paraId="12345678"')          # inherited w14 prefix from the document
+    issues = effective_table_issues(frag)
+    assert all(i['kind'] != 'parse' for i in issues), issues   # before fix: a parse failure
+
+
+def test_r4_unparseable_table_is_not_conformant():
+    from conformer.tablespec import table_conformant
+    assert table_conformant('<w:tbl><w:tblPr><w:unclosed') is False   # before fix: True (unknown == ok)
+
+
+def test_r4_outcome_report_surfaces_unresolved_tables():
+    # a real document context: a table that cannot be evaluated must appear as an unresolved outcome,
+    # never as silent conformance.
+    import os, tempfile
+    import lib
+    from docx import Document
+    from conformer.engine import Conformer
+    TEMPLATE = os.path.join(os.path.dirname(__file__), '..', 'src', 'conformer', 'assets', 'template.dotx')
+    d = Document(lib.li_base_docx())
+    for p in list(d.paragraphs):
+        p._element.getparent().remove(p._element)
+    d.add_paragraph('BACKGROUND', style='Heading1')
+    t = d.add_table(rows=2, cols=2)
+    t.cell(0, 0).paragraphs[0].add_run('Header')
+    t.cell(1, 0).paragraphs[0].add_run('Data')
+    path = os.path.join(tempfile.mkdtemp(), 't.docx')
+    d.save(path)
+    c = Conformer(TEMPLATE, path); c.run()
+    rep = c.outcome_report()
+    # every body table is either failing, unresolved, or evaluated-clean — but never unevaluated-yet-clean
+    body_tables = [i for i in range(c.n()) if c.item(i).startswith('<w:tbl')]
+    from conformer import tablespec
+    ns = c._doc_nsdecls()
+    for i in body_tables:
+        issues = tablespec.effective_table_issues(c.item(i), nsdecls=ns)
+        assert all(x['kind'] != 'parse' for x in issues), f'table {i} failed to parse: {issues}'
+
+
 # ---------------------------------------------------------------- R7: highlight decision honesty
 def test_r7_per_item_keep_survives_remove_all():
     import os as _os

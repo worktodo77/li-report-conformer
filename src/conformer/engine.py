@@ -1542,20 +1542,49 @@ class Conformer:
                         'comments': s.get('comments', 0), 'authors': len(s.get('authors', []) or [])}
 
         from conformer import tablespec
-        table_fails = []
+        ns = self._doc_nsdecls()
+        table_fails, table_unresolved, table_review = [], [], []
         for i in range(self.n()):
             it = self.item(i)
-            if it.startswith('<w:tbl'):
-                fails = [x for x in tablespec.effective_table_issues(it) if x['severity'] == 'fail']
-                if fails:
-                    table_fails.append({'item': i, 'issues': fails})
+            if not it.startswith('<w:tbl'):
+                continue
+            loc = self._locator(i)
+            issues = tablespec.effective_table_issues(it, nsdecls=ns)
+            f = [x for x in issues if x['severity'] == 'fail']
+            u = [x for x in issues if x['severity'] == 'unresolved']
+            rv = [x for x in issues if x['severity'] == 'review']
+            if f:
+                table_fails.append({'item': i, 'locator': loc, 'issues': f})
+            if u:
+                table_unresolved.append({'item': i, 'locator': loc, 'issues': u})
+            if rv:
+                table_review.append({'item': i, 'locator': loc, 'issues': rv})
         conformance = {'numbering_flips': self.numbering_report(),
                        'definition_integrity_violations': self.definition_integrity_report(),
-                       'tables_failing_effective_format': table_fails}
+                       'tables_failing_effective_format': table_fails,
+                       'tables_review': table_review}
 
         unresolved = {'rolled_back_passes': list(getattr(self, 'exceptions', []) or []),
-                      'tables_needing_review': list(getattr(self, '_table_notes', []) or [])}
+                      'tables_needing_review': list(getattr(self, '_table_notes', []) or []),
+                      'tables_unresolved': table_unresolved}
         return {'preservation': preservation, 'conformance': conformance, 'unresolved': unresolved}
+
+    def _doc_nsdecls(self):
+        """The document root's namespace declarations, so a table fragment with inherited prefixes
+        (w14, r, drawing, …) parses in its real namespace context rather than failing."""
+        m = re.search(r'<w:document\b([^>]*)>', self.head)
+        if not m:
+            return None
+        return ' '.join(re.findall(r'xmlns(?::[\w-]+)?="[^"]+"', m.group(1))) or None
+
+    def _locator(self, i):
+        """A stable, human locator for a body item: nearest preceding Heading1/2 text + paragraph index."""
+        sec = ''
+        for j in range(i, -1, -1):
+            if self.is_par(j) and self.style(j) in ('Heading1', 'Heading2'):
+                sec = (self.text(j) or '').strip()[:50]
+                break
+        return f'{sec} · ¶{i + 1}' if sec else f'¶{i + 1}'
 
     _CHANGE_RE = re.compile(
         r'<w:(tblPrChange|trPrChange|tcPrChange|pPrChange|rPrChange|sectPrChange|tblPrExChange'

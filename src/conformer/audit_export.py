@@ -180,10 +180,10 @@ def build_records(fresh, source_path, output_path, decisions_log=None,
                            if not (n_flip or n_integ or n_tblfail)
                            else f'ISSUES — {n_flip} list-meaning flip(s), {n_integ} definition-integrity '
                                 f'violation(s), {n_tblfail} table(s) failing effective format')
-    n_unres_tbl = len(unres.get('tables_needing_review', []) or [])
+    n_unres_tbl = len(unres.get('tables_needing_review', []) or []) + len(unres.get('tables_unresolved', []) or [])
     n_rolled = len(unres.get('rolled_back_passes', []) or [])
     unresolved_verdict = ('None' if not (n_unres_tbl or n_rolled)
-                          else f'{n_rolled} pass(es) rolled back, {n_unres_tbl} table(s) need independent review')
+                          else f'{n_rolled} pass(es) rolled back, {n_unres_tbl} table(s) unresolved / need independent review')
     summary = {
         'source_name': os.path.basename(source_path),
         'source_sha256': source_sha or _sha256(source_path),

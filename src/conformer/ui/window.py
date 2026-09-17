@@ -1193,7 +1193,7 @@ class MainWindow(QMainWindow):
                 nflip = len(conf.get('numbering_flips', []) or [])
                 ninteg = len(conf.get('definition_integrity_violations', []) or [])
                 ntbl = len(conf.get('tables_failing_effective_format', []) or [])
-                nrev = len(unres.get('tables_needing_review', []) or [])
+                nrev = len(unres.get('tables_needing_review', []) or []) + len(unres.get('tables_unresolved', []) or [])
                 nroll = len(unres.get('rolled_back_passes', []) or [])
                 oc = QFrame(); oc.setObjectName('card')
                 ol = QVBoxLayout(oc)

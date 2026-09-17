@@ -22,6 +22,29 @@ HOUSE = {
 }
 _DEFAULT_SHD = {'auto', 'clear', None, ''}   # non-fills that don't override the house appearance
 
+# The document's namespace prefixes so a table FRAGMENT (which inherits them from the root) still parses.
+# outcome_report passes the real document's declarations; this is a comprehensive fallback.
+_NSDECLS = (
+    'xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" '
+    'xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006" '
+    'xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" '
+    'xmlns:w14="http://schemas.microsoft.com/office/word/2010/wordml" '
+    'xmlns:w15="http://schemas.microsoft.com/office/word/2012/wordml" '
+    'xmlns:w16="http://schemas.microsoft.com/office/word/2018/wordml" '
+    'xmlns:w16cid="http://schemas.microsoft.com/office/word/2016/wordml/cid" '
+    'xmlns:w16se="http://schemas.microsoft.com/office/word/2015/wordml/symex" '
+    'xmlns:wp="http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing" '
+    'xmlns:wps="http://schemas.microsoft.com/office/word/2010/wordprocessingShape" '
+    'xmlns:wpg="http://schemas.microsoft.com/office/word/2010/wordprocessingGroup" '
+    'xmlns:wp14="http://schemas.microsoft.com/office/word/2010/wordprocessingDrawing" '
+    'xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" '
+    'xmlns:pic="http://schemas.openxmlformats.org/drawingml/2006/picture" '
+    'xmlns:m="http://schemas.openxmlformats.org/officeDocument/2006/math" '
+    'xmlns:v="urn:schemas-microsoft-com:vml" '
+    'xmlns:o="urn:schemas-microsoft-com:office:office" '
+    'xmlns:w10="urn:schemas-microsoft-com:office:word"'
+)
+
 
 def _w(t):
     return '{%s}%s' % (W, t)
@@ -34,11 +57,12 @@ def _val(el, tag, attr='val'):
     return c.get(_w(attr)) if c is not None else None
 
 
-def _parse(tbl_xml):
-    """Parse a single <w:tbl> fragment (wrapping it so namespaces resolve). Returns the element or None."""
+def _parse(tbl_xml, nsdecls=None):
+    """Parse a single <w:tbl> fragment. It inherits the document's namespace prefixes (w14, r, drawing,
+    …), so those declarations must be supplied or the fragment fails to parse. Returns the element or
+    None; None must be treated as UNRESOLVED, never as conformant."""
     try:
-        root = ET.fromstring(f'<root xmlns:w="{W}" xmlns:mc="http://schemas.openxmlformats.org/'
-                             f'markup-compatibility/2006">{tbl_xml}</root>')
+        root = ET.fromstring(f'<root {nsdecls or _NSDECLS}>{tbl_xml}</root>')
     except ET.ParseError:
         return None
     return root.find(_w('tbl'))
@@ -49,12 +73,13 @@ def _direct_rows(tbl):
     return tbl.findall(_w('tr'))
 
 
-def effective_table_issues(tbl_xml):
+def effective_table_issues(tbl_xml, nsdecls=None):
     """Resolve a table's effective formatting and report where DIRECT overrides defeat the house
     appearance. Each issue: {'kind', 'detail', 'severity'} where severity 'fail' = the house appearance
     is not achieved, 'review' = a meaningful deviation to surface (e.g. subtotal shading), 'unresolved' =
-    a construct the engine cannot reliably conform (reported, not silently claimed conformant)."""
-    tbl = _parse(tbl_xml)
+    a construct the engine cannot reliably conform (reported, not silently claimed conformant).
+    `nsdecls` = the document's namespace declarations so a fragment with inherited prefixes parses."""
+    tbl = _parse(tbl_xml, nsdecls)
     if tbl is None:
         return [{'kind': 'parse', 'detail': 'table did not parse', 'severity': 'unresolved'}]
     issues = []
@@ -114,6 +139,9 @@ def effective_table_issues(tbl_xml):
     return issues
 
 
-def table_conformant(tbl_xml):
-    """True when no 'fail' issue remains (review/unresolved may still be present and are surfaced)."""
-    return not any(i['severity'] == 'fail' for i in effective_table_issues(tbl_xml))
+def table_conformant(tbl_xml, nsdecls=None):
+    """True ONLY when the table was evaluated and no 'fail' or 'unresolved' issue remains. An
+    unevaluated/unparsed table is NOT conformant — unknown never counts as conformant. ('review' issues
+    are surfaced but do not by themselves fail conformance.)"""
+    issues = effective_table_issues(tbl_xml, nsdecls)
+    return not any(i['severity'] in ('fail', 'unresolved') for i in issues)
