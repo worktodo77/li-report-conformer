@@ -468,3 +468,37 @@ def test_imported_definitions_keep_abstractnums_before_nums():
     # and every num still resolves (no dangling references)
     g = NumberingGraph(out, c.styles)
     assert g.resolve_style('NumberedParagraph').resolved
+
+
+# =================================================================== dysfunctional bullet restore (Claire)
+def test_restore_suppressed_bullet_on_house_bullet_style():
+    # A paragraph styled as a house bullet (ListBullet) whose bullet is cancelled by an explicit numId=0
+    # is restored (the numId=0 override removed) so the style's bullet renders. NumberedParagraph (a
+    # NUMBER style) with numId=0 is NOT touched (that may be an intentional un-numbered continuation).
+    from conformer.engine import Conformer
+    from conformer.numbering import NumberingGraph
+    num = (f'<w:numbering {W}><w:abstractNum w:abstractNumId="40"><w:lvl w:ilvl="0">'
+           '<w:numFmt w:val="bullet"/><w:lvlText w:val="o"/></w:lvl></w:abstractNum>'
+           '<w:abstractNum w:abstractNumId="41"><w:lvl w:ilvl="0"><w:numFmt w:val="decimal"/>'
+           '<w:lvlText w:val="%1."/></w:lvl></w:abstractNum>'
+           '<w:num w:numId="7"><w:abstractNumId w:val="40"/></w:num>'
+           '<w:num w:numId="8"><w:abstractNumId w:val="41"/></w:num></w:numbering>')
+    sty = (f'<w:styles {W}>'
+           '<w:style w:type="paragraph" w:styleId="ListBullet"><w:name w:val="ListBullet"/>'
+           '<w:pPr><w:numPr><w:ilvl w:val="0"/><w:numId w:val="7"/></w:numPr></w:pPr></w:style>'
+           '<w:style w:type="paragraph" w:styleId="NumberedParagraph"><w:name w:val="NumberedParagraph"/>'
+           '<w:pPr><w:numPr><w:ilvl w:val="0"/><w:numId w:val="8"/></w:numPr></w:pPr></w:style></w:styles>')
+    bullet_p = ('<w:p w14:paraId="AAAA"><w:pPr><w:pStyle w:val="ListBullet"/>'
+                '<w:numPr><w:numId w:val="0"/></w:numPr></w:pPr><w:r><w:t>Carioca MV30</w:t></w:r></w:p>')
+    num_p = ('<w:p w14:paraId="BBBB"><w:pPr><w:pStyle w:val="NumberedParagraph"/>'
+             '<w:numPr><w:numId w:val="0"/></w:numPr></w:pPr><w:r><w:t>continuation line</w:t></w:r></w:p>')
+    c = Conformer.__new__(Conformer)
+    c.num = num; c.styles = sty; c.items = [bullet_p, num_p]; c.b0 = 0
+    c.disposition = 'preserve'; c.say = lambda *a, **k: None; c._bullet_restored = {}
+    assert NumberingGraph(num, sty).resolve_paragraph('0', None, 'ListBullet').state == 'none'   # suppressed
+    c._restore_suppressed_bullets()
+    assert 'w:numId w:val="0"' not in c.items[0], 'bullet suppression not removed'
+    assert 'w:numId w:val="0"' in c.items[1], 'a numbered-style continuation must be left untouched'
+    assert c._bullet_restored.get('AAAA') == 'ListBullet'
+    g = NumberingGraph(num, sty)
+    assert g.resolve_paragraph(None, None, 'ListBullet').resolved       # now renders the house bullet

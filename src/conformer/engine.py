@@ -320,6 +320,7 @@ class Conformer:
         self._house_repaired = {}    # styleId -> (before_fmt, after_fmt) for INTENDED house list repairs
         self._unresolved_imports = []  # template numIds whose numbering chain could not be resolved
         self._restyled = {}          # paragraph identity -> engine-assigned style (authorized reclassification)
+        self._bullet_restored = {}   # paragraph identity -> style (numId 0 suppression removed to restore bullet)
         self._gen = 0                # mutation generation; a save verdict is tied to the gen it was computed at
         self._save_verdict = 'unset'; self._save_forced_review = False; self._save_gen = -1
         self.pending_judgments = []
@@ -625,6 +626,46 @@ class Conformer:
             return dnpr.group(0)                          # category flip -> keep the functioning direct list
         return None                                      # same category -> normalize to the style
 
+    def _restore_suppressed_bullets(self):
+        """Restore bullets on paragraphs styled as a house BULLET style whose bullet is CANCELLED by an
+        explicit direct numId=0 (Claire's 'dysfunctional List Bullet' — e.g. a bulletized vessel list that
+        renders as plain indented text). The style says 'bullet list item' but the numId=0 override
+        suppresses it; strip that override so the style's bullet renders. Recorded for audited, authorized
+        verification (`_bullet_restored`), never silent. A numPr that is a tracked change is left for review."""
+        from conformer.numbering import NumberingGraph
+        graph = NumberingGraph(self.num, self.styles)
+        self._bullet_restored = getattr(self, '_bullet_restored', {})
+        preserve = self.disposition == 'preserve'
+        n = 0
+        for i in range(self.n()):
+            if not self.is_par(i):
+                continue
+            x = self.item(i)
+            st = self.style(i)
+            sr = graph.resolve_style(st)
+            if not (sr.resolved and (sr.level or {}).get('numFmt') == 'bullet'):
+                continue                                  # style is not a functioning house bullet
+            ppr = re.search(r'<w:pPr>.*?</w:pPr>', x, re.S)
+            cur = re.sub(r'<w:pPrChange\b.*?</w:pPrChange>', '', ppr.group(0), flags=re.S) if ppr else ''
+            npr = re.search(r'<w:numPr>.*?</w:numPr>', cur, re.S)
+            nid = re.search(r'<w:numId w:val="([^"]+)"', npr.group(0)) if npr else None
+            if not nid or nid.group(1) != '0':
+                continue                                  # only an explicit numId=0 suppression
+            if preserve and re.search(r'<w:pPrChange|<w:ins\b|<w:del\b', x):
+                continue                                  # tracked numbering edit — leave for review
+            new = x.replace(npr.group(0), '', 1)          # drop the suppression; the style bullet applies
+            if new == x:
+                continue
+            self.set(i, new)
+            pid = re.search(r'w14:paraId="([^"]+)"', x[:x.find('>') + 1])
+            key = pid.group(1) if pid else ('t:' + self._fold_typography(
+                ' '.join(re.findall(r'<w:t[^>]*>([^<]*)</w:t>', x))))
+            self._bullet_restored[key] = st
+            self.say('M', i, f'restored suppressed house bullet ({st}: removed numId 0 so the style bullet renders)')
+            n += 1
+        if n:
+            self.say('M', -1, f'restored {n} suppressed house bullet(s)', 'bullets-restore')
+
     def strip_direct(self):
         from conformer.numbering import NumberingGraph
         _numgraph = NumberingGraph(self.num, self.styles)
@@ -795,7 +836,9 @@ class Conformer:
                     hv = re.search(r'w:val="([^"]+)"', hm.group(0))
                     hv = hv.group(1) if hv else 'colour'
                     jc = self._jcall('highlight', i, f'{hv.title()} highlight.', 'Remove the highlight')
-                    if self._decision_for(jc) == 'accept':
+                    # A highlight is a REVIEW MARKER: keep it by default; remove ONLY on an explicit accept.
+                    # (self.decisions is None during analyze / a direct run — default-accept must not strip it.)
+                    if self.decisions is not None and self.decisions.get(jc.id) == 'accept':
                         new_inner = new_inner.replace(hm.group(0), '', 1)
                 if new_inner == inner:
                     return r
@@ -1343,7 +1386,7 @@ class Conformer:
         self.revert_tracked_formatting(); self.unwrap_and_prune()
         self._emit('structure')
         self.classify(); self.merge_pdf_lines()
-        self.fix_headings(); self.fix_levels(); self.strip_direct(); self.fix_tables(); self.fix_figures()
+        self.fix_headings(); self.fix_levels(); self._restore_suppressed_bullets(); self.strip_direct(); self.fix_tables(); self.fix_figures()
         self.fix_footnotes(); self.rebuild_fields()
         self._emit('type')
         self.typography(); self.house_style(); self.fix_sections(); self.replace_parts()
@@ -1388,6 +1431,7 @@ class Conformer:
         ordered = [
             (self._repair_styles, 'stream', 'styles'), (self._conform_tables_preserving, 'stream', 'tables'),
             (self.classify, 'stream', 'structure'), (self.fix_levels, 'stream', 'structure'),
+            (self._restore_suppressed_bullets, 'stream', 'structure'),
             (self._caps_headings_preserving, 'stream', 'structure'), (self.strip_direct, 'stream', 'structure'),
             (self.fix_footnotes, 'stream', 'structure'), (self.fix_sections, 'stream', 'structure'),
             (self._color_highlight_calls, 'stream', 'structure'),
@@ -2157,6 +2201,16 @@ class Conformer:
             return self._is_bullet_fmt(bd.level) == self._is_bullet_fmt(bs.level)
 
         restyled = getattr(self, '_restyled', {})
+        bullet_restored = getattr(self, '_bullet_restored', {})
+
+        def _bullet_restore_authorized(bi, ai, a_res):
+            """An audited bullet restore: a paragraph styled as a house bullet had its numId=0 suppression
+            removed so the style's bullet renders. Authorized only when it was recorded AND now resolves to
+            a bullet via its (unchanged) style."""
+            key = ai['id'] or ('t:' + ai['text'])
+            if key not in bullet_restored or bullet_restored[key] != ai['style'] or bi['style'] != ai['style']:
+                return False
+            return a_res is not None and a_res.resolved and self._is_bullet_fmt(a_res.level)
 
         def _restyle_authorized(bi, ai, a_res):
             """A pStyle change the ENGINE recorded (classify / level promotion): an approved reclassification
@@ -2205,7 +2259,8 @@ class Conformer:
             if not (bsig == asig and _inst_of(b_res) == _inst_of(a_res)):
                 exp = _repair_expected(ai['style'])
                 authorized = ((exp is not None and asig == exp) or _strip_authorized(bi, ai, a_res)
-                              or _restyle_authorized(bi, ai, a_res))
+                              or _restyle_authorized(bi, ai, a_res)
+                              or _bullet_restore_authorized(bi, ai, a_res))
                 if not authorized:
                     flips.append({'scope': 'current', 'text': (ai['text'] or bi['text'])[:60],
                                   'before_style': bi['style'], 'style': ai['style'],
