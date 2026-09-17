@@ -837,6 +837,16 @@ class MainWindow(QMainWindow):
             )
             return
 
+        if not self.template_path or not os.path.exists(self.template_path):
+            self._build_error_state(
+                'Template not found',
+                'The LI template could not be found where it should be bundled with the app '
+                f'({os.path.basename(self.template_path or "template.dotx")}). This usually means '
+                'the installed build is incomplete. Use  File → Change template…  to point '
+                'at a .dotx template, or reinstall the app.'
+            )
+            return
+
         self._build_analyzing_state()
         self.worker = AnalyzeWorker(self.template_path, self.input_path)
         self.worker.finished.connect(self._on_analysis_done)
