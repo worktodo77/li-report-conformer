@@ -125,6 +125,73 @@ def typo_text(t):
     t = re.sub(r'([a-z\)])\. ([A-Z])', r'\1.  \2', t)
     t = re.sub(r'\b0(\d) (%s)' % _TYPO_MONTHS, r'\1 \2', t)
     return t.replace('\ufb00', 'ff').replace('\ufb01', 'fi').replace('\ufb02', 'fl')
+
+# ---------------------------------------------------------------- LI house style (deterministic)
+# The DETERMINISTIC subset of docs/LI_STYLE_GUIDE.md \u2014 applied like typography, and authorized by the
+# preservation gate via house_norm() (the gate confirms the ONLY change is house-style case/spelling/
+# terminology, nothing else). Judgment rules (voice, concision, flow) are the separate LLM layer.
+
+# CAP-1/CAP-2: generic party/role and technical terms lowercased in LI prose. Multi-word phrases first
+# so the regex prefers the longest match.
+HOUSE_LOWER = [
+    'Contract Completion Date', 'Commercial Operation Date', 'Differing Site Conditions',
+    'Concurrent Delay', 'Extension of Time', 'Liquidated Damages', 'Total Float', 'Free Float',
+    'Terminal Float', 'Critical Path', 'Completion Date', 'Change Order', 'Lump-Sum Turnkey',
+    'Contractor', 'Owner', 'Employer', 'Engineer', 'Subcontractor', 'Government', 'Party', 'Surety',
+    'Claimant', 'Respondent', 'Turnkey', 'Float', 'Delay',
+]
+_LOWER_ALT = '|'.join(re.escape(w) for w in HOUSE_LOWER)
+# a term is lowercased only when it FOLLOWS a determiner/preposition/conjunction \u2014 this catches
+# "the Contractor" (Claire's #1 edit) while never lowercasing a genuinely sentence-initial term.
+_DET = (r'the|a|an|of|for|to|in|on|by|with|and|or|that|which|this|these|those|its|their|any|each|'
+        r'no|between|among|from|at|as|when|where|if|because|per|under|over|such')
+# Case-insensitive on the DETERMINER (so "The Contractor" at a sentence start is caught) but
+# case-SENSITIVE on the TERM: only a Title-Case term ("Contractor") is lowered, never an ALL-CAPS one
+# ("CONTRACTOR"), which is usually intentional emphasis or a heading fragment. This also keeps the pass
+# in step with house_norm (which lowercases Title-Case terms only), so the gate authorizes it.
+_HOUSE_LOWER_RE = re.compile(r'\b((?i:%s))(\s+)(%s)\b' % (_DET, _LOWER_ALT))
+# CAP-5 (expert-report exception): capitalize the specific Report / Project.
+_HOUSE_CAP_RE = re.compile(r'\b(the|this|my|our|its|present|entire|whole)(\s+)(report|project)\b', re.I)
+# British -> American spelling + the programme->schedule terminology swap (LI prose only).
+BRIT_US = {
+    'programme': 'schedule', 'programmes': 'schedules', 'analyse': 'analyze', 'analysed': 'analyzed',
+    'analysing': 'analyzing', 'analyses': 'analyzes', 'modelling': 'modeling', 'modelled': 'modeled',
+    'behaviour': 'behavior', 'behaviours': 'behaviors', 'colour': 'color', 'favour': 'favor',
+    'labour': 'labor', 'organisation': 'organization', 'organisations': 'organizations',
+    'organise': 'organize', 'organised': 'organized', 'recognise': 'recognize',
+    'recognised': 'recognized', 'prioritise': 'prioritize', 'judgement': 'judgment',
+    'defence': 'defense', 'centre': 'center', 'metre': 'meter', 'litre': 'liter', 'fibre': 'fiber',
+    'matrices': 'matrixes',
+}
+_BRIT_RE = re.compile(r'\b(%s)\b' % '|'.join(BRIT_US), re.I)
+# "USA"/"U.S.A." -> "U.S." — deliberately NOT bare "US" (would corrupt the currency prefix "US$").
+_USA_RE = re.compile(r'\bU\.S\.A\.|\bU\.S\.A\b|\bUSA\b')
+_ACR_PLURAL_RE = re.compile(r"\b([A-Z]{2,})'s\b")               # EOT's -> EOTs
+_EG_RE = re.compile(r'\b(e\.g\.|i\.e\.)(?=\s)')                 # e.g. <space> -> e.g., (skip if already ",")
+
+
+def _brit_case(m):
+    """British->American keeping the leading capitalization of the source word."""
+    w = m.group(1); repl = BRIT_US[w.lower()]
+    return repl.capitalize() if w[:1].isupper() else repl
+
+
+def house_norm(t):
+    """Canonicalize away exactly the authorized house-style variation, so house_ok can confirm two
+    texts differ ONLY by house-style edits. Not the corrective transform \u2014 that is house_style().
+    British->American is case-preserving here (as in the pass), so a capitalized 'Analysed'->'Analyzed'
+    canonicalizes the same from both sides."""
+    t = _BRIT_RE.sub(_brit_case, t)
+    t = _USA_RE.sub('U.S.', t)
+    t = re.sub(r'\b(%s)\b' % _LOWER_ALT, lambda m: m.group(0).lower(), t)
+    t = re.sub(r'\b(report|project)\b', lambda m: m.group(0).lower(), t, flags=re.I)
+    t = _ACR_PLURAL_RE.sub(lambda m: m.group(1) + 's', t)
+    t = _EG_RE.sub(lambda m: m.group(1) + ',', t)
+    return t
+
+
+def house_ok(old, new):
+    return house_norm(old) == house_norm(new)
 def text_of(x): return re.sub('<[^>]+>', '', re.sub(r'<w:drawing>.*?</w:drawing>', '', re.sub(r'<w:instrText.*?</w:instrText>', '', x, flags=re.S), flags=re.S))
 
 # ---------------------------------------------------------------- LI style knowledge
@@ -723,6 +790,51 @@ class Conformer:
             if nx != x: self.set(i, nx)
         self.say('M', -1, 'typography normalised (smart quotes, en dashes, sentence spacing, dates, ligatures)')
 
+    _HOUSE_SKIP_STYLES = {'ExcerptorQuote', 'Caption', 'TableofFigures', 'Title', 'TitleofProject',
+                          'PRIVCONFSTATEMENT', 'TOCListTitle'}
+
+    @staticmethod
+    def _house_edit(t):
+        """Apply the deterministic LI house-style edits to one run's visible text (see house_norm):
+        lowercase a generic term when it follows a determiner (CAP-1/2); capitalize the Report /
+        Project (CAP-5); British->American spelling + programme->schedule (TERM); acronym plural;
+        e.g./i.e. Text inside a double-quote span is left untouched (HC-1)."""
+        out = []
+        for seg in re.split(r'("[^"]*"|“[^”]*”)', t):
+            if seg[:1] in ('"', '“'):
+                out.append(seg); continue          # a quotation span — never edited
+            seg = _HOUSE_LOWER_RE.sub(lambda m: m.group(1) + m.group(2) + m.group(3).lower(), seg)
+            seg = _HOUSE_CAP_RE.sub(lambda m: m.group(1) + m.group(2) + m.group(3).capitalize(), seg)
+            seg = _BRIT_RE.sub(_brit_case, seg)
+            seg = _USA_RE.sub('U.S.', seg)
+            seg = _ACR_PLURAL_RE.sub(lambda m: m.group(1) + 's', seg)
+            seg = _EG_RE.sub(lambda m: m.group(1) + ',', seg)
+            out.append(seg)
+        return ''.join(out)
+
+    def house_style(self):
+        """LI house style (deterministic subset of docs/LI_STYLE_GUIDE.md): capitalization,
+        terminology, and American spelling on LI prose. Skips block quotes, captions, headings, and
+        title/front-matter styles; in preserve mode revision content is masked and the change is
+        authorized by the content-stream gate via house_ok (only house-style variation permitted)."""
+        n = 0
+        for i in range(self.n()):
+            if not self.is_par(i):
+                continue
+            st = self.style(i)
+            if st in self._HOUSE_SKIP_STYLES or st in HEADINGS:
+                continue
+            x = self.item(i)
+            masked, masks = self._mask_revisions(x) if self.disposition == 'preserve' else (x, {})
+            nx = re.sub(r'(<w:t(?: xml:space="preserve")?>)([^<]*)(</w:t>)',
+                        lambda m: m.group(1) + self._house_edit(m.group(2)) + m.group(3), masked)
+            nx = self._unmask(nx, masks)
+            if nx != x:
+                self.set(i, nx); n += 1
+        if n:
+            self.say('M', -1, f'LI house style applied to {n} paragraphs (capitalization, '
+                              f'terminology, American spelling)')
+
     def fix_sections(self):
         final = self.items[-1]
         if 'orient="landscape"' not in final: return
@@ -851,7 +963,7 @@ class Conformer:
     def _run_passes_clean(self):
         self.revert_tracked_formatting(); self.unwrap_and_prune(); self.classify(); self.merge_pdf_lines()
         self.fix_headings(); self.fix_levels(); self.strip_direct(); self.fix_tables(); self.fix_figures()
-        self.fix_footnotes(); self.rebuild_fields(); self.typography(); self.fix_sections(); self.replace_parts()
+        self.fix_footnotes(); self.rebuild_fields(); self.typography(); self.house_style(); self.fix_sections(); self.replace_parts()
         self.audit_figures(); self.force_field_update()
 
     # ---------------------------------------------------------------- review-preserving pipeline
@@ -893,7 +1005,7 @@ class Conformer:
             (self.classify, 'stream'), (self.fix_levels, 'stream'),
             (self._caps_headings_preserving, 'stream'), (self.strip_direct, 'stream'),
             (self.fix_footnotes, 'stream'), (self.fix_sections, 'stream'),
-            (self.typography, 'text'),
+            (self.typography, 'text'), (self.house_style, 'house'),
             (self._prune_preserving, 'prune'),
         ]
         # #3 unwrap wrapper tables runs FIRST (before formatting): the extracted paragraphs then
@@ -912,7 +1024,8 @@ class Conformer:
             clean, disc = self.verify_preservation()
             after_stream = _rev.content_stream(self._output_parts(), cache=self._verify_cache)
             sviol = _rev.stream_violations(prev_stream, after_stream,
-                                           text_ok=typo_ok if gate == 'text' else None,
+                                           text_ok=(typo_ok if gate == 'text'
+                                                    else house_ok if gate == 'house' else None),
                                            ignore_structure=(gate in ('struct', 'prune')),
                                            ignore_page_breaks=(gate == 'prune'))
             if not clean or sviol:
