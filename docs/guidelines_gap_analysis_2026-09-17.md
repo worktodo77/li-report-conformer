@@ -146,6 +146,41 @@ earlier — listed for completeness).
   direct-format stripping, or already correct in the source. Fixing tables to the real `GridTable4`/"LI
   Table" spec is the highest-leverage change.
 
+## Deep dive: Excerpts/Quotes, Footnotes, Captions (with real-Warhoe counts)
+
+### Excerpts / Quotes
+- Engine (`classify`): converts an *italic + left-indent ≥ 700 + no-numbering* paragraph → `Excerpt or
+  Quote`, and merges consecutive excerpt lines. ✅ style assignment works.
+- ❌ **Does NOT remove quotation marks** from excerpts (guideline: no quote marks with this style). Warhoe:
+  **3 of 15** `Excerpt or Quote` paragraphs still contain quote marks → left non-compliant.
+- ⚠️ Detection depends on the source already being italic+indented; a long quote left in Body Text with
+  quote marks (not yet styled) is not detected.
+- ❌ Not checked: footnote placed after the quotation (not the intro sentence); remove italics from a
+  footnote that follows an italicized quote.
+
+### Footnotes
+- Engine (`fix_footnotes`): sets `Footnote Text` style (fixes **27** Warhoe footnotes not in it), inserts a
+  tab after the number (clean mode), keeps the reference mark roman (0 italic marks in Warhoe), and keeps
+  meaning-bearing italics in the footnote TEXT (case names) via `keep_rpr_children`. ✅
+- ❌ **Does NOT ensure a period at the end of each footnote** (guideline check). Warhoe: **34 of 1,507**
+  footnotes do not end with a period → left non-compliant.
+- ❌ Does NOT remove a trailing blank line after a footnote (guideline item).
+- ❌ Does NOT verify the footnote number sits after end punctuation in the body.
+- 🈚 en dash for ranges, `para.`/`p.`/`pp.` conventions — language, out of scope.
+
+### Captions
+- Engine (`rebuild_fields`): converts a STATIC `Table N-N: Title` caption into STYLEREF+SEQ fields with a
+  bookmark, centers it, restores a missing bookmark. ✅
+- Warhoe reality: **328 of 355** captions are ALREADY fields; they use **Heading-3-based `N.N.N-N`
+  numbering** (e.g., "Table 3.6.3-5:"). The engine leaves these intact.
+- ❌ **The rebuild regex only matches ONE level (`N-N`)** — it would NOT convert a STATIC caption in
+  `N.N-N` (Heading 2) or `N.N.N-N` (Heading 3) format. So a report with static multi-level captions is not
+  conformed.
+- ❌ **No `Table or Figure Subtitle` handling** (apply the style; set 0 pt space after the title). Warhoe
+  has 0 subtitles, but this is a general gap.
+- Cosmetic: field-generated caption text carries double spaces ("Table  3.4.2 1 : …") — field-driven, not
+  the conformer's doing.
+
 ## Priority to fix (structural/formatting, in scope)
 1. **Tables**: adopt Grid Table 4 identity + teal header `B6DDE8`/accent5, black bold 10 pt header text,
    `auto` sz-4 borders; per-column alignment (category left / numbers right); subtitle handling. (Rewrite
