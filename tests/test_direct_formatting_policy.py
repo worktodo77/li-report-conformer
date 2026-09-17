@@ -31,7 +31,9 @@ def test_superscript_survives():
 
 def test_strike_and_hidden_survive():
     assert _tags('<w:strike/><w:sz w:val="22"/>') == ['strike']
-    assert _tags('<w:vanish/><w:specVanish/><w:color w:val="FF0000"/>') == ['vanish', 'specVanish']
+    # colour is retained by the filter (the colour/highlight pass decides it); size is house → gone
+    assert _tags('<w:vanish/><w:specVanish/><w:sz w:val="22"/>') == ['vanish', 'specVanish']
+    assert set(_tags('<w:vanish/><w:color w:val="FF0000"/>')) == {'vanish', 'color'}
 
 
 def test_highlight_survives():
@@ -57,9 +59,11 @@ def test_footnote_reference_italic_dropped():
     assert set(_tags('<w:i/><w:iCs/>', is_fnref=False)) == {'i', 'iCs'}
 
 
-def test_tabledata_header_colour_kept_only_with_keep_color():
-    assert _tags('<w:color w:val="FFFFFF"/><w:b/>', keep_color=True) == ['color', 'b']
-    assert _tags('<w:color w:val="FFFFFF"/><w:b/>', keep_color=False) == ['b']
+def test_colour_retained_by_filter_for_the_colour_pass():
+    # colour is no longer stripped by the run filter — it is preserved here and adjudicated later by the
+    # colour/highlight pass (redundant-vs-style stripped silently; deviations become judgment calls).
+    assert _tags('<w:color w:val="FFFFFF"/><w:b/>') == ['color', 'b']
+    assert _tags('<w:color w:val="0563C1"/><w:sz w:val="20"/>') == ['color']
 
 
 def test_h2s_subscript_survives_full_conform():

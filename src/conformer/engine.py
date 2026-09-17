@@ -273,8 +273,7 @@ def keep_rpr_children(rpr_inner, is_fnref=False, keep_color=False):
     kept = []
     for tag, cx in children(rpr_inner):
         if tag == 'color':
-            if keep_color:
-                kept.append(cx)
+            kept.append(cx)                           # colour is decided by the colour/highlight pass
         elif tag in KEEP_RPR:
             if tag in ('i', 'iCs') and is_fnref:      # the in-text footnote reference stays upright
                 continue
@@ -589,14 +588,106 @@ class Conformer:
             def fixrun(rm):
                 r = rm.group(0); rp = re.search(r'<w:rPr>(.*?)</w:rPr>', r, re.S)
                 if not rp: return r
-                kept = keep_rpr_children(rp.group(1), is_fnref='FootnoteReference' in rp.group(1),
-                                         keep_color=(st == 'TableData'))
+                kept = keep_rpr_children(rp.group(1), is_fnref='FootnoteReference' in rp.group(1))
                 return r.replace(rp.group(0), '<w:rPr>' + ''.join(kept) + '</w:rPr>' if kept else '', 1)
             x = re.sub(r'<w:r\b[^>]*>.*?</w:r>', fixrun, x, flags=re.S)
             if not preserve:   # these change the content stream (tab tokens / nbsp text)
                 x = re.sub(r'(</w:pPr>)(?:<w:r>(?:<w:rPr>.*?</w:rPr>)?<w:tab/></w:r>)+', r'\1', x, flags=re.S)
                 x = x.replace('\u00a0', ' ')
             self.set(i, x); i += 1
+
+    # ---- colour + highlight (interactive) --------------------------------------------------------
+    @staticmethod
+    def _norm_color(v):
+        """Normalise a run/style colour for comparison; black/auto/windowText all read as 'black'."""
+        if v is None:
+            return 'black'
+        v = v.lower()
+        return 'black' if v in ('000000', 'auto', 'windowtext', 'black') else v
+
+    def _style_color_map(self):
+        """styleId -> {'color', 'basedOn'} from the STYLE-LEVEL rPr (the paragraph-mark rPr inside pPr is
+        dropped first so we read the run colour the style actually applies)."""
+        m = {}
+        for sm in re.finditer(r'<w:style\b[^>]*w:styleId="([^"]+)".*?</w:style>', self.styles, re.S):
+            body = sm.group(0)
+            based = re.search(r'<w:basedOn w:val="([^"]+)"', body)
+            body2 = re.sub(r'<w:pPr>.*?</w:pPr>', '', body, flags=re.S)
+            col = re.search(r'<w:rPr>.*?<w:color\b[^>]*w:val="([^"]+)"', body2, re.S)
+            m[sm.group(1)] = {'color': col.group(1) if col else None,
+                              'basedOn': based.group(1) if based else None}
+        return m
+
+    def _effective_style_color(self, style_id, cache):
+        """The run colour a paragraph inherits from its style, following basedOn; None = default black."""
+        seen = set()
+        sid = style_id
+        while sid and sid not in seen:
+            seen.add(sid)
+            s = cache.get(sid)
+            if not s:
+                break
+            if s['color']:
+                return s['color']
+            sid = s['basedOn']
+        return None
+
+    def _color_highlight_calls(self):
+        """Colour that MATCHES its paragraph style (e.g. the navy heading colour) is redundant \u2192 strip it
+        silently (no visible change). Colour that DEVIATES from the style (body text that should be black
+        but is blue) becomes a JUDGMENT CALL: accept \u2192 normalise to the style colour, skip/keep \u2192 leave.
+        Each HIGHLIGHT is a judgment call: accept \u2192 remove, skip \u2192 keep. Formatting only (the content
+        stream is unchanged); revised paragraphs and table cells are left to their own handling."""
+        preserve = self.disposition == 'preserve'
+        scmap = self._style_color_map()
+        for i in range(self.n()):
+            if not self.is_par(i):
+                continue
+            if preserve and self._para_has_revision(i):
+                continue
+            x = self.item(i)
+            if '<w:color' not in x and '<w:highlight' not in x:
+                continue
+            st = self.style(i)
+            if st == 'TableData':
+                continue
+            style_col = self._effective_style_color(st, scmap)
+            sname = self.stname.get(st, st)
+
+            def fix_run(rm):
+                r = rm.group(0)
+                rp = re.search(r'<w:rPr>(.*?)</w:rPr>', r, re.S)
+                if not rp:
+                    return r
+                inner = rp.group(1)
+                new_inner = inner
+                cm = re.search(r'<w:color\b[^>]*/>', new_inner)
+                if cm:
+                    cv = re.search(r'w:val="([^"]+)"', cm.group(0))
+                    cv = cv.group(1) if cv else None
+                    if self._norm_color(cv) == self._norm_color(style_col):
+                        new_inner = new_inner.replace(cm.group(0), '', 1)         # redundant \u2192 silent strip
+                    else:
+                        jc = self._jcall('color', i,
+                                         f'Text colour is #{cv}; the {sname} style is '
+                                         f'{("#" + style_col) if style_col else "black"}.',
+                                         'Normalise to the style colour', alternatives=['Keep this colour'])
+                        if self._decision_for(jc) == 'accept':
+                            new_inner = new_inner.replace(cm.group(0), '', 1)
+                hm = re.search(r'<w:highlight\b[^>]*/>', new_inner)
+                if hm:
+                    hv = re.search(r'w:val="([^"]+)"', hm.group(0))
+                    hv = hv.group(1) if hv else 'colour'
+                    jc = self._jcall('highlight', i, f'{hv.title()} highlight.', 'Remove the highlight')
+                    if self._decision_for(jc) == 'accept':
+                        new_inner = new_inner.replace(hm.group(0), '', 1)
+                if new_inner == inner:
+                    return r
+                return r.replace(rp.group(0), '<w:rPr>' + new_inner + '</w:rPr>' if new_inner else '', 1)
+
+            nx = re.sub(r'<w:r\b[^>]*>.*?</w:r>', fix_run, x, flags=re.S)
+            if nx != x:
+                self.set(i, nx)
 
     def fix_tables(self):
         for i in range(self.n()):
@@ -1109,7 +1200,7 @@ class Conformer:
         self._emit('structure')
         self.classify(); self.merge_pdf_lines()
         self.fix_headings(); self.fix_levels(); self.strip_direct(); self.fix_tables(); self.fix_figures()
-        self.fix_footnotes(); self.rebuild_fields()
+        self.fix_footnotes(); self.rebuild_fields(); self._color_highlight_calls()
         self._emit('type')
         self.typography(); self.house_style(); self.fix_sections(); self.replace_parts()
         self.audit_figures(); self.force_field_update()
@@ -1153,6 +1244,7 @@ class Conformer:
             (self.classify, 'stream', 'structure'), (self.fix_levels, 'stream', 'structure'),
             (self._caps_headings_preserving, 'stream', 'structure'), (self.strip_direct, 'stream', 'structure'),
             (self.fix_footnotes, 'stream', 'structure'), (self.fix_sections, 'stream', 'structure'),
+            (self._color_highlight_calls, 'stream', 'structure'),
             (self.typography, 'text', 'type'), (self.house_style, 'house', 'type'),
             (self._prune_preserving, 'prune', 'type'),
         ]

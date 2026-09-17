@@ -75,6 +75,7 @@ KIND_LABELS = {
     'style': 'Style', 'level': 'List level', 'merge': 'Merge', 'split': 'Split',
     'promote': 'Heading', 'caption': 'Caption', 'xref': 'Cross-references',
     'unwrap': 'Table', 'dropcol': 'Table', 'splitcap': 'Split', 'imgextract': 'Figure',
+    'color': 'Text color', 'highlight': 'Highlight',
 }
 
 
