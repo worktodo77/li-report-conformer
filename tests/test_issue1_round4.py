@@ -198,11 +198,13 @@ def test_r3_linked_heading_numbering_resolves_through_pstyle():
     assert g.resolve_level(*g.style_numpr('Heading2'))['lvlText'] == '%1.%2'
 
 
-# ---------------------------------------------------------------- R5: header repair, tracked-safe
-def test_r5_stray_header_fill_repaired_tracked_change_preserved():
-    # Header row with two cells: cell A carries a STRAY non-house fill (+ small font, dark colour); cell B's
-    # non-house fill is itself a TRACKED formatting change (tcPrChange). The stray one is normalised to the
-    # style (fill/size/colour stripped); the tracked one is PRESERVED and the table is flagged for review.
+# ---------------------------------------------------------------- R5: header repair (fill corrected even if tracked)
+def test_r5_header_fill_corrected_even_when_tracked_record_preserved():
+    # Maintainer ruling: a WRONG header fill is corrected to the house colour even when it is a tracked
+    # change. Cell A carries a STRAY non-house fill (+ small font, dark colour); cell B's non-house CURRENT
+    # fill is a tracked change (tcPrChange whose OLD snapshot held a different colour). Both current fills
+    # are corrected (removed so the style navy applies); the tracked-change RECORD (tcPrChange + its old
+    # colour) is preserved untouched.
     from conformer.engine import Conformer
     c = Conformer.__new__(Conformer)
     c._table_notes = []
@@ -210,15 +212,16 @@ def test_r5_stray_header_fill_repaired_tracked_change_preserved():
            '<w:tc><w:tcPr><w:shd w:val="clear" w:fill="BDD6EE"/></w:tcPr>'
            '<w:p><w:r><w:rPr><w:sz w:val="18"/><w:color w:val="222222"/></w:rPr><w:t>A</w:t></w:r></w:p></w:tc>'
            '<w:tc><w:tcPr><w:shd w:val="clear" w:fill="D9EAF7"/>'
-           '<w:tcPrChange w:id="9" w:author="R"><w:tcPr></w:tcPr></w:tcPrChange></w:tcPr>'
-           '<w:p><w:r><w:t>B</w:t></w:r></w:p></w:tc></w:tr>')
+           '<w:tcPrChange w:id="9" w:author="R"><w:tcPr><w:shd w:val="clear" w:fill="ABCDEF"/></w:tcPr>'
+           '</w:tcPrChange></w:tcPr><w:p><w:r><w:t>B</w:t></w:r></w:p></w:tc></w:tr>')
     tbl = f'<w:tbl>{row}</w:tbl>'
-    out, rep, flag = c._repair_stray_header_formatting(tbl, 'T1')
-    assert rep == 1 and flag == 1
-    assert 'BDD6EE' not in out                    # stray fill removed
-    assert 'D9EAF7' in out and 'tcPrChange' in out  # tracked fill + change record preserved
-    assert 'w:sz' not in out and 'w:color' not in out  # stray run overrides normalised to the style
-    assert any('TRACKED' in n for n in c._table_notes)
+    out, rep, tracked_fixed = c._repair_stray_header_formatting(tbl, 'T1')
+    assert rep == 2 and tracked_fixed == 1
+    assert 'BDD6EE' not in out                       # stray current fill corrected
+    assert 'D9EAF7' not in out                       # tracked current fill ALSO corrected (house wins)
+    assert 'tcPrChange' in out and 'ABCDEF' in out   # the tracked-change record + its old colour preserved
+    assert 'w:sz' not in out and 'w:color' not in out  # stray-cell run overrides normalised to the style
+    assert any('TRACKED' in n and 'corrected' in n for n in c._table_notes)
 
 
 def test_r5_header_repair_skips_nonheader_row():

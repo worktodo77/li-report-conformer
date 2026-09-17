@@ -2119,43 +2119,65 @@ class Conformer:
             xml = xml.replace(tok, masks[tok])
         return xml
 
+    @staticmethod
+    def _correct_current_header_fill(tc):
+        """Strip a NON-house direct fill from a header cell's CURRENT tcPr (the region before any
+        <w:tcPrChange> snapshot), so the LITable navy header fill applies. The historical tcPrChange snapshot
+        is left untouched, so the tracked-change RECORD is preserved. Returns (xml, changed)."""
+        o = tc.find('<w:tcPr>')
+        if o < 0:
+            return tc, False
+        ch = tc.find('<w:tcPrChange')
+        end = ch if ch >= 0 else tc.find('</w:tcPr>', o)
+        if end < 0:
+            end = len(tc)
+        region = tc[o:end]
+
+        def _shd(sm):
+            f = re.search(r'w:fill="([0-9A-Fa-f]{6})"', sm.group(0))
+            return '' if (f and f.group(1).upper() not in ('054F8A', 'FFFFFF', 'AUTO')) else sm.group(0)
+        new_region = re.sub(r'<w:shd\b[^>]*/>', _shd, region)
+        if new_region == region:
+            return tc, False
+        return tc[:o] + new_region + tc[end:], True
+
     def _repair_stray_header_formatting(self, tbl_xml, locator):
-        """Repair the header row's NON-house direct formatting to let the LITable navy/white/bold header
-        render — but only on header cells that carry NO tracked change (issue #1 R5). A header fill/size
-        that is itself a tracked formatting edit (tcPrChange / ins / del / rPrChange / pPrChange) is a
-        reviewer's pending decision and is PRESERVED and flagged for human review, never rewritten (that
-        would silently alter tracked review history). Returns (xml, repaired_cells, flagged_tracked_cells)."""
+        """Correct the header row to the house style so the LITable navy/white/bold header renders (issue
+        #1 R5). Per the maintainer ruling, a WRONG header FILL is corrected to the house colour even when it
+        is a tracked formatting change — the tracked-change RECORD (the <w:tcPrChange> snapshot and every
+        ins/del text mark) is preserved, only the CURRENT wrong fill is normalised so the house colour wins.
+        Run size/colour are also normalised on cells with no run-level tracked change (so a tracked inserted
+        run's own formatting is left intact). Returns (xml, corrected_cells, tracked_fills_corrected)."""
         m = re.search(r'<w:tr\b.*?</w:tr>', tbl_xml, re.S)
         if not m or '<w:tblHeader' not in m.group(0):
             return tbl_xml, 0, 0
         row = m.group(0)
-        rep = [0]; flag = [0]
-        _nonhouse = re.compile(r'<w:shd\b[^>]*w:fill="([0-9A-Fa-f]{6})"[^>]*/>')
+        rep = [0]; tracked_fixed = [0]
 
         def _fix_cell(cm):
             tc = cm.group(0)
-            has_nonhouse_fill = any(f.upper() not in ('054F8A', 'FFFFFF', 'AUTO')
-                                    for f in _nonhouse.findall(tc))
-            if re.search(r'<w:tcPrChange|<w:rPrChange|<w:pPrChange|<w:ins\b|<w:del\b', tc):
-                if has_nonhouse_fill:
-                    flag[0] += 1                       # tracked reviewer edit -> preserve + flag
-                return tc
-            new = tc
-            new = _nonhouse.sub(lambda sm: '' if sm.group(1).upper() not in ('054F8A', 'FFFFFF', 'AUTO')
-                                else sm.group(0), new)
-            new = re.sub(r'<w:sz w:val="\d+"/>', '', new)     # let the style supply the house size
-            new = re.sub(r'<w:szCs w:val="\d+"/>', '', new)
-            new = re.sub(r'<w:color w:val="[^"]+"/>', '', new)  # let the style supply white header text
-            if new != tc:
+            run_tracked = re.search(r'<w:rPrChange|<w:pPrChange|<w:ins\b|<w:del\b', tc)
+            cell_tracked = run_tracked or ('<w:tcPrChange' in tc)
+            # ALWAYS correct a wrong header fill to the house colour, even under a tracked change.
+            tc2, fill_fixed = self._correct_current_header_fill(tc)
+            if not run_tracked:
+                # non-tracked runs: also normalise size/colour so the style's white 11pt header applies
+                tc2 = re.sub(r'<w:sz w:val="\d+"/>', '', tc2)
+                tc2 = re.sub(r'<w:szCs w:val="\d+"/>', '', tc2)
+                tc2 = re.sub(r'<w:color w:val="[^"]+"/>', '', tc2)
+            if fill_fixed and cell_tracked:
+                tracked_fixed[0] += 1
+            if tc2 != tc:
                 rep[0] += 1
-            return new
+            return tc2
 
         newrow = re.sub(r'<w:tc\b.*?</w:tc>', _fix_cell, row, flags=re.S)
         out = tbl_xml.replace(row, newrow, 1) if newrow != row else tbl_xml
-        if flag[0]:
-            self._table_notes.append(f'{locator}: {flag[0]} header cell(s) have a non-house fill that is a '
-                                     'TRACKED formatting change — preserved for human accept/reject')
-        return out, rep[0], flag[0]
+        if tracked_fixed[0]:
+            self._table_notes.append(f'{locator}: {tracked_fixed[0]} header cell(s) had a non-house fill '
+                                     'that was a TRACKED change — corrected to the house colour; the '
+                                     'tracked-change record is preserved')
+        return out, rep[0], tracked_fixed[0]
 
     def _conform_tables_preserving(self):
         """Make every table USE the (now-repaired) LI table style so its built-in settings apply
