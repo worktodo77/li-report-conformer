@@ -1084,6 +1084,38 @@ class MainWindow(QMainWindow):
             bl.addWidget(status)
             self.body_layout.addWidget(banner)
 
+        # Three outcomes, reported SEPARATELY (preservation never stands in for conformance).
+        if fresh is not None and hasattr(fresh, 'outcome_report'):
+            try:
+                rep = fresh.outcome_report()
+            except Exception:
+                rep = None
+            if rep:
+                conf = rep.get('conformance', {})
+                unres = rep.get('unresolved', {})
+                nflip = len(conf.get('numbering_flips', []) or [])
+                ninteg = len(conf.get('definition_integrity_violations', []) or [])
+                ntbl = len(conf.get('tables_failing_effective_format', []) or [])
+                nrev = len(unres.get('tables_needing_review', []) or [])
+                nroll = len(unres.get('rolled_back_passes', []) or [])
+                oc = QFrame(); oc.setObjectName('card')
+                ol = QVBoxLayout(oc)
+                for label, ok, detail in (
+                    ('Review history preserved', rep.get('preservation', {}).get('clean') is True,
+                     'Every tracked change and comment intact'),
+                    ('Formatting conforms', not (nflip or ninteg or ntbl),
+                     'Numbering, definitions and table formatting resolve as intended'
+                     if not (nflip or ninteg or ntbl)
+                     else f'{nflip} list-meaning flip(s), {ninteg} definition issue(s), {ntbl} table(s) off'),
+                    ('Nothing left unresolved', not (nrev or nroll),
+                     'No exceptions' if not (nrev or nroll)
+                     else f'{nroll} pass(es) held back, {nrev} table(s) need a manual look')):
+                    row = QLabel(f'{"✓" if ok else "⚠"}  <b>{label}</b> — {detail}')
+                    row.setTextFormat(Qt.RichText); row.setWordWrap(True)
+                    row.setStyleSheet('font-size: 12px; color: %s;' % ('#1f7a34' if ok else '#b26a00'))
+                    ol.addWidget(row)
+                self.body_layout.addWidget(oc)
+
         card = QFrame()
         card.setObjectName('card')
         card_layout = QVBoxLayout(card)
