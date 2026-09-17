@@ -1399,6 +1399,51 @@ class Conformer:
                                 'meaning_flip': (bf == 'bullet') != (af == 'bullet')})
         return changes
 
+    def definition_integrity_report(self):
+        """Protect historical interpretation: every PRE-EXISTING numbering definition must still resolve
+        to the same format after conforming, so a snapshot/reference that depends on it is not silently
+        redirected to a new meaning. We only import NEW definitions under fresh ids, so this must be empty.
+        Returns [{numId, ilvl, before, after}] for any existing numId whose resolved format changed."""
+        from conformer.numbering import NumberingGraph
+        before = NumberingGraph(self._orig_num0, self._orig_styles0)
+        after = NumberingGraph(self.num, self.styles)
+        viol = []
+        for nid in before.nums:
+            for ilvl in ('0', '1', '2'):
+                bf = before.effective_format(nid, ilvl)
+                af = after.effective_format(nid, ilvl)
+                if bf and af and bf != af:
+                    viol.append({'numId': nid, 'ilvl': ilvl, 'before': bf, 'after': af})
+        return viol
+
+    def outcome_report(self):
+        """The three outcomes reported SEPARATELY (a clean preservation result never stands in for
+        conformance verification): (1) review-history preservation, (2) formatting conformance,
+        (3) unresolved exceptions."""
+        try:
+            clean, _disc = self.verify_preservation()
+        except Exception:
+            clean = None
+        s = self.revision_ledger.summary() if getattr(self, 'revision_ledger', None) else {}
+        preservation = {'clean': clean, 'tracked_changes': s.get('total', 0),
+                        'comments': s.get('comments', 0), 'authors': len(s.get('authors', []) or [])}
+
+        from conformer import tablespec
+        table_fails = []
+        for i in range(self.n()):
+            it = self.item(i)
+            if it.startswith('<w:tbl'):
+                fails = [x for x in tablespec.effective_table_issues(it) if x['severity'] == 'fail']
+                if fails:
+                    table_fails.append({'item': i, 'issues': fails})
+        conformance = {'numbering_flips': self.numbering_report(),
+                       'definition_integrity_violations': self.definition_integrity_report(),
+                       'tables_failing_effective_format': table_fails}
+
+        unresolved = {'rolled_back_passes': list(getattr(self, 'exceptions', []) or []),
+                      'tables_needing_review': list(getattr(self, '_table_notes', []) or [])}
+        return {'preservation': preservation, 'conformance': conformance, 'unresolved': unresolved}
+
     _CHANGE_RE = re.compile(
         r'<w:(tblPrChange|trPrChange|tcPrChange|pPrChange|rPrChange|sectPrChange|tblPrExChange'
         r'|tblGridChange|numberingChange)\b[^>]*>.*?</w:\1>', re.S)
@@ -1443,7 +1488,9 @@ class Conformer:
             if not x.startswith('<w:tbl'):
                 continue
             masked, masks = self._mask_revisions(x)   # protect snapshots AND cell revision content
-            nested = masked.count('<w:tbl') > 1       # this table contains a nested table
+            # a nested table adds another <w:tbl> ELEMENT (not a <w:tblPr>/<w:tblGrid>/… property, which
+            # also start with '<w:tbl'); match the element start only
+            nested = len(re.findall(r'<w:tbl[ >]', masked)) > 1
             # Remove direct table AND cell borders that would override the LITable grey grid (a correct
             # style name does not conform if a direct <w:tcBorders> defeats it). Masked revision content
             # is untouched (its borders are behind sentinels).

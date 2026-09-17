@@ -169,6 +169,21 @@ def build_records(fresh, source_path, output_path, decisions_log=None,
         verdict = 'Not evaluated'
     from collections import Counter
     by_cat = Counter(r['Category'] for r in records)
+    # Three separate outcomes (a clean preservation result never substitutes for conformance).
+    outcome = fresh.outcome_report() if hasattr(fresh, 'outcome_report') else {}
+    conf = outcome.get('conformance', {})
+    unres = outcome.get('unresolved', {})
+    n_flip = len(conf.get('numbering_flips', []) or [])
+    n_integ = len(conf.get('definition_integrity_violations', []) or [])
+    n_tblfail = len(conf.get('tables_failing_effective_format', []) or [])
+    conformance_verdict = ('Clean — numbering, definitions and table formatting resolve as intended'
+                           if not (n_flip or n_integ or n_tblfail)
+                           else f'ISSUES — {n_flip} list-meaning flip(s), {n_integ} definition-integrity '
+                                f'violation(s), {n_tblfail} table(s) failing effective format')
+    n_unres_tbl = len(unres.get('tables_needing_review', []) or [])
+    n_rolled = len(unres.get('rolled_back_passes', []) or [])
+    unresolved_verdict = ('None' if not (n_unres_tbl or n_rolled)
+                          else f'{n_rolled} pass(es) rolled back, {n_unres_tbl} table(s) need independent review')
     summary = {
         'source_name': os.path.basename(source_path),
         'source_sha256': source_sha or _sha256(source_path),
@@ -182,6 +197,8 @@ def build_records(fresh, source_path, output_path, decisions_log=None,
         'comments': s.get('comments', 0),
         'authors': len(s.get('authors', []) or []),
         'preservation_verdict': verdict,
+        'conformance_verdict': conformance_verdict,
+        'unresolved_verdict': unresolved_verdict,
         'rolled_back': len(getattr(fresh, 'exceptions', []) or []),
         'total_changes': len(records),
         'by_category': dict(by_cat),
@@ -202,7 +219,9 @@ def _summary_rows(summary):
         ('Tracked changes', summary['tracked_changes']),
         ('Comments', summary['comments']),
         ('Authors', summary['authors']),
-        ('Preservation', summary['preservation_verdict']),
+        ('Outcome 1 — Review-history preservation', summary['preservation_verdict']),
+        ('Outcome 2 — Formatting conformance', summary.get('conformance_verdict', 'n/a')),
+        ('Outcome 3 — Unresolved / exceptions', summary.get('unresolved_verdict', 'None')),
         ('Passes rolled back', summary['rolled_back']),
         ('Total changes logged', summary['total_changes']),
         ('By category', ', '.join(f'{k}: {v}' for k, v in summary['by_category'].items())),
