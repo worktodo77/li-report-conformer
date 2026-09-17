@@ -3,9 +3,16 @@
 **Version:** 0.1 (draft for Alex's review) · 2026-09-16
 **Scope:** Long International expert reports (delay, disruption, quantum, forensic). Synthesised from
 the *Long International House Style Guide v1.0* (blogs/articles), Claire Crevey's tracked-edit analysis
-(~2,347 real markups), and the expert-report/template conventions. The house guide governs blogs first;
+(~2,347 real markups), and the **expert-report conventions from the Expert Assist toolkit**
+(`draft-section` skill + its `CLAUDE.md`: LI template styles, Exhibits/Attachments citations, two-space
+sentences, capitalize Report/Project, reserved-to-expert content). The house guide governs blogs first;
 **expert reports share its core grammar, capitalization, terminology and spelling rules but keep their
-own formatting and citation conventions.**
+own formatting and citation conventions** — the report-specific rules below are marked
+*Report-specific*.
+
+The LI template's own *formatting* (ALL-CAPS Heading 1–2, Numbered Paragraph body, Excerpt or Quote,
+LI table, sequential footnotes) is already handled by the deterministic conformer; this guide covers
+the *writing/editing* house style layered on top.
 
 **This file is the single source of truth for the conformer's house-style work.** It is maintained by
 hand. Each rule is tagged:
@@ -32,6 +39,11 @@ contract.
 - **HC-2 — Never change a substantive technical or legal statement.** Style edits change *form*, never
   *meaning*: not a number, date, quantum figure, entitlement, standard/clause reference, causal claim,
   or opinion. When an edit would change substance, it is not made.
+- **HC-2a — Reserved content is off-limits to the editorial layer.** Causation, entitlement
+  (EOT/compensation), concurrency, and quantum are reserved to the expert (Expert Assist rule). The
+  LLM may fix mechanics/flow in a sentence that *states* such a matter, but must never reword the
+  finding itself, soften/strengthen it, or add/remove a hedge. When unsure whether a rewrite touches a
+  reserved opinion, do not suggest it.
 - **HC-3 — Never touch tracked content unsafely.** House-style edits run under the same preservation
   gate as the rest of the conformer. On a reviewed draft, a deterministic edit applies only where it
   does not disturb a tracked change/comment; an LLM suggestion is offered but, if accepted, is written
@@ -61,6 +73,11 @@ contract.
   but capitalized when quoting a contract that defines it. Detection must respect HC-1/HC-4 — a
   deterministic recapitalization runs on prose spans, never inside a quotation or a discussion pinned
   to a specific contract's defined term. Where context is ambiguous, downgrade to **[LLM] consider**.
+- **CAP-5 [DET] must — EXPERT-REPORT EXCEPTION: capitalize "Report" and "Project".** In an LI expert
+  report, "Report" and "Project" are the specific report and project under discussion and are
+  capitalized — this **overrides** CAP-1/CAP-2 for these two words. (Expert Assist house rule; does not
+  apply to blogs/articles.) All other generic party/technical nouns stay lowercase per CAP-1/2.
+  *Report-specific — not in the blog guide.*
 
 ## 2. Tense and voice  *(Claire's #7, #6)*
 
@@ -129,6 +146,9 @@ Use the preferred term in LI prose; the avoided term is retained only inside quo
   keep quotes for genuine quotations and first-use defined contract phrases. Periods/commas inside the
   closing quote.
 - **PUNC-5 [DET] — e.g. / i.e. lowercase, each followed by a comma.**
+- **PUNC-6 [DET] must — TWO spaces between sentences** in expert-report prose (Expert Assist
+  convention; the conformer's typography pass already does this). *Report-specific — the blog guide is
+  single-space; expert reports are double.*
 
 ## 7. Numbers, dates, units  *(§8)*  — extends the existing typography/date pass
 
@@ -151,18 +171,24 @@ Use the preferred term in LI prose; the avoided term is retained only inside quo
 - **FIG-3 [LLM] consider — captions in title case, concise;** table cells parallel and complete where
   the table is expository.
 
-## 9. Citations and footnotes  *(§12 — report conventions; overlaps the footnote-audit feature)*
+## 9. Citations and footnotes  *(expert-report scheme, from Expert Assist + §12)*
 
-- **CITE-1 [DET] must — name standards/bodies precisely and consistently:** "AACE International
-  Recommended Practice 29R-03" (with RP number), "the FIDIC Silver Book 2017 (2nd ed.)", FIDIC forms by
-  colour.
-- **CITE-2 [DET] must — cite contract clauses by the contract's own label** ("Sub-Clause 8.5",
-  "Clause 21"); preserve the clause name's capitalization when quoting (HC-1).
+- **CITE-0 [DET] must — Exhibits vs Attachments.** In LI expert reports, cited sources carry a tag:
+  **Exhibits = documents prepared by others** (project reports, schedules, correspondence);
+  **Attachments = LI-prepared work product** (event logs, analyses, figures). Tags read "[Exhibit N]"
+  and "[Attachment LI-NN]". The exact scheme is set per matter (intake); the audit enforces
+  consistency, that every citation resolves to a listed Exhibit/Attachment, and that every listed one
+  is cited. *Report-specific.*
+- **CITE-1 [DET] must — footnotes numbered sequentially, in order of appearance;** no uncited
+  assertions. Format consistent (author, title, source, year; Chicago notes for anything unspecified).
+- **CITE-2 [DET] must — name standards/bodies precisely and consistently:** "AACE International
+  Recommended Practice 29R-03", "SCL Delay and Disruption Protocol (2nd ed.)", "the FIDIC Silver Book
+  2017 (2nd ed.)", FIDIC forms by colour, clauses by the contract's own label ("Sub-Clause 8.5",
+  "Clause 21") with the clause name's capitalization preserved when quoting (HC-1).
 - **CITE-3 [LLM] should — shorten a long case name to a short form after first use** ("Multiplex
   Construction (UK) Ltd v Honeywell Control Systems Ltd" → "Multiplex").
-- **CITE-4 [DET] — footnotes numbered sequentially, consistent format** (author, title, source, year;
-  Chicago notes for anything unspecified). *These structural checks are the footnote-audit feature (a
-  separate advisory panel), not an editing suggestion.*
+- *(CITE-0/1/2 structural checks are the footnote-citation **audit** feature — a separate advisory
+  panel, sibling of Figure Integrity — not an editing suggestion.)*
 
 ## 10. Sentence craft — concision and the flow moves  *(§4 + Claire's flow rubric)*  — **[LLM] core**
 
@@ -212,8 +238,13 @@ Worked example (mechanical + flow together):
 - Open questions for Alex are collected at the end of this section as they arise.
 
 ### Open questions
-- Q1. Confirm the expert-report citation/footnote *format* (author-title-source-year? a specific LI
-  template?) so CITE-1/2/4 and the footnote audit encode the exact convention.
+- ~~Q1. Citation/footnote format.~~ **Resolved** from Expert Assist: Exhibits (others' documents) vs
+  Attachments (LI work product), tagged "[Exhibit N]"/"[Attachment LI-NN]", footnotes numbered in order
+  of appearance, no uncited assertions (CITE-0/1/2). Per-matter scheme still comes from the intake —
+  the audit should read it where available and otherwise apply this default.
 - Q2. Should CAP-4/TENSE-1 ambiguous cases stay [LLM consider] (safer) or become [DET] with a
   conservative rule set?
 - Q3. Editorial author name for accepted LLM edits written as tracked changes (e.g., "LI Editorial").
+- Q4. Confirm the two-space-between-sentences rule (PUNC-6) and the capitalize-Report/Project rule
+  (CAP-5) are current LI expert-report house style (they come from the Expert Assist toolkit, not the
+  blog guide).
