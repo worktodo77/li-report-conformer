@@ -1342,6 +1342,54 @@ class Conformer:
             self.say('M', -1, f'figure audit OK: {len(caps)} figures numbered sequentially per section; {tof}')
         return findings
 
+    _HEADING_LEVEL = {f'Heading{n}': n for n in range(1, 7)}
+    _NP_SUBLEVEL = {'NumberedParagraphL1': 1, 'NumberedParagraphL2': 2,
+                    'NumberedParagraphL3': 3, 'NumberedParagraphL4': 4}
+
+    def audit_headings(self):
+        """§3/§4 numbering STRUCTURE (advisory; Word computes the actual 1 / 1.1 / 1.1.1 digits from the
+        linked heading list, so this catches the structural CAUSE of a wrong/duplicated section number):
+          - a heading that SKIPS a level (e.g. a Heading 3 directly under a Heading 1, with no Heading 2
+            between) — the sub-numbering then can't increment correctly (§3);
+          - a numbered-paragraph sublist that starts above L1 or jumps a sublevel ("do not start with 'a'
+            rather than '1'", §4).
+        Findings append to self.audit."""
+        findings = []
+        last_h = 0
+        for i in range(self.n()):
+            if not self.is_par(i):
+                continue
+            st = self.style(i)
+            if st in self._HEADING_LEVEL:
+                lvl = self._HEADING_LEVEL[st]
+                if last_h and lvl > last_h + 1:
+                    findings.append(('heading-skip', f'{st} follows a Heading {last_h}: heading level(s) '
+                                     f'{last_h + 1}..{lvl - 1} are skipped, so §3 sub-numbering will be off: '
+                                     f'{self.text(i).strip()[:40]!r}'))
+                last_h = lvl
+        prev_sub = 0
+        for i in range(self.n()):
+            if not self.is_par(i):
+                continue
+            st = self.style(i)
+            if st in self._NP_SUBLEVEL:
+                cur = self._NP_SUBLEVEL[st]
+                if cur > prev_sub + 1:
+                    findings.append(('sublevel-skip', f'{st} starts a numbered-paragraph sublist above L1 or '
+                                     f'skips a level (§4: do not start at "a" rather than "1"): '
+                                     f'{self.text(i).strip()[:40]!r}'))
+                prev_sub = cur
+            elif st == 'NumberedParagraph' or st in self._HEADING_LEVEL:
+                prev_sub = 0
+        self.audit = (self.audit or []) + findings
+        if findings:
+            for lvl, msg in findings:
+                self.say('J', -1, f'HEADING AUDIT [{lvl}]: {msg}')
+        else:
+            self.say('M', -1, 'heading audit OK: heading levels and numbered-paragraph sublevels are '
+                     'sequential (no skipped levels)')
+        return findings
+
     @staticmethod
     def _caption_basis(x):
         """The heading level a caption's numbering is based on = the STYLEREF field's level. None if the
@@ -1488,7 +1536,7 @@ class Conformer:
         self.typography(); self.house_style(); self.fix_sections(); self.replace_parts()
         # colour/highlight AFTER replace_parts so redundancy is judged against the FINAL (template) styles
         self._color_highlight_calls()
-        self.audit_figures(); self.audit_captions(); self.force_field_update()
+        self.audit_figures(); self.audit_captions(); self.audit_headings(); self.force_field_update()
 
     # ---------------------------------------------------------------- review-preserving pipeline
     def _snapshot(self):
@@ -1574,6 +1622,7 @@ class Conformer:
         self._drop_empty_columns_preserving()  # #7
         self.audit_figures()
         self.audit_captions()               # §8.6 Table+Figure basis + per-section sequence (P1)
+        self.audit_headings()               # §3/§4 heading + sublevel level-skip structure (P1)
         self.force_field_update()           # arm Word's refresh when the audit found caption/figure drift
         self._label_review_copy()           # GPT-6 2a: stamp as a normalized-formatting review copy
 
