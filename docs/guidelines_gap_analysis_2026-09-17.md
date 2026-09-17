@@ -255,3 +255,105 @@ Several items I first tagged 🈚 actually have a deterministic core; they split
 engine could add are only: **#1 table/figure centering-indent, #6 footnote end-period + trailing-blank-line,
 #8 double periods, #9 extra spaces, #12 line spacing**, plus tightening **#19** ("N-inch" must skip tables
 and excerpts). #22 (dates) and #27 (sentence bullets) are already partially handled.
+
+---
+
+## 11. Section 8.6 — Captions for Tables and Figures (numbering consistency + section-based numbering)
+
+**Guideline (§8.6 "Captions for Tables and Figures"):** captions are auto-number *fields* keyed to the
+section (STYLEREF to the heading level + SEQ), so a table/figure reads `<section>-<n>` (e.g. `Table 3-1`,
+`Figure 5-2`); numbering must be **consistent** (all captions of a kind based on the same heading level)
+and **sequential within a section**. §8.11 "Updating Fields" says the fields must be refreshed so the
+displayed numbers match reality.
+
+### Findings against the real Warhoe report
+- **Basis INCONSISTENCY (real):** 311 **Table** captions use `STYLEREF 3` + `SEQ Table \* ARABIC \s 3`
+  (Heading-3-based, e.g. `Table 3.4.2-1`), but the 2 **Figure** captions use `STYLEREF 1` (Heading-1-based).
+  The two caption families are numbered off *different* heading levels. The guideline wants a single,
+  consistent numbering basis. [X] engine has no check for caption-basis consistency.
+- **0 static captions** — every caption is a field (good; section prefix auto-matches on field update).
+- **STALE cached numbers (real):** 13 of 50 sections show non-sequential cached SEQ results — confirmed
+  stale fields, e.g. Table 3.6.3 sequence `[1,2,3,4,5,6,5]` (duplicate 5), Table 3.6.5 `[...,6,8]` (gap),
+  Table 3.6.1 shows `[5]`. `settings.xml` has `updateFields=False`, so Word displays the stale cached
+  numbers until a manual field update.
+- **Engine BLIND SPOT (root cause):** `audit_figures()` (engine.py ~1270) explicitly processes **Figure
+  captions only** — `if not re.match(r'Figure\b', t): continue` — so all 311 Table captions are never
+  audited for sequence/basis. And `force_field_update` (engine.py ~1230) arms `updateFields=true` **only
+  if `self.audit` is non-empty**. Because the Table captions are never inspected, the figure audit finds
+  nothing table-related, `self.audit` stays empty, `updateFields` is NOT armed, and the conformed output
+  ships the **stale** Table numbers. [X]
+- **Consequence:** the exact problem Alex raised — caption numbers that are wrong/duplicated/gapped per
+  section — passes straight through the conformer unflagged and uncorrected.
+
+### What a correct §8.6 pass would do (deferred to the realignment, no code change yet)
+1. Audit **both** Table and Figure captions (generalize `audit_figures` beyond `Figure\b`).
+2. Verify each caption family uses a **single, consistent STYLEREF basis**; flag mixed bases (Warhoe: Tables
+   on H3, Figures on H1).
+3. Verify **sequential per-section** SEQ results; where the cached number is stale, **arm `updateFields`**
+   so Word recomputes on open (the fields are already correct field codes — they just need a refresh), and
+   report the affected sections rather than silently trusting the cache.
+4. Verify the caption's section prefix matches the section it physically sits in (STYLEREF already does this
+   once refreshed; flag any caption whose STYLEREF level doesn't match the family standard).
+
+## 12. Section 3 — Report Level Headings
+
+**Guideline (§3):** LI heading styles 1–6 exist; **four levels preferred, 5–6 discouraged unless truly
+needed**. **Type headings first in "Body Text" to see capitalization**, because caps "may not appear
+correctly in the Table of Contents and final PDF bookmarks even if it looks correct in the body." **All caps
+for Headings 1 and 2; initial caps for 3–6.** Documented **exception: a very long Heading 2 may use initial
+caps, applied consistently throughout the report and its annexes/appendices.** Headings 2–6 **link to
+Heading 1**, so numbering increments automatically (1., 1.1, 1.1.1, 2., 2.1 …). Each **Heading 1 starts on a
+new page** (exception: a short section may instead take **36 pts space above**). Below a heading, begin in
+**Numbered Paragraph** style; **do not start with bullets directly under a heading — use a lead-in sentence
+first.** Long heading: break with Shift+Enter and delete the created space.
+
+### Ground truth confirmed in the template + Warhoe
+- Neither the **Heading1 nor Heading2 style carries `<w:caps>`** (template and Warhoe). "All caps" is meant
+  to be achieved by **true typed capitals**, matching the guideline's TOC/PDF-bookmark rationale — a display
+  `<w:caps/>` attribute would NOT propagate to the TOC/bookmarks, which is exactly what the guideline warns
+  against.
+- **Heading1 style carries `pageBreakBefore`** (template and Warhoe) — so "each H1 on a new page" is
+  satisfied by the *style*; a per-paragraph absence of the attribute is NOT a violation. (Warhoe: only 1 of
+  7 H1s has a *direct* pageBreakBefore; the rest inherit it from the style — compliant.)
+- Warhoe heading census: H1=7, H2=32, H3=136, H4=360, H5=117, H6=1.
+
+### Findings against the real Warhoe report
+- **H1 caps — COMPLIANT:** all 6 body H1s are true UPPERCASE text, 0 `<w:caps/>` attrs. [OK]
+- **H2 caps — the author used the documented exception:** all 32 H2s are typed in **initial caps** (0
+  uppercase, 0 caps attr), consistently. Per §3 this is the *permitted* long-title exception (initial-caps
+  H2 applied consistently). [OK] for the report — but [X] for the engine, which cannot honor it (below).
+- **[X] TWO CONTRADICTORY heading-caps passes in the engine:**
+  - `_run_passes_preserving` (the DEFAULT pipeline used on real reports) runs `_caps_headings_preserving`
+    (engine.py ~1545), which **adds `<w:caps/>`** to every H1/H2 run — forcing DISPLAY all-caps. On Warhoe
+    this would override all 32 deliberate initial-caps H2s AND introduce the display-caps attribute the
+    guideline says breaks TOC/PDF-bookmark caps (body would show ALL CAPS while the TOC shows Initial Caps —
+    the precise inconsistency §3 warns against).
+  - `_run_passes_clean` runs `fix_headings` (engine.py ~546), which does the OPPOSITE — **removes `<w:caps/>`
+    and force-UPPERCASES the literal text**. On Warhoe this would irreversibly destroy the initial-caps H2
+    exception ("Long International's Analysis…" → "LONG INTERNATIONAL'S ANALYSIS…").
+  - Both are wrong for the H2 exception case, and they disagree with each other. Correct behavior: detect a
+    report-wide consistent H2 casing and PRESERVE it (or flag), and prefer TRUE typed caps over the display
+    `<w:caps/>` attribute so TOC/bookmarks stay correct.
+- **[!] Heading-depth "four levels preferred":** Warhoe uses all six levels heavily (H5=117, H6=1). §3 says
+  5–6 are discouraged unless truly needed. No engine check flags deep nesting. Advisory only (cannot be
+  auto-fixed — it's an editorial/structure judgment).
+- **[X] Sequential heading numbering NOT verified:** §3's H2–6-link-to-H1 auto-increment (1., 1.1, 1.1.1 …)
+  is style-based numbering with no number text in the body, so a duplicate/gap/broken-link only shows once
+  Word renders it. The engine resolves numbering (NumberingGraph) but has **no verifier that walks the
+  heading tree and confirms the section/subsection sequence** — the same class as the §8.6 caption-sequence
+  gap. This is the "sequential numbering of sections/subsections" Alex asked to verify.
+- **[X] Lead-in rule (no bullets directly under a heading) NOT checked:** §3 requires a lead-in
+  sentence/paragraph before bullets; the engine's bullet passes never verify that the paragraph after a
+  heading is a Numbered Paragraph/Body lead-in rather than a bullet.
+- **N/A auto-fix items (editorial):** initial-caps title-casing of H3–6 with the lowercase-word list (the,
+  in, to, or, a, an, and, for) is language/editorial; Shift+Enter line-break cleanup is layout-editorial.
+
+### What a correct §3 pass would do (deferred to the realignment, no code change yet)
+1. **Reconcile the two caps passes into one policy:** prefer TRUE typed capitals for H1 (and H2 unless the
+   report consistently uses the initial-caps exception); never add a display-only `<w:caps/>` that desyncs
+   the TOC/bookmarks; detect report-wide H2 casing consistency and honor the documented long-title exception
+   rather than force-flipping it.
+2. Add a **heading-sequence verifier** (shared with §8.6): resolve each heading's number via NumberingGraph,
+   confirm 1/1.1/1.1.1 increments per section, flag duplicates, gaps, and H2–6 not linked to their H1.
+3. Flag (advisory) sections nested to H5/H6 as "deeper than the preferred four levels."
+4. Flag a bullet that immediately follows a heading with no lead-in paragraph.
