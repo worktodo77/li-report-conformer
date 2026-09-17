@@ -62,6 +62,11 @@ def split_body(body):
         e = j
         items.append(body[i:e]); i = e
     return items
+class ReviewOnlyRequired(Exception):
+    """Raised by the guarded save entry point when a not-clean/unknown output would be written without an
+    explicit review-only opt-in (issue #1 E)."""
+
+
 RPR_ORDER=['rStyle','rFonts','b','bCs','i','iCs','caps','smallCaps','strike','dstrike','outline','shadow','emboss','imprint','noProof','snapToGrid','vanish','webHidden','color','spacing','w','kern','position','sz','szCs','highlight','u','effect','bdr','shd','fitText','vertAlign','rtl','cs','em','lang','eastAsianLayout','specVanish','oMath','rPrChange']
 PPR_ORDER=['pStyle','keepNext','keepLines','pageBreakBefore','framePr','widowControl','numPr','suppressLineNumbers','pBdr','shd','tabs','suppressAutoHyphens','kinsoku','wordWrap','overflowPunct','topLinePunct','autoSpaceDE','autoSpaceDN','bidi','adjustRightInd','snapToGrid','spacing','ind','contextualSpacing','mirrorIndents','suppressOverlap','jc','textDirection','textAlignment','textboxTightWrap','outlineLvl','divId','cnfStyle','rPr','sectPr','pPrChange']
 TBLPR_ORDER=['tblStyle','tblpPr','tblOverlap','bidiVisual','tblStyleRowBandSize','tblStyleColBandSize','tblW','jc','tblCellSpacing','tblInd','tblBorders','shd','tblLayout','tblCellMar','tblLook','tblCaption','tblDescription','tblPrChange']
@@ -315,6 +320,8 @@ class Conformer:
         self._house_repaired = {}    # styleId -> (before_fmt, after_fmt) for INTENDED house list repairs
         self._unresolved_imports = []  # template numIds whose numbering chain could not be resolved
         self._restyled = {}          # paragraph identity -> engine-assigned style (authorized reclassification)
+        self._gen = 0                # mutation generation; a save verdict is tied to the gen it was computed at
+        self._save_verdict = 'unset'; self._save_forced_review = False; self._save_gen = -1
         self.pending_judgments = []
         self.decisions = None
         from conformer import revisions as _rev
@@ -338,7 +345,9 @@ class Conformer:
     # ---- item access (body indices)
     def n(self): return len(self.items) - self.b0
     def item(self, i): return self.items[self.b0 + i]
-    def set(self, i, x): self.items[self.b0 + i] = x
+    def set(self, i, x):
+        self.items[self.b0 + i] = x
+        self._gen = getattr(self, '_gen', 0) + 1     # a mutation invalidates any finalized save verdict
     def text(self, i): return text_of(self.item(i))
     def style(self, i):
         x = self.item(i)
@@ -1265,11 +1274,35 @@ class Conformer:
             self.say('M', -1, f'figure audit OK: {len(caps)} figures numbered sequentially per section; {tof}')
         return findings
 
+    def _finalize_verdict(self, force=False):
+        """Compute (or reuse) the conformance verdict tied to the CURRENT mutation generation (issue #1 E).
+        A later edit bumps self._gen and invalidates a stale verdict. A verification exception is UNKNOWN
+        (None), never an inherited clean claim. Returns the verdict (dict or None)."""
+        if (not force and self._save_verdict != 'unset' and self._save_gen == getattr(self, '_gen', 0)):
+            return self._save_verdict
+        try:
+            self._save_verdict = self.conformance_status()
+        except Exception:
+            self._save_verdict = None                # unknown / unverified
+        self._save_forced_review = (self._save_verdict is None
+                                    or not self._save_verdict.get('clean', False))
+        self._save_gen = getattr(self, '_gen', 0)
+        return self._save_verdict
+
+    def finalize_save(self, review_only=False):
+        """The guarded save entry point (issue #1 E): finalize the verdict for the current state and REQUIRE
+        an explicit review-only opt-in to proceed when it is not clean or is unknown. Returns the verdict."""
+        v = self._finalize_verdict(force=True)
+        if self._save_forced_review and not review_only:
+            raise ReviewOnlyRequired(self._artifact_label(v, True))
+        return v
+
     def save(self, path):
-        # Stamp the artifact's document-status from the ACTUAL verdict if one was recorded for this save
-        # (issue #1 R3): an explicit decision to save a not-clean/unknown copy must not be labelled verified.
-        if getattr(self, '_save_verdict', 'unset') != 'unset':
-            self._stamp_status(self._artifact_label(self._save_verdict, getattr(self, '_save_forced_review', False)))
+        # Every save path stamps the artifact's document-status from the ACTUAL verdict for the CURRENT state
+        # (issue #1 E): a direct run();save() no longer inherits a stale 'conformed & verified' label; a
+        # verification exception yields an unknown/unverified label, never a clean claim.
+        self._finalize_verdict()
+        self._stamp_status(self._artifact_label(self._save_verdict, self._save_forced_review))
         parts = self._output_parts()
         if os.path.exists(path): os.remove(path)
         with zipfile.ZipFile(path, 'w', zipfile.ZIP_DEFLATED) as z:

@@ -1575,9 +1575,11 @@ class MainWindow(QMainWindow):
                 return
 
         # Carry the ACTUAL verdict and the explicit review-only decision into the artifact so its label,
-        # filename and audit are accurate (issue #1 R3): a confirmation to save does not complete
-        # verification. forced_review = anything not verified clean (exception, blocking or unresolved).
+        # filename and audit are accurate (issue #1 E): a confirmation to save does not complete
+        # verification. forced_review = anything not verified clean (exception, blocking or unresolved). Pin
+        # it to the current mutation generation so save() reuses this verdict rather than recomputing.
         fresh._save_verdict = status
+        fresh._save_gen = getattr(fresh, '_gen', 0)
         fresh._save_forced_review = (status_error is not None
                                      or status is None or not status.get('clean', False))
 
@@ -1623,17 +1625,16 @@ class MainWindow(QMainWindow):
 
         review_only = bool(getattr(fresh, '_save_forced_review', False))
         stamp = datetime.datetime.now().strftime('%d%m%y')
-        if self.output_mode == 'replace':
+        # A promised REVIEW COPY is a DISTINCT artifact and NEVER overwrites the source, even in replace
+        # mode (issue #1 E): review_only is handled BEFORE replace, and always forces the unverified name.
+        if review_only:
+            base = self._chosen_output or os.path.join(d, f'{name}{ext}')
+            bstem, bext = os.path.splitext(base)
+            output_path = f'{bstem} REVIEW COPY - UNVERIFIED {stamp}{bext}'
+        elif self.output_mode == 'replace':
             output_path = src
         elif getattr(self, '_chosen_output', None):
             output_path = self._chosen_output          # user-chosen location + filename
-            if review_only:
-                # keep a promised review copy visibly distinct from a verified conformed file
-                cstem, cext = os.path.splitext(output_path)
-                if 'REVIEW COPY' not in cstem.upper():
-                    output_path = f'{cstem} (REVIEW COPY - UNVERIFIED){cext}'
-        elif review_only:
-            output_path = os.path.join(d, f'{name} REVIEW COPY - UNVERIFIED {stamp}{ext}')
         else:
             output_path = os.path.join(d, f'{name} CONFORMED {stamp}{ext}')
 
@@ -1656,10 +1657,8 @@ class MainWindow(QMainWindow):
         # verdict + reason counts, original SHA-256, preservation verdict, rolled-back passes) for any
         # preserve-mode output AND for any review-only copy, so the artifact's true status travels with it.
         if getattr(fresh, 'disposition', None) == 'preserve' or review_only:
-            try:
-                fresh.write_audit(output_path)
-            except Exception:
-                pass
+            # do NOT swallow an audit-write failure and report a normal success (issue #1 E)
+            fresh.write_audit(output_path)
 
         return output_path
 

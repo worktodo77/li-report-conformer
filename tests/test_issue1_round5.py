@@ -370,3 +370,72 @@ def test_d_tracked_current_header_fill_corrected_history_byte_identical():
     out, rep, tracked = c._repair_stray_header_formatting(f'<w:tbl>{row}</w:tbl>', 'T')
     assert 'w:fill="054F8A"' in out and 'D9EAF7' not in out        # current fill -> concrete navy
     assert change in out                                          # tracked-change snapshot byte-identical
+
+
+# =================================================================== E. Truthful saving
+def _save_conf(status_fn):
+    from conformer.engine import Conformer
+    c = Conformer.__new__(Conformer)
+    c._save_verdict = 'unset'; c._save_gen = -1; c._gen = 0; c._save_forced_review = False
+    c.disposition = None
+    c.conformance_status = status_fn
+    return c
+
+
+def test_e_finalize_save_requires_review_only_for_nonclean():
+    import pytest
+    from conformer.engine import ReviewOnlyRequired
+    c = _save_conf(lambda: {'clean': False, 'blocking': True, 'reasons': {}})
+    with pytest.raises(ReviewOnlyRequired):
+        c.finalize_save(review_only=False)
+    v = c.finalize_save(review_only=True)              # explicit opt-in proceeds
+    assert v['blocking'] is True and c._save_forced_review is True
+
+
+def test_e_finalize_save_clean_needs_no_optin():
+    c = _save_conf(lambda: {'clean': True, 'blocking': False, 'reasons': {}})
+    v = c.finalize_save(review_only=False)             # clean -> no permission needed
+    assert v['clean'] is True and c._save_forced_review is False
+
+
+def test_e_verifier_exception_is_unknown_not_clean():
+    def boom():
+        raise RuntimeError('verifier boom')
+    c = _save_conf(boom)
+    v = c._finalize_verdict(force=True)
+    assert v is None and c._save_forced_review is True
+    assert 'UNVERIFIED' in c._artifact_label(v, True).upper()
+
+
+def test_e_edit_invalidates_finalized_verdict():
+    c = _save_conf(lambda: {'clean': True, 'blocking': False, 'reasons': {}})
+    assert c._finalize_verdict()['clean'] is True and c._save_gen == 0
+    c.conformance_status = lambda: {'clean': False, 'blocking': True, 'reasons': {}}
+    c._gen = 1                                          # a later edit bumps the generation
+    assert c._finalize_verdict()['clean'] is False      # stale verdict recomputed
+
+
+def test_e_review_only_output_is_distinct_even_in_replace_mode():
+    import os as _os, tempfile
+    _os.environ['QT_QPA_PLATFORM'] = 'offscreen'
+    from PySide6.QtWidgets import QApplication
+    QApplication.instance() or QApplication([])
+    from conformer.ui.window import MainWindow
+    mw = MainWindow.__new__(MainWindow)
+    src = _os.path.join(tempfile.mkdtemp(), 'orig.docx')
+    open(src, 'wb').write(b'PK-source')
+    mw.input_path = src
+    mw.output_mode = 'replace'                          # replace mode...
+    mw._chosen_output = None
+
+    class _F:
+        _save_forced_review = True                     # ...but the copy is UNVERIFIED
+        disposition = None
+        log = []; judgment = []; audit = []
+        def save(self, p): _F.saved = p
+        def write_audit(self, p): _F.audit_path = p
+    f = _F()
+    out = mw._save_output(f)
+    assert out != src and 'REVIEW COPY - UNVERIFIED' in out   # never overwrote the source
+    assert getattr(_F, 'saved', None) == out
+    assert getattr(_F, 'audit_path', None) == out            # audit written (failure would propagate)

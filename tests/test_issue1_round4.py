@@ -174,6 +174,7 @@ def test_r3_review_copy_artifact_is_labeled_unverified():
     c._save_verdict = {'clean': False, 'blocking': True,
                        'reasons': {'paragraph_reference_flips': [{'x': 1}]}}
     c._save_forced_review = True
+    c._save_gen = c._gen                              # pin the injected verdict to the current generation
     out = os.path.join(tempfile.mkdtemp(), 'out.docx')
     c.save(out)
     core = zipfile.ZipFile(out).read('docProps/core.xml').decode('utf8')
