@@ -2310,11 +2310,15 @@ class Conformer:
             xml = xml.replace(tok, masks[tok])
         return xml
 
-    @staticmethod
-    def _correct_current_header_fill(tc):
-        """Strip a NON-house direct fill from a header cell's CURRENT tcPr (the region before any
-        <w:tcPrChange> snapshot), so the LITable navy header fill applies. The historical tcPrChange snapshot
-        is left untouched, so the tracked-change RECORD is preserved. Returns (xml, changed)."""
+    HOUSE_HEADER_SHD = '<w:shd w:val="clear" w:color="auto" w:fill="054F8A"/>'
+
+    @classmethod
+    def _correct_current_header_fill(cls, tc):
+        """Normalize a header cell's CURRENT background to the CONCRETE house navy (issue #1 D): the direct
+        <w:shd> in the current tcPr (the region BEFORE any <w:tcPrChange> snapshot) is replaced with
+        clear/054F8A/auto with any conflicting themeFill/themeColor/tint/shade removed — covering white,
+        automatic and theme fills, not just a non-house hex. The historical tcPrChange snapshot is left
+        byte-identical, so the tracked-change RECORD is preserved. Returns (xml, changed)."""
         o = tc.find('<w:tcPr>')
         if o < 0:
             return tc, False
@@ -2323,13 +2327,15 @@ class Conformer:
         if end < 0:
             end = len(tc)
         region = tc[o:end]
-
-        def _shd(sm):
-            f = re.search(r'w:fill="([0-9A-Fa-f]{6})"', sm.group(0))
-            return '' if (f and f.group(1).upper() not in ('054F8A', 'FFFFFF', 'AUTO')) else sm.group(0)
-        new_region = re.sub(r'<w:shd\b[^>]*/>', _shd, region)
-        if new_region == region:
+        m = re.search(r'<w:shd\b[^>]*/>', region)
+        if not m:
+            return tc, False                          # no direct current fill -> rely on the conditional
+        shd = m.group(0)
+        fill = re.search(r'w:fill="([^"]+)"', shd)
+        already_navy = (fill and fill.group(1).upper() == '054F8A' and 'theme' not in shd)
+        if already_navy:
             return tc, False
+        new_region = region.replace(shd, cls.HOUSE_HEADER_SHD, 1)
         return tc[:o] + new_region + tc[end:], True
 
     def _repair_stray_header_formatting(self, tbl_xml, locator):

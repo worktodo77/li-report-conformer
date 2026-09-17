@@ -301,3 +301,72 @@ def test_c_repair_plus_start_alteration_fails():
     after = [_p('EEEE', pstyle='ListX')]
     c = _scan_conf(onum, osty, num, sty, before, after, repaired)
     assert c._paragraph_reference_scan()['flips'], 'a repair that also alters start must fail'
+
+
+# =================================================================== D. Header background+foreground pair
+_LITABLE_STYLE = (f'<w:styles {W}><w:style w:type="table" w:styleId="LITable"><w:name w:val="LI Table"/>'
+                  '<w:tblPr><w:tblBorders>'
+                  + ''.join(f'<w:{s} w:val="single" w:sz="4" w:color="808080"/>'
+                            for s in ('top', 'left', 'bottom', 'right', 'insideH', 'insideV'))
+                  + '</w:tblBorders></w:tblPr>'
+                  '<w:tblStylePr w:type="firstRow"><w:rPr><w:b/><w:color w:val="FFFFFF"/></w:rPr>'
+                  '<w:tcPr><w:shd w:val="clear" w:fill="054F8A"/></w:tcPr></w:tblStylePr></w:style></w:styles>')
+
+
+def _hdr_table(cell_shd='', run_rpr='', tbllook='<w:tblLook w:firstRow="1"/>'):
+    return ('<w:tbl><w:tblPr><w:tblStyle w:val="LITable"/>' + tbllook + '</w:tblPr>'
+            '<w:tblGrid><w:gridCol w:w="2000"/></w:tblGrid>'
+            f'<w:tr><w:trPr><w:tblHeader/></w:trPr><w:tc><w:tcPr>{cell_shd}</w:tcPr>'
+            f'<w:p><w:pPr><w:jc w:val="center"/></w:pPr><w:r><w:rPr>{run_rpr}</w:rPr>'
+            '<w:t>H</w:t></w:r></w:p></w:tc></w:tr></w:tbl>')
+
+
+def test_d_white_fill_with_dark_text_is_not_clean():
+    from conformer.tablespec import effective_table_issues, table_conformant
+    frag = _hdr_table(cell_shd='<w:shd w:val="clear" w:fill="FFFFFF"/>',
+                      run_rpr='<w:color w:val="000000"/>')
+    assert table_conformant(frag, styles_xml=_LITABLE_STYLE) is False   # white bg is not the navy header
+
+
+def test_d_auto_fill_not_assumed_navy_without_active_conditional():
+    # firstRow conditional DISABLED (tblLook firstRow=0): an automatic direct fill cannot be assumed navy.
+    from conformer.tablespec import effective_table_issues
+    frag = _hdr_table(cell_shd='<w:shd w:val="clear" w:fill="auto"/>', run_rpr='<w:color w:val="000000"/>',
+                      tbllook='<w:tblLook w:firstRow="0"/>')
+    issues = effective_table_issues(frag, styles_xml=_LITABLE_STYLE)
+    assert issues, 'auto fill with the header conditional OFF must not silently pass as navy'
+    assert not all(i['severity'] == 'review' for i in issues)
+
+
+def test_d_theme_fill_is_unresolved_not_navy():
+    from conformer.tablespec import effective_table_issues
+    frag = _hdr_table(cell_shd='<w:shd w:val="clear" w:themeFill="accent1"/>', run_rpr='<w:color w:val="000000"/>')
+    issues = effective_table_issues(frag, styles_xml=_LITABLE_STYLE)
+    assert any(i['severity'] == 'unresolved' for i in issues), 'theme-only header fill must be unresolved'
+
+
+def test_d_repair_normalizes_white_and_auto_and_theme_to_concrete_navy():
+    from conformer.engine import Conformer
+    c = Conformer.__new__(Conformer)
+    c._table_notes = []
+    for fill in ('FFFFFF', 'auto', 'theme'):
+        shd = ('<w:shd w:val="clear" w:themeFill="accent1"/>' if fill == 'theme'
+               else f'<w:shd w:val="clear" w:fill="{fill}"/>')
+        row = (f'<w:tr><w:trPr><w:tblHeader/></w:trPr><w:tc><w:tcPr>{shd}</w:tcPr>'
+               '<w:p><w:r><w:t>H</w:t></w:r></w:p></w:tc></w:tr>')
+        out, rep, _ = c._repair_stray_header_formatting(f'<w:tbl>{row}</w:tbl>', 'T')
+        assert 'w:fill="054F8A"' in out, (fill, out)
+        assert 'themeFill' not in out and 'FFFFFF' not in out, (fill, out)
+
+
+def test_d_tracked_current_header_fill_corrected_history_byte_identical():
+    from conformer.engine import Conformer
+    c = Conformer.__new__(Conformer)
+    c._table_notes = []
+    change = '<w:tcPrChange w:id="7" w:author="R"><w:tcPr><w:shd w:val="clear" w:fill="ABCDEF"/></w:tcPr></w:tcPrChange>'
+    row = ('<w:tr><w:trPr><w:tblHeader/></w:trPr>'
+           f'<w:tc><w:tcPr><w:shd w:val="clear" w:fill="D9EAF7"/>{change}</w:tcPr>'
+           '<w:p><w:r><w:t>H</w:t></w:r></w:p></w:tc></w:tr>')
+    out, rep, tracked = c._repair_stray_header_formatting(f'<w:tbl>{row}</w:tbl>', 'T')
+    assert 'w:fill="054F8A"' in out and 'D9EAF7' not in out        # current fill -> concrete navy
+    assert change in out                                          # tracked-change snapshot byte-identical

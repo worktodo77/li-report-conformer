@@ -222,8 +222,14 @@ def effective_table_issues(tbl_xml, nsdecls=None, styles_xml=None):
             # shading
             shd = tcPr.find(_w('shd')) if tcPr is not None else None
             fill = shd.get(_w('fill')) if shd is not None else None
+            theme_fill = shd is not None and (shd.get(_w('themeFill')) or shd.get(_w('themeColor')))
             if is_header:
-                if fill and fill.lower() not in _DEFAULT_SHD and fill.upper() != HOUSE['header_fill']:
+                if theme_fill and (not fill or fill.lower() in _DEFAULT_SHD):
+                    # a theme-only background: its effective colour cannot be established here -> unresolved
+                    issues.append({'kind': 'header-fill-theme', 'detail': f'header cell c{ci} uses a theme '
+                                   'fill; effective background colour is not established (not proven navy)',
+                                   'severity': 'unresolved'})
+                elif fill and fill.lower() not in _DEFAULT_SHD and fill.upper() != HOUSE['header_fill']:
                     issues.append({'kind': 'header-fill', 'detail': f'header cell c{ci} fill {fill} is '
                                    f"not the house navy {HOUSE['header_fill']}", 'severity': 'fail'})
             elif fill and fill.lower() not in _DEFAULT_SHD:
