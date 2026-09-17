@@ -114,6 +114,20 @@ def normalize(xml):
 def esc(s): return s.replace('&','&amp;').replace('<','&lt;').replace('>','&gt;')
 
 _TYPO_MONTHS = 'January|February|March|April|May|June|July|August|September|October|November|December'
+# Honorifics/abbreviations that end in a lowercase letter + period but are NOT a sentence boundary, so
+# the two-space sentence rule must NOT fire after them (e.g. "Mr. Hall", "vs. The", "Fig. 3-2 ... See").
+_SENTENCE_ABBREV = {
+    'mr', 'mrs', 'ms', 'dr', 'prof', 'st', 'sr', 'jr', 'rev', 'hon', 'messrs',
+    'vs', 'etc', 'al', 'cf', 'viz', 'ibid', 'no', 'nos', 'fig', 'figs', 'tbl',
+    'vol', 'vols', 'ltd', 'inc', 'co', 'corp', 'dept', 'div', 'sec', 'art',
+    'para', 'pp', 'ref', 'ex', 'app', 'attach', 'ed', 'eds', 'esp', 'approx',
+}
+def _sentence_space(m):
+    """Add the house second space between sentences, but not after a known abbreviation/initial."""
+    lead = m.group(1)
+    if lead != ')' and (len(lead) == 1 or lead.lower() in _SENTENCE_ABBREV):
+        return m.group(0)   # abbreviation or single-letter initial — leave the single space
+    return lead + '.  ' + m.group(2)
 def typo_text(t):
     """The house typography transform on a single text token (smart quotes, en dashes, sentence
     spacing, date/ligature fixes). Shared by the typography pass AND the content-stream gate as the
@@ -122,7 +136,7 @@ def typo_text(t):
     t = re.sub(r'(^|[\s(\[])"', '\\1\u201c', t); t = t.replace('"', '\u201d')
     t = re.sub(r"(^|[\s(\[])'", '\\1\u2018', t); t = t.replace("'", '\u2019')
     t = re.sub(r'(\w)--(\w)', '\\1\u2013\\2', t)
-    t = re.sub(r'([a-z\)])\. ([A-Z])', r'\1.  \2', t)
+    t = re.sub(r'([A-Za-z]*[a-z]|\))\. ([A-Z])', _sentence_space, t)
     t = re.sub(r'\b0(\d) (%s)' % _TYPO_MONTHS, r'\1 \2', t)
     return t.replace('\ufb00', 'ff').replace('\ufb01', 'fi').replace('\ufb02', 'fl')
 

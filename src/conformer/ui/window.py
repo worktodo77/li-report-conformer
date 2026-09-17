@@ -262,9 +262,19 @@ def _esc_html(s):
     return s.replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;')
 
 
+def _reveal_ws(esc_text):
+    """Make otherwise-invisible characters visible INSIDE a highlighted diff span, so whitespace and
+    special-character edits (a doubled sentence space, a non-breaking space, a tab) are actually seen."""
+    return (esc_text
+            .replace(' ', '<span style="color:#c47f17">⍽</span>')     # non-breaking space
+            .replace(' ', '<span style="color:#c47f17">·</span>')          # normal space
+            .replace('\t', '<span style="color:#c47f17">→</span>'))        # tab
+
+
 def diff_before_after(before, after):
     """Word-level diff -> (before_html, after_html). Removed words in the BEFORE are struck through on
-    a faint red; inserted/changed words in the AFTER are highlighted yellow."""
+    a faint red; inserted/changed words in the AFTER are highlighted yellow. Whitespace inside a changed
+    span is revealed (·/⍽/→) so invisible edits are legible."""
     a = _re.split(r'(\s+)', before)
     b = _re.split(r'(\s+)', after)
     sm = _difflib.SequenceMatcher(a=a, b=b, autojunk=False)
@@ -276,10 +286,33 @@ def diff_before_after(before, after):
         else:
             if bt:
                 bo.append('<span style="background:#fbe4e4;text-decoration:line-through;'
-                          'color:#a3453c">%s</span>' % bt)
+                          'color:#a3453c">%s</span>' % _reveal_ws(bt))
             if at:
-                ao.append('<span style="background:#fff29a;">%s</span>' % at)
+                ao.append('<span style="background:#fff29a;">%s</span>' % _reveal_ws(at))
     return ''.join(bo), ''.join(ao)
+
+
+def _edit_kind_label(before, after):
+    """A short, specific tag for what a cosmetic edit actually does, e.g. 'Sentence spacing', 'Smart
+    quotes'. Falls back to None so the caller can use the generic pass label."""
+    b, a = before, after
+    if '.  ' in a and '.  ' not in b:
+        return 'Sentence spacing'
+    if ('“' in a or '”' in a) and '"' in b:
+        return 'Smart quotes'
+    if '’' in a and "'" in b and '‘' not in a:
+        return 'Apostrophe'
+    if '‘' in a and "'" in b:
+        return 'Smart quotes'
+    if '–' in a and '--' in b:
+        return 'En dash'
+    if '-inch' in a and '"' in b:
+        return 'Inch mark'
+    if ' ' in a and ' ' not in b:
+        return 'Non-breaking space'
+    if any(lig in b for lig in ('ﬀ', 'ﬁ', 'ﬂ')):
+        return 'Ligature'
+    return None
 
 
 class EditRow(QFrame):
@@ -295,7 +328,8 @@ class EditRow(QFrame):
         lay.setSpacing(4)
 
         head = QHBoxLayout(); head.setSpacing(8)
-        chip = QLabel(edit['label'])
+        kind = _edit_kind_label(edit['before'], edit['after']) or edit['label']
+        chip = QLabel(kind)
         chip.setStyleSheet('font-size: 10px; font-weight: 600; color: #1f3a5f; background: #eaf0f7; '
                            'border-radius: 4px; padding: 2px 7px;')
         chip.setFixedHeight(18)
@@ -327,8 +361,21 @@ class EditRow(QFrame):
         if hasattr(parent, '_update_tally'):
             parent._update_tally()
 
+    def set_skipped(self, val):
+        """Set skip state programmatically (e.g. from a 'Skip all cleanup' toggle)."""
+        self.skipped = bool(val)
+        self.skip_btn.setChecked(self.skipped)
+        self.after_lbl.setEnabled(not self.skipped)
+
     def decision_id(self):
         return self.edit['id']
+
+
+def _is_cosmetic_log(msg):
+    """True for the low-value cosmetic passes (typography + house style) whose per-edit detail lives in
+    the paginated Text-cleanup list; everything else is substantive structural conformance."""
+    m = msg.lower()
+    return m.startswith('typography normalised') or m.startswith('li house style applied')
 
 
 class MainWindow(QMainWindow):
@@ -621,18 +668,60 @@ class MainWindow(QMainWindow):
         header.clicked.connect(toggle)
         return wrap
 
-    def _build_mech_content(self, edits, fmt):
-        """Content for the MECHANICAL FIXES section, built lazily. Text-edit rows are PAGINATED so even
-        a report with thousands of edits (e.g. a heavily tracked draft) never freezes the UI — the first
-        page renders instantly and more load on demand. Unreviewed edits are applied by default."""
+    def _build_conformance_content(self, entries):
+        """The substantive structural conformance (corrupt-style repair, tables → LI table style, caption
+        rebuilds, cross-references, figures, landscape). Repeated per-instance messages are aggregated
+        with a count so the list reads as a clean summary of what was actually done."""
+        from collections import Counter
+        w = QWidget()
+        v = QVBoxLayout(w); v.setContentsMargins(0, 4, 0, 8); v.setSpacing(4)
+        cap = QLabel('Structural conformance applied — tracked changes, comments and authorship preserved:')
+        cap.setWordWrap(True)
+        cap.setStyleSheet('font-size: 11.5px; color: #66707a;')
+        v.addWidget(cap)
+        counts = Counter(e['msg'] for e in entries)
+        for msg, c in counts.items():
+            text = msg if c == 1 else f'{msg}  (×{c})'
+            line = QLabel('<span style="color:#1f7a34;">✓</span>&nbsp;&nbsp;' + _esc_html(text))
+            line.setTextFormat(Qt.RichText)
+            line.setWordWrap(True)
+            line.setStyleSheet('font-size: 12.5px; color: #1c2733; padding-left: 2px;')
+            v.addWidget(line)
+        return w
+
+    def _build_cleanup_content(self, edits, summaries):
+        """The demoted cosmetic bucket (typography + house style). Text-edit rows are PAGINATED so even a
+        heavily tracked draft (thousands of edits) never freezes the UI, plus a one-click 'Skip all
+        cleanup' toggle for mid-review drafts. Unreviewed edits are applied by default."""
         w = QWidget()
         mc = QVBoxLayout(w); mc.setContentsMargins(0, 4, 0, 8); mc.setSpacing(6)
+        intro = QLabel('Cosmetic only — smart quotes, sentence spacing, and LI house-style '
+                       'capitalization/terminology. Applied by default; skip individually, or skip the '
+                       'whole set on a draft still being edited.')
+        intro.setWordWrap(True)
+        intro.setStyleSheet('font-size: 11.5px; color: #66707a;')
+        mc.addWidget(intro)
+        for s in summaries:
+            line = QLabel('•  ' + s['msg'])
+            line.setWordWrap(True)
+            line.setStyleSheet('font-size: 11.5px; color: #8a8f96; padding-left: 8px;')
+            mc.addWidget(line)
+
         if edits:
-            cap = QLabel('Text edits — review each and Skip any you disagree with. '
-                         'Unreviewed edits are applied by default.')
-            cap.setWordWrap(True)
-            cap.setStyleSheet('font-size: 11.5px; color: #66707a;')
-            mc.addWidget(cap)
+            skip_all = QPushButton('Skip all cleanup')
+            skip_all.setObjectName('skipBtn')
+            skip_all.setCheckable(True)
+            skip_all.setFixedWidth(160)
+
+            def on_skip_all():
+                self.skip_all_cleanup = skip_all.isChecked()
+                skip_all.setText('Cleanup skipped — undo' if self.skip_all_cleanup else 'Skip all cleanup')
+                for r in self.edit_rows:
+                    r.set_skipped(self.skip_all_cleanup)
+                self._update_tally()
+
+            skip_all.clicked.connect(on_skip_all)
+            mc.addWidget(skip_all, 0, Qt.AlignLeft)
 
             rows_holder = QWidget()
             rl = QVBoxLayout(rows_holder); rl.setContentsMargins(0, 0, 0, 0); rl.setSpacing(6)
@@ -645,7 +734,9 @@ class MainWindow(QMainWindow):
             def render_more():
                 end = min(page['shown'] + CHUNK, len(edits))
                 for e in edits[page['shown']:end]:
-                    row = EditRow(e); self.edit_rows.append(row); rl.addWidget(row)
+                    row = EditRow(e)
+                    row.set_skipped(self.skip_all_cleanup)   # honour skip-all for newly paged rows
+                    self.edit_rows.append(row); rl.addWidget(row)
                 page['shown'] = end
                 remaining = len(edits) - page['shown']
                 if remaining > 0:
@@ -657,36 +748,33 @@ class MainWindow(QMainWindow):
             more_btn.clicked.connect(render_more)
             mc.addWidget(more_btn, 0, Qt.AlignLeft)
             render_more()
-
-        if fmt:
-            fl = QLabel('Formatting fixes applied automatically:')
-            fl.setStyleSheet('font-size: 11.5px; color: #66707a; padding-top: 6px;')
-            mc.addWidget(fl)
-            for entry in fmt:
-                line = QLabel('•  ' + entry['msg'])
-                line.setWordWrap(True)
-                line.setStyleSheet('font-size: 11.5px; color: #8a8f96; padding-left: 8px;')
-                mc.addWidget(line)
         return w
 
     def _build_review_state(self):
         self._clear_body()
         self.judgment_rows = []
         self.edit_rows = []
+        self.skip_all_cleanup = False
         edits = getattr(self, 'edits', [])
         log = list(self.conformer.log) if self.conformer else []
 
         if self.conformer and getattr(self.conformer, 'disposition', None) == 'preserve':
             self.body_layout.addWidget(self._preserve_banner())
 
-        # ── collapsible MECHANICAL FIXES: text edits (before/after + Skip) + formatting fixes ──
-        # Built LAZILY + paginated: with thousands of edits, eager construction froze the UI. Collapsed
-        # by default, so nothing is built until the user opens the section.
+        # Split the applied fixes into the SUBSTANTIVE structural conformance (foregrounded) vs the
+        # cosmetic typography/house-style cleanup (demoted). The 1,000s of cosmetic text edits used to
+        # bury the handful of real conformance actions Claire cares about.
         fmt = [entry for entry in log if entry.get('msg')]
-        self.body_layout.addWidget(self._collapsible(
-            'MECHANICAL FIXES', f'{len(edits)} text edits · {len(fmt)} formatting fixes',
-            content_builder=lambda e=edits, f=fmt: self._build_mech_content(e, f)))
+        conformance = [e for e in fmt if not _is_cosmetic_log(e['msg'])]
+        cosmetic_summaries = [e for e in fmt if _is_cosmetic_log(e['msg'])]
 
+        # ── CONFORMANCE FIXES (foreground, expanded) — style repair, tables, captions, cross-refs ──
+        if conformance:
+            self.body_layout.addWidget(self._collapsible(
+                'CONFORMANCE FIXES', f'{len(conformance)} structural',
+                content_widget=self._build_conformance_content(conformance), expanded=True))
+
+        # ── JUDGMENT CALLS (substantive, kept near the top) ──
         if self.judgment_calls:
             judge_sec = QLabel(f'JUDGMENT CALLS ({len(self.judgment_calls)})')
             judge_sec.setObjectName('sectionLabel')
@@ -696,10 +784,16 @@ class MainWindow(QMainWindow):
                 row = JudgmentRow(idx, call)
                 self.judgment_rows.append(row)
                 self.body_layout.addWidget(row)
-        else:
+        elif not conformance:
             no_judge = QLabel('No judgment calls — all fixes are mechanical.')
             no_judge.setStyleSheet('font-size: 12px; color: #66707a; padding: 8px 0;')
             self.body_layout.addWidget(no_judge)
+
+        # ── TEXT CLEANUP (demoted, collapsed, lazy + paginated) — typography + house style ──
+        if edits or cosmetic_summaries:
+            self.body_layout.addWidget(self._collapsible(
+                'TEXT CLEANUP', f'{len(edits)} cosmetic edits (typography + house style)',
+                content_builder=lambda e=edits, s=cosmetic_summaries: self._build_cleanup_content(e, s)))
 
         self.body_layout.addStretch()
         self.tally_bar.setVisible(bool(self.judgment_calls) or bool(edits))
@@ -933,9 +1027,14 @@ class MainWindow(QMainWindow):
         decisions = {}
         for row in self.judgment_rows:
             decisions[row.call.id] = row.get_decision_string()
-        for row in getattr(self, 'edit_rows', []):
-            if row.skipped:
-                decisions[row.decision_id()] = 'skip'
+        if getattr(self, 'skip_all_cleanup', False):
+            # skip EVERY cosmetic edit, including pages the user never scrolled to
+            for e in getattr(self, 'edits', []):
+                decisions[e['id']] = 'skip'
+        else:
+            for row in getattr(self, 'edit_rows', []):
+                if row.skipped:
+                    decisions[row.decision_id()] = 'skip'
 
         self._build_analyzing_state()
         self.status_label.setText('Applying decisions and conforming document...')
