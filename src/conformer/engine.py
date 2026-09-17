@@ -314,6 +314,7 @@ class Conformer:
         self._table_notes = []       # tables the table pass could not conform reliably (nested/complex)
         self._house_repaired = {}    # styleId -> (before_fmt, after_fmt) for INTENDED house list repairs
         self._unresolved_imports = []  # template numIds whose numbering chain could not be resolved
+        self._restyled = {}          # paragraph identity -> engine-assigned style (authorized reclassification)
         self.pending_judgments = []
         self.decisions = None
         from conformer import revisions as _rev
@@ -345,6 +346,15 @@ class Conformer:
         m = re.search(r'<w:pStyle w:val="([^"]+)"', x); return m.group(1) if m else 'Normal'
     def set_style(self, i, st):
         x = self.item(i)
+        # Record this engine-made reclassification for reference-verification authorization (issue #1 C): a
+        # pStyle change the engine DECIDES is an approved before/after change; an EXTERNAL numbering change
+        # (not recorded here) is never authorized by merely following its output style.
+        rs = getattr(self, '_restyled', None)
+        if rs is not None:
+            pid = re.search(r'w14:paraId="([^"]+)"', x[:x.find('>') + 1])
+            txt = self._fold_typography(' '.join(re.findall(r'<w:t[^>]*>([^<]*)</w:t>', x)))
+            key = pid.group(1) if pid else ('t:' + txt)
+            rs[key] = st
         if '<w:pStyle' in x: x = re.sub(r'<w:pStyle w:val="[^"]+"/>', f'<w:pStyle w:val="{st}"/>', x, count=1)
         elif '<w:pPr>' in x: x = x.replace('<w:pPr>', f'<w:pPr><w:pStyle w:val="{st}"/>', 1)
         else: x = re.sub(r'<w:p\b[^>]*>', lambda m: m.group(0) + f'<w:pPr><w:pStyle w:val="{st}"/></w:pPr>', x, count=1)
@@ -591,11 +601,15 @@ class Conformer:
         il = re.search(r'<w:ilvl w:val="([^"]+)"', dnpr.group(0))
         d_nid = nid.group(1) if nid else None
         d_il = il.group(1) if il else '0'
-        direct_lv = graph.resolve_level(d_nid, d_il) if d_nid and d_nid != '0' else None
-        if direct_lv is None:
-            return None                                  # not a functioning list (incl. numId 0)
         style_np = graph.style_numpr(st)
         style_lv = graph.resolve_level(*style_np) if style_np else None
+        if d_nid == '0':
+            # explicit suppression: MEANINGFUL when the style would otherwise number the paragraph (keep
+            # it, or stripping silently ADDS a number); redundant when the style has no list anyway.
+            return dnpr.group(0) if style_lv is not None else None
+        direct_lv = graph.resolve_level(d_nid, d_il) if d_nid else None
+        if direct_lv is None:
+            return None                                  # not a functioning list
         if style_lv is None:
             return dnpr.group(0)                          # style supplies no list -> keep (loss prevention)
         if self._is_bullet_fmt(direct_lv) != self._is_bullet_fmt(style_lv):
@@ -2097,6 +2111,19 @@ class Conformer:
                 return False
             return self._is_bullet_fmt(bd.level) == self._is_bullet_fmt(bs.level)
 
+        restyled = getattr(self, '_restyled', {})
+
+        def _restyle_authorized(bi, ai, a_res):
+            """A pStyle change the ENGINE recorded (classify / level promotion): an approved reclassification
+            where the paragraph correctly follows its newly-assigned style. An EXTERNAL pStyle change is not
+            recorded and is never authorized this way (issue #1 C)."""
+            if bi['style'] == ai['style']:
+                return False
+            key = ai['id'] or ('t:' + ai['text'])
+            if restyled.get(key) != ai['style']:
+                return False
+            return a_res is not None and a_res.resolved
+
         b_list = [_info(p) for p in _paras(self._orig_items0, self._orig_b0)]
         a_list = [_info(p) for p in _paras(self.items, self.b0)]
         a_by_id = defaultdict(list); a_by_txt = defaultdict(list)
@@ -2132,7 +2159,8 @@ class Conformer:
             # same-category strip. The blanket "follows its output style" exemption is removed (issue #1 C).
             if not (bsig == asig and _inst_of(b_res) == _inst_of(a_res)):
                 exp = _repair_expected(ai['style'])
-                authorized = (exp is not None and asig == exp) or _strip_authorized(bi, ai, a_res)
+                authorized = ((exp is not None and asig == exp) or _strip_authorized(bi, ai, a_res)
+                              or _restyle_authorized(bi, ai, a_res))
                 if not authorized:
                     flips.append({'scope': 'current', 'text': (ai['text'] or bi['text'])[:60],
                                   'before_style': bi['style'], 'style': ai['style'],
