@@ -1,6 +1,34 @@
 # Closure record — corrective-work review (GitHub issue #1)
 
-## Round 4 (this round) — list-instance semantics, complete reference coverage, honest artifacts, heading repair
+## Round 5 (this round) — A–E implementation prescription
+
+Implements the A–E prescription in order (failing tests first). New counterexamples live in
+`tests/test_issue1_round5.py`, watched RED before each section and GREEN after. Fast suite **203 passed**;
+local real-report suite **4 passed**. Retains the preservation gates and the accepted R2/R4/R6/R7 fixes and
+the approved current-header-fill policy.
+
+| Sec | Commit | Fix | Tests (RED→GREEN) |
+|---|---|---|---|
+| A | `5676d57` | Three-state `Resolution` (resolved/none/unresolved); pStyle links a MULTIMAP; instance vs level selection separated; order-independent; partial direct-numPr merge | `test_a_heading_selects_linked_level_not_ilvl0`, `test_a_ambiguous_instance_is_unresolved`, `test_a_definition_order_independent`, `test_a_numid0_is_no_numbering_not_unresolved`, `test_a_missing_instance_is_unresolved_not_none`, `test_a_partial_direct_ilvl_merges_with_inherited_instance` |
+| B | `a3beb77`,`609b01d` | Reverse-use index BEFORE mutation; one repaired instance per source instance (overlay house props on affected levels, retain healthy levels/starts/overrides, add a missing level, symbol font); rebind ALL users (styles + direct); orphan (lost-numbering) styles; independent instances stay independent | `test_b_partial_corruption_keeps_shared_instance`, `test_b_healthy_direct_user_rebound_to_repaired_instance`, `test_b_independent_instances_sharing_abstract_stay_independent` |
+| C | `19c2f45`,`a2bf50e` | Deleted the blanket `asig==style_after` exemption; compare instance identity AND level; authorize only a recorded repair delta, a policy-approved SAME-CATEGORY strip, or an engine-recorded reclassification; `_functioning_direct_numpr` keeps on category-flip / suppression | `test_c_pstyle_change_without_manifest_fails`, `test_c_dropping_functioning_direct_decimal_over_bullet_style_fails`, `test_c_same_format_instance_swap_changes_continuation_fails`, `test_c_valid_label_repair_passes`, `test_c_repair_plus_start_alteration_fails` |
+| D | `4faa6ef` | Header background normalized to CONCRETE navy (white/auto/theme, tcPrChange preserved byte-identical); tablespec: theme fill unresolved, not assumed navy | `test_d_white_fill_with_dark_text_is_not_clean`, `test_d_auto_fill_not_assumed_navy_without_active_conditional`, `test_d_theme_fill_is_unresolved_not_navy`, `test_d_repair_normalizes_white_and_auto_and_theme_to_concrete_navy`, `test_d_tracked_current_header_fill_corrected_history_byte_identical` |
+| E | `1d8cf87` | Verdict tied to mutation generation; `save()` stamps truthful/unknown on every path; `finalize_save(review_only)` guarded entry point; review-only artifact distinct even in replace mode; audit-write failure not swallowed | `test_e_finalize_save_requires_review_only_for_nonclean`, `test_e_verifier_exception_is_unknown_not_clean`, `test_e_edit_invalidates_finalized_verdict`, `test_e_review_only_output_is_distinct_even_in_replace_mode` |
+
+Fresh real-report evaluation (four outcomes SEPARATE):
+- **Preservation:** CLEAN — 11,374 tracked changes, 171 comments, 8 authors; 0 rollbacks; output validates.
+- **Numbering correctness:** 0 unintended flips, 3 intended repairs (`1ai`, `ArticleSection`,
+  `Listbulletasasentence`), 0 definition-integrity violations, 0 paragraph-reference flips.
+- **Table conformance:** 87 tables failing effective format, 190 tables with review deviations (overlap).
+- **Unresolved:** 0 unresolved imports, 0 uncorresponded paragraphs, 0 unresolved table parses, 98 table
+  review notes; authoritative verdict honestly **not clean / blocking** on the table remainder.
+- **Independent resolver evidence:** the A fixtures hand-specify expected results (Heading2 → (1,1), ambiguous
+  instance → unresolved, order-independence). **Word accept/reject and rendered-numbering acceptance is
+  PENDING** (a manual maintainer step; no runtime dependency added).
+
+---
+
+## Round 4 — list-instance semantics, complete reference coverage, honest artifacts, heading repair
 
 The reviewer accepted R2 and R6 as closed (with R4/R7), and kept R1/R3/R5 open. Round 4 addresses the R1
 and R3 reproductions and repairs the heading numbering; R5 (effective table repair) is staged with honest,
