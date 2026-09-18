@@ -1713,6 +1713,7 @@ class Conformer:
             prev_stream = after_stream
         self._merge_pdf_lines_preserving()   # #1 AUTO authorized text edit (clean excerpts only)
         self._strip_excerpt_quotes_preserving()   # §5 remove redundant surrounding quotes (judgment call)
+        self._offer_table_body_normalization()     # small table body fonts: keep by default, offer 11pt
         # Interactive ASK structural changes (display-preserving, per-instance JudgmentCalls).
         # #8 first (Claire's explicit need): caption fielding then cross-reference rebuild.
         self._emit('refs')
@@ -1822,6 +1823,56 @@ class Conformer:
             if not clean:
                 self._restore(snap)
                 self.exceptions.append(('strip_excerpt_quotes', 'ledger backstop tripped (rolled back)'))
+
+    def _table_body_is_small(self, tbl_xml):
+        """True when a table's BODY rows carry a direct font size and every such size is below the house
+        11pt (sz 22) — i.e. a deliberately-smaller table, not a stray cell. Header row excluded."""
+        rows = re.findall(r'<w:tr\b.*?</w:tr>', tbl_xml, re.S)
+        if len(rows) < 2:
+            return False
+        szs = []
+        for r in rows[1:]:
+            r = re.sub(r'<w:rPrChange\b.*?</w:rPrChange>', '', r, flags=re.S)   # current sizes only
+            szs += [int(s) for s in re.findall(r'<w:sz w:val="(\d+)"/>', r)]
+        return bool(szs) and all(s < 22 for s in szs)
+
+    def _normalize_table_body_to_11pt(self, i):
+        """Strip direct run sizes from a table's BODY rows (on cells with no tracked change) so the Table
+        Data 11pt applies. Header row (Table Header 10pt) is left untouched."""
+        x = self.item(i)
+        rows = re.findall(r'<w:tr\b.*?</w:tr>', x, re.S)
+        for r in rows[1:]:
+            masked, masks = self._mask_revisions(r)
+            masked = re.sub(r'<w:sz w:val="\d+"/>', '', masked)
+            masked = re.sub(r'<w:szCs w:val="\d+"/>', '', masked)
+            nr = self._unmask(masked, masks)
+            if nr != r:
+                x = x.replace(r, nr, 1)
+        if x != self.item(i):
+            self.set(i, x)
+
+    def _offer_table_body_normalization(self):
+        """§ tables: a table whose BODY text is a smaller font (8–10.5pt) is usually intentional — dense
+        schedule data fit to the page — so it is KEPT by default. Surface ONE class-level judgment call so
+        the reviewer can choose to normalize all such tables to the house 11pt if they prefer. Default:
+        keep. Only clean (untracked) cells are normalized on accept; a ledger backstop rolls back."""
+        small = [i for i in range(self.n())
+                 if self.item(i).startswith('<w:tbl') and self._table_body_is_small(self.item(i))]
+        if not small:
+            return
+        msg = (f'{len(small)} table(s) use a smaller body font (8–10.5pt) — likely intentional to fit dense '
+               'data. Kept as-is by default; choose to normalize them all to the house 11pt.')
+        jc = self._jcall('table-body-size', small[0], msg, 'Keep the smaller table fonts',
+                         alternatives=['Normalize all table bodies to 11pt'])
+        self.say('J', small[0], msg)
+        if self._decision_for(jc).startswith('change:'):
+            snap = self._snapshot()
+            for i in small:
+                self._normalize_table_body_to_11pt(i)
+            clean, _ = self.verify_preservation()
+            if not clean:
+                self._restore(snap)
+                self.exceptions.append(('normalize_table_body', 'ledger backstop tripped (rolled back)'))
 
     def _strip_leading_quote(self, i):
         """Remove one leading quotation mark (after any leading whitespace) from the paragraph's first text run."""
