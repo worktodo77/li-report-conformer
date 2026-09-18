@@ -337,11 +337,21 @@ def test_r3_conformance_clean_gate_reflects_issues():
     for bad in ('numbering_flips', 'definition_integrity_violations', 'tables_failing_effective_format'):
         c.outcome_report = lambda b=bad: {'conformance': {**empty, b: [{'x': 1}]}, 'unresolved': empty_u}
         assert c.conformance_clean() is False and c.conformance_status()['blocking'] is True, bad
-    # an UNADJUDICATED review deviation is not clean (but not blocking)
+    # a legitimate table deviation the engine PRESERVED (small data fonts, right-aligned numbers, subtotal
+    # shading) is INFORMATIONAL — surfaced, but it does NOT gate 'clean' (else no real report is ever clean
+    # and the warning becomes noise). Not blocking either.
     c.outcome_report = lambda: {'conformance': {**empty, 'tables_review': [{'x': 1}]}, 'unresolved': empty_u}
-    assert c.conformance_clean() is False and c.conformance_status()['blocking'] is False
+    assert c.conformance_clean() is True and c.conformance_status()['blocking'] is False
+    # a genuinely UNRESOLVED item still gates 'clean'
     c.outcome_report = lambda: {'conformance': empty, 'unresolved': {**empty_u, 'tables_unresolved': [{'x': 1}]}}
     assert c.conformance_clean() is False   # an unresolved table is never clean
+    # a NESTED-table note is unresolved (gates); a tracked-fill-corrected note is informational (does not)
+    c.outcome_report = lambda: {'conformance': empty,
+                                'unresolved': {**empty_u, 'tables_needing_review': ['S1 · ¶2: nested table left untouched']}}
+    assert c.conformance_clean() is False
+    c.outcome_report = lambda: {'conformance': empty,
+                                'unresolved': {**empty_u, 'tables_needing_review': ['S1 · ¶2: had a non-house fill that was a TRACKED change']}}
+    assert c.conformance_clean() is True
 
 
 class _FreshStub:

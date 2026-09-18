@@ -1187,39 +1187,42 @@ class MainWindow(QMainWindow):
                 rep = None
             if rep:
                 conf = rep.get('conformance', {})
-                unres = rep.get('unresolved', {})
                 nflip = len(conf.get('numbering_flips', []) or [])
                 npref = len(conf.get('paragraph_reference_flips', []) or [])
                 ninteg = len(conf.get('definition_integrity_violations', []) or [])
                 ntbl = len(conf.get('tables_failing_effective_format', []) or [])
-                nreview = len(conf.get('tables_review', []) or [])
-                nimp = len(unres.get('unresolved_imports', []) or [])
-                npru = len(unres.get('paragraph_reference_unresolved', []) or [])
-                nrev = (len(unres.get('tables_needing_review', []) or []) + len(unres.get('tables_unresolved', []) or [])
-                        + nreview + nimp + npru)
-                nroll = len(unres.get('rolled_back_passes', []) or [])
-                # the SAME authoritative verdict the audit uses (includes unadjudicated review deviations).
-                # An exception is UNKNOWN, never an inferred pass — the older count-based predicate would
-                # fail open when the verdict itself could not be computed (issue #1 R3).
+                # the SAME authoritative verdict the audit uses. An exception is UNKNOWN, never an inferred
+                # pass — the older count-based predicate would fail open when the verdict itself could not be
+                # computed (issue #1 R3). Blocking = formatting damage; the gating unresolved reasons are the
+                # exceptions; informational surfacings (preserved legitimate variation) are shown, not gated.
                 try:
-                    formatting_ok = fresh.conformance_clean()
+                    st = fresh.conformance_status()
+                    formatting_ok = not st['blocking']
+                    r = st['reasons']
+                    nimp = len(r.get('unresolved_imports') or [])
+                    npru = len(r.get('paragraph_reference_unresolved') or [])
+                    nrev = (len(r.get('tables_needing_review') or []) + len(r.get('tables_unresolved') or [])
+                            + nimp + npru)
+                    nroll = len(r.get('rolled_back_passes') or [])
+                    ninfo = sum(len(v) for v in st.get('informational', {}).values())
                 except Exception:
                     formatting_ok = None                         # UNKNOWN — verification did not complete
+                    nimp = npru = nrev = nroll = ninfo = 0
+                info_note = f'  ({ninfo} preserved formatting note(s) — informational)' if ninfo else ''
                 oc = QFrame(); oc.setObjectName('card')
                 ol = QVBoxLayout(oc)
                 for label, ok, detail in (
                     ('Review history preserved', rep.get('preservation', {}).get('clean') is True,
                      'Every tracked change and comment intact'),
                     ('Formatting conforms', formatting_ok is True,
-                     'Numbering, references, definitions and table formatting resolve as intended'
+                     'Numbering, references, definitions and table formatting resolve as intended' + info_note
                      if formatting_ok
                      else ('Conformance could not be verified — treat this as an unverified review copy'
                            if formatting_ok is None
                            else f'{nflip} list-meaning flip(s), {npref} paragraph-reference change(s), '
-                                f'{ninteg} definition issue(s), {ntbl} table(s) off, '
-                                f'{nreview} table(s) with unadjudicated review deviations')),
+                                f'{ninteg} definition issue(s), {ntbl} table(s) off')),
                     ('Nothing left unresolved', not (nrev or nroll),
-                     'No exceptions' if not (nrev or nroll)
+                     ('No exceptions' + info_note) if not (nrev or nroll)
                      else f'{nroll} pass(es) held back, {nrev} item(s) need a manual look '
                           f'({nimp} unresolved import(s), {npru} uncorresponded paragraph(s))')):
                     row = QLabel(f'{"✓" if ok else "⚠"}  <b>{label}</b> — {detail}')

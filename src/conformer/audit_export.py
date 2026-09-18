@@ -176,17 +176,27 @@ def build_records(fresh, source_path, output_path, decisions_log=None,
     n_flip = len(conf.get('numbering_flips', []) or [])
     n_integ = len(conf.get('definition_integrity_violations', []) or [])
     n_tblfail = len(conf.get('tables_failing_effective_format', []) or [])
-    n_review = len(conf.get('tables_review', []) or [])
-    # authoritative verdict (includes unadjudicated review/unresolved) — never derived from ZIP/XML validity
-    clean = fresh.conformance_clean() if hasattr(fresh, 'conformance_clean') else not (n_flip or n_integ or n_tblfail)
-    conformance_verdict = ('Clean — numbering, definitions and table formatting resolve as intended'
+    # Authoritative verdict — never derived from ZIP/XML validity. 'clean' gates on blocking damage AND
+    # genuinely-unresolved items; informational surfacings (legitimate variation the engine preserved,
+    # completed-correction notes) are reported but do not gate.
+    try:
+        st = fresh.conformance_status()
+        clean = st['clean']
+        r = st['reasons']
+        n_unres_tbl = len(r.get('tables_needing_review') or []) + len(r.get('tables_unresolved') or [])
+        n_rolled = len(r.get('rolled_back_passes') or [])
+        n_info = sum(len(v) for v in st.get('informational', {}).values())
+    except Exception:
+        clean = not (n_flip or n_integ or n_tblfail)
+        n_unres_tbl = len(unres.get('tables_unresolved', []) or [])
+        n_rolled = len(unres.get('rolled_back_passes', []) or [])
+        n_info = 0
+    _info_tail = f' ({n_info} preserved formatting note(s) — informational)' if n_info else ''
+    conformance_verdict = ('Clean — numbering, definitions and table formatting resolve as intended' + _info_tail
                            if clean
                            else f'NOT CLEAN — {n_flip} list-meaning flip(s), {n_integ} definition-integrity '
-                                f'violation(s), {n_tblfail} table(s) failing effective format, '
-                                f'{n_review} table(s) with unadjudicated review deviations')
-    n_unres_tbl = len(unres.get('tables_needing_review', []) or []) + len(unres.get('tables_unresolved', []) or [])
-    n_rolled = len(unres.get('rolled_back_passes', []) or [])
-    unresolved_verdict = ('None' if not (n_unres_tbl or n_rolled)
+                                f'violation(s), {n_tblfail} table(s) failing effective format')
+    unresolved_verdict = (('None' + _info_tail) if not (n_unres_tbl or n_rolled)
                           else f'{n_rolled} pass(es) rolled back, {n_unres_tbl} table(s) unresolved / need independent review')
     summary = {
         'source_name': os.path.basename(source_path),

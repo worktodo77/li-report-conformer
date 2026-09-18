@@ -2555,23 +2555,40 @@ class Conformer:
             'paragraph_reference_flips': conf.get('paragraph_reference_flips') or [],
             'tables_failing_effective_format': conf['tables_failing_effective_format'],
         }
-        review_reasons = {
-            'tables_review': conf.get('tables_review') or [],
+        # A table note is a genuine unresolved item only when it is a NESTED table left untouched; a
+        # "tracked header-fill corrected, record preserved" note records a COMPLETED action.
+        table_notes = unres.get('tables_needing_review') or []
+        nested_notes = [n for n in table_notes if 'nested' in n]
+        info_notes = [n for n in table_notes if 'nested' not in n]
+        # Genuinely unadjudicated / unresolved — these DO gate 'clean' (the user must look).
+        unresolved_reasons = {
             'tables_unresolved': unres.get('tables_unresolved') or [],
-            'tables_needing_review': unres.get('tables_needing_review') or [],
+            'tables_needing_review': nested_notes,
             'unresolved_imports': unres.get('unresolved_imports') or [],
             'paragraph_reference_unresolved': unres.get('paragraph_reference_unresolved') or [],
             'rolled_back_passes': unres.get('rolled_back_passes') or [],
         }
+        # Informational: legitimate, intentional table variation the engine correctly PRESERVED (small
+        # data fonts, right-aligned numbers, subtotal shading) and completed-correction notes. Surfaced
+        # for the reviewer but requiring no decision, so they do NOT gate 'clean' — otherwise no real
+        # report is ever clean and the warning becomes noise the reviewer learns to ignore.
+        informational_reasons = {
+            'tables_review': conf.get('tables_review') or [],
+            'tables_notes_informational': info_notes,
+        }
         blocking = any(blocking_reasons.values())
-        clean = not (blocking or any(review_reasons.values()))
+        clean = not (blocking or any(unresolved_reasons.values()))
         return {'clean': clean, 'blocking': blocking,
-                'reasons': {**blocking_reasons, **review_reasons}}
+                'reasons': {**blocking_reasons, **unresolved_reasons, **informational_reasons},
+                'informational': informational_reasons}
 
     def conformance_clean(self):
-        """True only when the authoritative verdict is clean (no semantic damage AND nothing unadjudicated
-        — including review deviations, which are never silently treated as approved). Callers gate the
-        'conforms' claim on this, not on ZIP/XML validity."""
+        """True only when the authoritative verdict is clean: no blocking semantic damage AND nothing
+        genuinely unresolved (unresolved/nested tables, unresolved imports, uncorresponded numbered
+        paragraphs, rolled-back passes). Informational surfacings — legitimate variation the engine
+        correctly PRESERVED (small data fonts, right-aligned numbers, subtotal shading) and
+        completed-correction notes — are reported but do not gate cleanliness. Callers gate the 'conforms'
+        claim on this, not on ZIP/XML validity."""
         return self.conformance_status()['clean']
 
     def outcome_report(self):
