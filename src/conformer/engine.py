@@ -2676,14 +2676,21 @@ class Conformer:
             'tables_failing_effective_format': conf['tables_failing_effective_format'],
         }
         # A table note is a genuine unresolved item only when it is a NESTED table left untouched; a
-        # "tracked header-fill corrected, record preserved" note records a COMPLETED action.
+        # "tracked header-fill corrected, record preserved" note records a COMPLETED action. Match the
+        # exact engine phrase, not the bare word 'nested' (a locator/heading could contain it) (F5).
         table_notes = unres.get('tables_needing_review') or []
-        nested_notes = [n for n in table_notes if 'nested' in n]
-        info_notes = [n for n in table_notes if 'nested' not in n]
+        nested_notes = [n for n in table_notes if 'nested table left untouched' in n]
+        info_notes = [n for n in table_notes if 'nested table left untouched' not in n]
+        # Broken cross-references (missing/erroring targets) are a genuine unresolved defect a field
+        # refresh cannot fix — they gate 'clean' (GPT audit F5). Advisory audits (caption basis, heading
+        # level skips) stay out of the verdict per D-1/D-4.
+        broken_refs = [a for a in (getattr(self, 'audit', []) or [])
+                       if a and a[0] in ('xref-broken', 'xref-target-missing')]
         # Genuinely unadjudicated / unresolved — these DO gate 'clean' (the user must look).
         unresolved_reasons = {
             'tables_unresolved': unres.get('tables_unresolved') or [],
             'tables_needing_review': nested_notes,
+            'broken_references': broken_refs,
             'unresolved_imports': unres.get('unresolved_imports') or [],
             'paragraph_reference_unresolved': unres.get('paragraph_reference_unresolved') or [],
             'rolled_back_passes': unres.get('rolled_back_passes') or [],

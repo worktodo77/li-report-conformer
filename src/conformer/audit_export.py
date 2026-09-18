@@ -187,15 +187,19 @@ def build_records(fresh, source_path, output_path, decisions_log=None,
         n_rolled = len(r.get('rolled_back_passes') or [])
         n_info = sum(len(v) for v in st.get('informational', {}).values())
     except Exception:
-        clean = not (n_flip or n_integ or n_tblfail)
+        # FAIL CLOSED (GPT audit F5): if the verdict cannot be computed the output is UNKNOWN, never an
+        # inferred pass. The old `not (n_flip or ...)` fallback could certify Clean when verification threw.
+        clean = None
         n_unres_tbl = len(unres.get('tables_unresolved', []) or [])
         n_rolled = len(unres.get('rolled_back_passes', []) or [])
         n_info = 0
     _info_tail = f' ({n_info} preserved formatting note(s) — informational)' if n_info else ''
-    conformance_verdict = ('Clean — numbering, definitions and table formatting resolve as intended' + _info_tail
-                           if clean
-                           else f'NOT CLEAN — {n_flip} list-meaning flip(s), {n_integ} definition-integrity '
-                                f'violation(s), {n_tblfail} table(s) failing effective format')
+    conformance_verdict = (
+        'UNKNOWN — verification did not complete; treat this as an unverified review copy' if clean is None
+        else ('Clean — numbering, definitions and table formatting resolve as intended' + _info_tail
+              if clean
+              else f'NOT CLEAN — {n_flip} list-meaning flip(s), {n_integ} definition-integrity '
+                   f'violation(s), {n_tblfail} table(s) failing effective format'))
     unresolved_verdict = (('None' + _info_tail) if not (n_unres_tbl or n_rolled)
                           else f'{n_rolled} pass(es) rolled back, {n_unres_tbl} table(s) unresolved / need independent review')
     summary = {
@@ -212,7 +216,7 @@ def build_records(fresh, source_path, output_path, decisions_log=None,
         'authors': len(s.get('authors', []) or []),
         'preservation_verdict': verdict,
         'conformance_verdict': conformance_verdict,
-        'conformance_clean': clean,
+        'conformance_clean': clean is True,     # None (unknown) / False both mean "not verified clean"
         'unresolved_verdict': unresolved_verdict,
         'rolled_back': len(getattr(fresh, 'exceptions', []) or []),
         'total_changes': len(records),

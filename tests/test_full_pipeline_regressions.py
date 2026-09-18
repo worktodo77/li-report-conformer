@@ -68,3 +68,28 @@ def test_f1_verifier_flags_header_paragraph_style_missing_from_styles():
            '<w:tr><w:tc><w:tcPr/><w:p><w:r><w:t>d</w:t></w:r></w:p></w:tc></w:tr></w:tbl>')
     kinds = {i['kind'] for i in tablespec.effective_table_issues(tbl, styles_xml=styles)}
     assert 'header-style-missing' in kinds
+
+
+def test_f5_broken_references_gate_clean():
+    """F5: a known broken cross-reference (missing target) is a genuine unresolved defect that a field
+    refresh cannot fix, so the verdict must not be CLEAN."""
+    c = Conformer.__new__(Conformer)
+    c.audit = [('xref-target-missing', '3 cross-reference(s) point to a missing bookmark')]
+    empty = {'numbering_flips': [], 'definition_integrity_violations': [],
+             'tables_failing_effective_format': [], 'tables_review': []}
+    empty_u = {'rolled_back_passes': [], 'tables_needing_review': [], 'tables_unresolved': []}
+    c.outcome_report = lambda: {'conformance': empty, 'unresolved': empty_u}
+    st = c.conformance_status()
+    assert st['clean'] is False
+    assert st['reasons']['broken_references']
+
+
+def test_f5_advisory_audits_do_not_gate_clean():
+    # a caption-basis / heading-skip advisory (not a broken ref) stays out of the verdict
+    c = Conformer.__new__(Conformer)
+    c.audit = [('basis-not-h1h2', 'Table caption uses a Heading 3 basis'), ('heading-skip', 'H4 -> H6')]
+    empty = {'numbering_flips': [], 'definition_integrity_violations': [],
+             'tables_failing_effective_format': [], 'tables_review': []}
+    empty_u = {'rolled_back_passes': [], 'tables_needing_review': [], 'tables_unresolved': []}
+    c.outcome_report = lambda: {'conformance': empty, 'unresolved': empty_u}
+    assert c.conformance_status()['clean'] is True

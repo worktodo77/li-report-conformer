@@ -47,3 +47,20 @@ def test_header_style_size_flags_wrong_style():
 def test_header_style_size_not_flagged_for_table_header():
     # the house 10pt Table Header style -> no flag
     assert 'header-style-size' not in _kinds(tablespec.effective_table_issues(_hdr_tbl('TableHeader'), styles_xml=_STYLES))
+
+
+def _hdr_tbl_empty(para_style):
+    # a header cell whose first paragraph is EMPTY (no text) — an artifact, not a visible header
+    return ('<w:tbl><w:tblPr><w:tblStyle w:val="GridTable4"/><w:tblLook w:val="04A0" w:firstRow="1"/></w:tblPr>'
+            '<w:tr><w:trPr><w:tblHeader/></w:trPr><w:tc><w:tcPr>'
+            '<w:shd w:val="clear" w:color="auto" w:fill="B6DDE8"/></w:tcPr>'
+            f'<w:p><w:pPr><w:pStyle w:val="{para_style}"/></w:pPr></w:p></w:tc></w:tr>'
+            '<w:tr><w:tc><w:tcPr/><w:p><w:r><w:t>d</w:t></w:r></w:p></w:tc></w:tr></w:tbl>')
+
+
+def test_f5_visible_wrong_header_fails_empty_is_review():
+    # GPT F5: a VISIBLE wrong-size header (cell has text) is a defect (fail); an EMPTY one is review only.
+    visible = tablespec.effective_table_issues(_hdr_tbl('Heading4'), styles_xml=_STYLES)
+    assert any(i['kind'] == 'header-style-size' and i['severity'] == 'fail' for i in visible)
+    empty = tablespec.effective_table_issues(_hdr_tbl_empty('Heading4'), styles_xml=_STYLES)
+    assert any(i['kind'] == 'header-style-size' and i['severity'] == 'review' for i in empty)

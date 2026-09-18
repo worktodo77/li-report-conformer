@@ -300,9 +300,13 @@ def effective_table_issues(tbl_xml, nsdecls=None, styles_xml=None):
                 elif not direct_szs:
                     eff = _effective_style_size(styles_xml, pst)
                     if eff is not None and eff != want_sz:
+                        # A VISIBLE header (the cell has text) rendering the wrong size is a real defect
+                        # (fail); an EMPTY header paragraph (e.g. a stray blank Heading) is an artifact
+                        # surfaced for review only (GPT audit F5).
+                        has_text = any((t.text or '').strip() for t in tc.iter(_w('t')))
                         issues.append({'kind': 'header-style-size', 'detail': f'header cell c{ci} first '
                                        f'paragraph style {pst!r} renders at {int(eff) // 2}pt, not the house '
-                                       f'{int(want_sz) // 2}pt', 'severity': 'review'})
+                                       f'{int(want_sz) // 2}pt', 'severity': 'fail' if has_text else 'review'})
             # shading
             shd = tcPr.find(_w('shd')) if tcPr is not None else None
             fill = shd.get(_w('fill')) if shd is not None else None
