@@ -507,6 +507,11 @@ class Conformer:
                 continue
             if st in RECOMMENDED: continue
             if '<w:sectPr' in x: continue
+            # Preserve a directly-centered, non-numbered line: it is a display element (an equation or a
+            # centered note), not numbered body prose. Converting it to Numbered Paragraph would add an
+            # unwanted list number AND strip its centering (the "formula added to a numbered list" defect).
+            if not st.startswith('Heading') and not self.numpr(i) and '<w:jc w:val="center"/>' in self.ppr(i):
+                continue
             if not t and '<w:drawing>' not in x:
                 if st not in self.template_style_ids:
                     self.set_style(i, 'SpacebehindafteraGraphic')
@@ -710,6 +715,8 @@ class Conformer:
                 keep = []
                 for tag, cx in children(m.group(1)):
                     ok = tag in ALLOWED_PPR or tag in ALLOWED_PPR_BY_STYLE.get(st, set())
+                    if tag == 'jc' and 'w:val="center"' in cx:
+                        ok = True                          # preserve centered display alignment (equations, centered notes)
                     if tag == 'numPr' and keep_numpr is not None:
                         ok = True; cx = keep_numpr        # preserve functioning numbering (e.g. a numbered heading)
                     if tag == 'spacing' and st == 'Heading1' and 'pageBreakBefore' not in m.group(1): ok = False
