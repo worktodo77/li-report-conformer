@@ -21,3 +21,14 @@ def test_ids_and_refs_are_not_touched():
     for s in ('Table 3-1', 'Figure 5-2', '3.6.15-7', 'C-MT-MC-2020', 'M-H-27',
               '5-10 items', 'well-known', 'a 4-week window', 'pre-2020'):
         assert typo_text(s) == s, s
+
+
+EM = '—'
+
+
+def test_em_dash_closed_up():
+    assert typo_text(f'discretion {EM} and concurrency') == f'discretion{EM}and concurrency'
+    assert typo_text(f'Contract  {EM} nothing') == f'Contract{EM}nothing'
+    assert typo_text(f'already{EM}closed') == f'already{EM}closed'   # unchanged
+    assert typo_text(f'{EM} start') == f'{EM} start'                 # edge dash left alone
+    assert typo_text(EM) == EM                                       # standalone placeholder left alone

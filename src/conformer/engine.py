@@ -148,6 +148,9 @@ def typo_text(t):
     t = re.sub(r'(?<![\d.\-A-Za-z])((?:19|20)\d{2})-((?:19|20)\d{2})(?![\d.\-])', '\\1\u2013\\2', t)
     t = re.sub(r'(?<![\d.\-])(\d+)-(\d+)(\s+(?:calendar days?|working days?|business days?|days?|'
                r'weeks?|months?|years?|CD|WD)\b)', '\\1\u2013\\2\\3', t)
+    # PUNC-2: em dash closed up (no surrounding spaces) — only BETWEEN two non-space characters, so a
+    # standalone "—" (e.g. a table "none" placeholder) or a line-edge dash is left alone.
+    t = re.sub(r'(\S)\s*\u2014\s*(\S)', '\\1\u2014\\2', t)
     t = re.sub(r'([A-Za-z]*[a-z]|\))\. ([A-Z])', _sentence_space, t)
     t = re.sub(r'\b0(\d) (%s)' % _TYPO_MONTHS, r'\1 \2', t)
     return t.replace('\ufb00', 'ff').replace('\ufb01', 'fi').replace('\ufb02', 'fl')
