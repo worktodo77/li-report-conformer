@@ -2947,7 +2947,9 @@ class Conformer:
             if self.style(i) != 'Caption':
                 continue
             t = self.text(i).strip()
-            m = re.match(r'(Table|Figure) (\d+)[-‑‐–](\d+)', t)
+            # accept a single- OR multi-level caption number (Table 3-1, Table 3.4.2-1, …); the caption's
+            # own text carries the number, so no heading-number simulation is needed to build the key.
+            m = re.match(r'(Table|Figure) (\d+(?:\.\d+)*)[-‑‐–](\d+)', t)
             bm = re.search(r'<w:bookmarkStart w:id="\d+" w:name="([^"]+)"', self.item(i))
             if m and bm:
                 caps[f'{m.group(1)} {m.group(2)}-{m.group(3)}'] = bm.group(1)
@@ -2960,7 +2962,10 @@ class Conformer:
                     heads[str(hn)] = bm.group(1)
         return caps, heads
 
-    _XREF_RE = re.compile(r'(Table|Figure) (\d+-\d+)|Sections? (\d+)(?!\.\d)(?: and (\d+)(?!\.\d))?')
+    # A literal cross-reference: a single- or multi-level Table/Figure number (groups 2 num + 3 seq), or a
+    # bare-integer Section reference (groups 4/5). A multi-level "Section 3.4.2" is intentionally NOT matched
+    # here — mapping its number to a heading bookmark needs the heading-number simulation (deferred).
+    _XREF_RE = re.compile(r'(Table|Figure) (\d+(?:\.\d+)*)[-‑‐–](\d+)|Sections? (\d+)(?!\.\d)(?: and (\d+)(?!\.\d))?')
 
     def _rebuild_xrefs_in(self, xml, caps, heads):
         """Return (new_xml, count) with literal cross-references in PLAIN runs rewritten as REF
@@ -2974,8 +2979,8 @@ class Conformer:
                 pre = seg[pos:mm.start()]
                 if pre:
                     out += f'<w:r><w:t xml:space="preserve">{esc(pre)}</w:t></w:r>'
-                if mm.group(1):                                   # Figure/Table N-M
-                    key = f'{mm.group(1)} {mm.group(2)}'
+                if mm.group(1):                                   # Figure/Table N-M (single or multi level)
+                    key = f'{mm.group(1)} {mm.group(2)}-{mm.group(3)}'
                     if key in caps:
                         out += self._fld(f'REF {caps[key]} \\h', key, 'CrossReference'); count[0] += 1
                     else:
@@ -2983,7 +2988,7 @@ class Conformer:
                 else:                                             # Section(s) N [and M]
                     word = 'Sections' if mm.group(0).startswith('Sections') else 'Section'
                     out += f'<w:r><w:t xml:space="preserve">{word} </w:t></w:r>'
-                    g3, g4 = mm.group(3), mm.group(4)
+                    g3, g4 = mm.group(4), mm.group(5)
                     out += (self._fld(f'REF {heads[g3]} \\r \\h', g3, 'CrossReference')
                             if g3 in heads else f'<w:r><w:t xml:space="preserve">{esc(g3)}</w:t></w:r>')
                     if g3 in heads:
