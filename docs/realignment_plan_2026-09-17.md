@@ -35,9 +35,15 @@ per the plan-mode discipline already in the repo.
 - **P1 cross-ref style DONE** (`af2f318`) — `_style_crossreferences` applies the Cross Reference character
   style to all existing REF fields + flags broken refs. Warhoe: 798 field runs styled (from 0), 0 broken,
   text unchanged.
-- **P1 REMAINING**: caption re-base OFFER path (D-1, currently flag-only); generalize `rebuild_fields`
-  beyond single-level `N-N`; broaden literal→field conversion (multi-level Section/Table, Numbered-item &
-  Footnote categories); heading-number simulation for exact duplicate/gap prediction.
+- **P1 multi-level caption xref DONE** (`c07c227`) — `_xref_targets`/`_XREF_RE` convert multi-level
+  `Table 3.4.2-1` literal references to fields (display-preserving, D-1-safe).
+- **P1 broken-reference check DONE** (`629cbc3`) — `audit_crossref_targets` flags REF fields whose target
+  bookmark is missing. Warhoe: 12 genuinely broken references caught.
+- **P1 COMPLETE for the valuable/tractable scope.** DEFERRED (documented in code, low payoff / needs UI):
+  heading-number simulation + multi-level Section-ref conversion (heading numbers can't go stale — Word
+  computes them live — and Warhoe's Section refs are already fields); Numbered-item/Footnote xref categories;
+  static-caption auto-rebuild and caption re-base (would change displayed numbers → D-1 flag-only, already
+  surfaced by the audit); the interactive re-base OFFER (UI work).
 
 ## Priority 0 — STOP the engine from degrading a conforming document
 
