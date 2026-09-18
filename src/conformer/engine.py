@@ -873,6 +873,7 @@ class Conformer:
                 self.set(i, nx)
 
     def fix_tables(self):
+        self._ensure_table_header_style()
         for i in range(self.n()):
             x = self.item(i)
             if not x.startswith('<w:tbl'): continue
@@ -908,8 +909,17 @@ class Conformer:
             x = re.sub(r'<w:rPr>(.*?)</w:rPr>', lambda r: ('<w:rPr>' + ''.join(cx for t2, cx in children(r.group(1)) if t2 in ('rStyle','b','bCs','i','iCs','color')) + '</w:rPr>') if r.group(1) else '', x, flags=re.S)
             first_row = re.search(r'<w:tr\b.*?</w:tr>', x, re.S).group(0)
             if '<w:tblHeader/>' not in first_row:
-                nfr = first_row.replace('<w:tr>', '<w:tr><w:trPr><w:cantSplit/><w:tblHeader/></w:trPr>', 1) if '<w:trPr>' not in first_row else first_row.replace('<w:trPr>', '<w:trPr><w:tblHeader/>', 1)
+                nfr = (first_row.replace('<w:trPr>', '<w:trPr><w:tblHeader/>', 1) if '<w:trPr>' in first_row
+                       else re.sub(r'(<w:tr\b[^>]*>)', r'\1<w:trPr><w:cantSplit/><w:tblHeader/></w:trPr>', first_row, count=1))
                 x = x.replace(first_row, nfr, 1)
+            # Header row -> 10pt bold Table Header style (a paragraph style overrides the Grid Table 4
+            # firstRow size, so header cells cannot get 10pt from the table-style conditional alone).
+            hr = re.search(r'<w:tr\b.*?</w:tr>', x, re.S).group(0)
+            hr2 = hr.replace('<w:pStyle w:val="TableData"/>', '<w:pStyle w:val="TableHeader"/>')
+            hr2 = re.sub(r'<w:szCs w:val="\d+"/>', '', hr2)
+            hr2 = re.sub(r'<w:sz w:val="\d+"/>', '', hr2)
+            if hr2 != hr:
+                x = x.replace(hr, hr2, 1)
             self.set(i, x)
         # header-row run colour is provided by the table style; ensure explicit white bold header runs are allowed (kept by strip_direct for TableData)
 
@@ -2649,6 +2659,17 @@ class Conformer:
 
     HOUSE_HEADER_SHD = '<w:shd w:val="clear" w:color="auto" w:fill="B6DDE8"/>'
 
+    # A 10pt-bold centered header PARAGRAPH style. Header cells cannot rely on the Grid Table 4 firstRow
+    # rPr for their size: a paragraph style (Table Data = 11pt) overrides the table-style conditional, so
+    # the header would render 11pt. Giving header cells this paragraph style makes them render the house
+    # 10pt bold (matching the firstRow), which a table-style conditional alone cannot guarantee.
+    TABLE_HEADER_STYLE = (
+        '<w:style w:type="paragraph" w:customStyle="1" w:styleId="TableHeader">'
+        '<w:name w:val="Table Header"/><w:basedOn w:val="TableData"/><w:uiPriority w:val="99"/>'
+        '<w:pPr><w:spacing w:before="60" w:after="60"/><w:jc w:val="center"/></w:pPr>'
+        '<w:rPr><w:rFonts w:ascii="Times New Roman" w:hAnsi="Times New Roman"/><w:b/><w:bCs/>'
+        '<w:color w:val="auto"/><w:sz w:val="20"/><w:szCs w:val="20"/></w:rPr></w:style>')
+
     @classmethod
     def _correct_current_header_fill(cls, tc):
         """Normalize a header cell's CURRENT background to the CONCRETE house teal B6DDE8 (Grid Table 4): the
@@ -2697,11 +2718,20 @@ class Conformer:
             cell_tracked = run_tracked or ('<w:tcPrChange' in tc)
             # ALWAYS correct a wrong header fill to the house colour, even under a tracked change.
             tc2, fill_fixed = self._correct_current_header_fill(tc)
-            if not run_tracked:
-                # non-tracked runs: also normalise size/colour so the style's white 11pt header applies
-                tc2 = re.sub(r'<w:sz w:val="\d+"/>', '', tc2)
-                tc2 = re.sub(r'<w:szCs w:val="\d+"/>', '', tc2)
-                tc2 = re.sub(r'<w:color w:val="[^"]+"/>', '', tc2)
+            # Header text must render at the house 10pt bold. A paragraph style overrides the Grid Table 4
+            # firstRow rPr, so switch header cells from Table Data (11pt) to the 10pt Table Header style and
+            # remove direct run sizes that would override it. Mask revisions first so a tracked rPrChange's
+            # recorded old size and inserted-run content stay byte-exact (that formatting is conformed by
+            # the tree-model pass, not by this regex).
+            tc2 = tc2.replace('<w:pStyle w:val="TableData"/>', '<w:pStyle w:val="TableHeader"/>')
+            # Mask ALL tracked content (records AND inserted/deleted runs) so this regex strip only touches
+            # the non-tracked current formatting. Header sizes locked inside a tracked insertion are left for
+            # the tree-model pass — regex-stripping inside inserted runs mis-resolves the effective size.
+            masked, masks = self._mask_revisions(tc2)
+            masked = re.sub(r'<w:szCs w:val="\d+"/>', '', masked)
+            masked = re.sub(r'<w:sz w:val="\d+"/>', '', masked)
+            masked = re.sub(r'<w:color w:val="[^"]+"/>', '', masked)
+            tc2 = self._unmask(masked, masks)
             if fill_fixed and cell_tracked:
                 tracked_fixed[0] += 1
             if tc2 != tc:
@@ -2726,6 +2756,15 @@ class Conformer:
         self.styles = self.styles.replace('</w:styles>', self._house_table_style + '</w:styles>', 1)
         self.say('M', -1, 'imported the house table style Grid Table 4 ("LI Table")')
 
+    def _ensure_table_header_style(self):
+        """Ensure the 10pt-bold 'Table Header' paragraph style exists so header cells render at the house
+        10pt. A paragraph style overrides the Grid Table 4 firstRow rPr, so header cells cannot get their
+        size from the table-style conditional alone. Imported once."""
+        if re.search(r'<w:style\b[^>]*w:styleId="TableHeader"', self.styles):
+            return
+        self.styles = self.styles.replace('</w:styles>', self.TABLE_HEADER_STYLE + '</w:styles>', 1)
+        self.say('M', -1, 'imported the Table Header paragraph style (house 10pt bold header text)')
+
     def _conform_tables_preserving(self):
         """Make every table USE the (now-repaired) LI table style so its built-in settings apply
         (Claire's 'tables not using the table style' / 'settings not used'). Table-level properties
@@ -2734,6 +2773,7 @@ class Conformer:
         if self._skip('tables'):
             return
         self._ensure_house_table_style()
+        self._ensure_table_header_style()
         cnt = 0
         for i in range(self.n()):
             x = self.item(i)
@@ -2785,10 +2825,12 @@ class Conformer:
             # First (flat) table row repeats as a header. Nested tables never reach here (handled above).
             fr = re.search(r'<w:tr\b.*?</w:tr>', nx, re.S)
             if fr and '<w:tblHeader' not in fr.group(0):
-                hdr = (fr.group(0).replace('<w:tr>', '<w:tr><w:trPr><w:cantSplit/><w:tblHeader/></w:trPr>', 1)
-                       if '<w:trPr>' not in fr.group(0)
-                       else fr.group(0).replace('<w:trPr>', '<w:trPr><w:tblHeader/>', 1))
-                nx = nx.replace(fr.group(0), hdr, 1)
+                row = fr.group(0)
+                # insert into an existing trPr, else after the <w:tr ...> open tag (which may carry
+                # attributes like w:rsidR — a bare '<w:tr>' replace would silently miss those rows).
+                hdr = (row.replace('<w:trPr>', '<w:trPr><w:tblHeader/>', 1) if '<w:trPr>' in row
+                       else re.sub(r'(<w:tr\b[^>]*>)', r'\1<w:trPr><w:cantSplit/><w:tblHeader/></w:trPr>', row, count=1))
+                nx = nx.replace(row, hdr, 1)
             nx = self._unmask(nx, masks)
             # R5 header repair: on the header row, strip a NON-house direct fill / run size / colour so the
             # Grid Table 4 teal + black-bold header renders — but ONLY on cells with NO tracked change. A header
@@ -2800,8 +2842,13 @@ class Conformer:
         if cnt:
             self.say('M', -1, f'preserve mode: {cnt} tables set to the LI table style', 'tables')
         if self._table_notes:
-            self.say('M', -1, f'{len(self._table_notes)} table(s) need independent review '
-                              '(nested/complex) — not claimed conformant', 'tables-unresolved')
+            # These notes are a mix: nested tables left untouched AND header cells whose fill was a tracked
+            # change (corrected, record preserved). Do not mislabel them all "nested"; each note states why.
+            nested = sum(1 for n in self._table_notes if 'nested' in n)
+            reasons = (f'{nested} nested, {len(self._table_notes) - nested} tracked header-fill'
+                       if nested else 'tracked header-fill corrected, record preserved')
+            self.say('M', -1, f'{len(self._table_notes)} table note(s) flagged for human review '
+                              f'({reasons}) — see the per-table notes', 'tables-unresolved')
 
     # ================================================================ interactive ASK structural
     # The five ASK structural changes (#3 unwrap wrapper table, #5 extract floating image, #6 split
