@@ -50,6 +50,40 @@ def test_repair_header_swaps_style_strips_size_and_fixes_themefill():
     assert out.count('<w:pStyle w:val="TableHeader"/>') == 1    # only the header row
 
 
+def _tbl(header_cell):
+    return ('<w:tbl><w:tblPr><w:tblStyle w:val="GridTable4"/></w:tblPr>'
+            '<w:tr w:rsidR="00AB"><w:trPr><w:tblHeader/></w:trPr>' + header_cell + '</w:tr>'
+            '<w:tr><w:tc><w:tcPr/><w:p><w:r><w:t>d</w:t></w:r></w:p></w:tc></w:tr></w:tbl>')
+
+
+def test_repair_conforms_header_size_inside_tracked_insertion():
+    # a header run whose direct size is locked inside a tracked insertion must still be conformed to
+    # 10pt (D-A3), while the <w:ins> wrapper, its author/date and the inserted TEXT are preserved.
+    c = Conformer.__new__(Conformer)
+    c._table_notes = []
+    cell = ('<w:tc><w:tcPr/><w:p><w:pPr></w:pPr>'
+            '<w:ins w:id="7" w:author="R" w:date="2026-01-01T00:00:00Z">'
+            '<w:r><w:rPr><w:sz w:val="21"/><w:szCs w:val="21"/></w:rPr><w:t>Cause of Lag</w:t></w:r>'
+            '</w:ins></w:p></w:tc>')
+    out, _, _ = c._repair_stray_header_formatting(_tbl(cell), 'loc')
+    hdr = re.search(r'<w:tr\b.*?</w:tr>', out, re.S).group(0)
+    assert '<w:sz w:val="21"/>' not in hdr                     # size inside the insertion conformed
+    assert '<w:pStyle w:val="TableHeader"/>' in hdr            # inserted paragraph gets the 10pt style
+    assert '<w:ins ' in hdr and 'Cause of Lag' in hdr          # insertion + text preserved
+
+
+def test_repair_leaves_a_heading_paragraph_in_a_header_cell_alone():
+    # an (empty) heading paragraph inside a header cell must NOT be reclassified to Table Header — that
+    # would strip its heading numbering (an unauthorized reference flip).
+    c = Conformer.__new__(Conformer)
+    c._table_notes = []
+    cell = '<w:tc><w:tcPr/><w:p><w:pPr><w:pStyle w:val="Heading4"/></w:pPr><w:r><w:t>H</w:t></w:r></w:p></w:tc>'
+    out, _, _ = c._repair_stray_header_formatting(_tbl(cell), 'loc')
+    hdr = re.search(r'<w:tr\b.*?</w:tr>', out, re.S).group(0)
+    assert '<w:pStyle w:val="Heading4"/>' in hdr               # heading preserved
+    assert '<w:pStyle w:val="TableHeader"/>' not in hdr
+
+
 def _clean_conformer(items):
     c = Conformer.__new__(Conformer)
     c.items = items

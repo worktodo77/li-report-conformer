@@ -2709,6 +2709,30 @@ class Conformer:
         new_region = region.replace(shd, cls.HOUSE_HEADER_SHD, 1)
         return tc[:o] + new_region + tc[end:], True
 
+    # Header-cell body paragraph styles that may be normalised to Table Header. A heading, numbered or
+    # bulleted paragraph is NEVER reclassified here — that would strip its numbering (an unauthorized
+    # reference flip); such a paragraph in a header cell is left exactly as authored.
+    _HEADER_BODY_STYLES = {'TableData', 'TableHeader', 'Normal', 'TableParagraph', 'TableText'}
+
+    @classmethod
+    def _force_header_paragraph_style(cls, xml):
+        """Give each header-cell BODY paragraph the 10pt-bold Table Header style (replace its current
+        pStyle, else insert one for a plain default paragraph). Operates on text whose tracked-change
+        RECORDS are masked, so a pPrChange's recorded old pStyle is never touched — only the CURRENT
+        paragraph style is set. Headings/numbered/bulleted paragraphs are left as-is (see above)."""
+        def fixp(pm):
+            p = pm.group(0)
+            cur = re.search(r'<w:pStyle w:val="([^"]+)"', p)
+            if cur:
+                if cur.group(1) in cls._HEADER_BODY_STYLES:
+                    return re.sub(r'<w:pStyle w:val="[^"]+"/>', '<w:pStyle w:val="TableHeader"/>', p, count=1)
+                return p                                  # heading / numbered / other deliberate style — leave
+            # no explicit pStyle = a plain (default) header paragraph — give it Table Header
+            if '<w:pPr>' in p:
+                return p.replace('<w:pPr>', '<w:pPr><w:pStyle w:val="TableHeader"/>', 1)
+            return re.sub(r'(<w:p\b[^>]*>)', r'\1<w:pPr><w:pStyle w:val="TableHeader"/></w:pPr>', p, count=1)
+        return re.sub(r'<w:p\b.*?</w:p>', fixp, xml, flags=re.S)
+
     def _repair_stray_header_formatting(self, tbl_xml, locator):
         """Correct the header row to the house style so the Grid Table 4 teal/black-bold header renders
         (issue #1 R5). Per the maintainer ruling, a WRONG header FILL is corrected to the house colour even
@@ -2730,15 +2754,14 @@ class Conformer:
             # ALWAYS correct a wrong header fill to the house colour, even under a tracked change.
             tc2, fill_fixed = self._correct_current_header_fill(tc)
             # Header text must render at the house 10pt bold. A paragraph style overrides the Grid Table 4
-            # firstRow rPr, so switch header cells from Table Data (11pt) to the 10pt Table Header style and
-            # remove direct run sizes that would override it. Mask revisions first so a tracked rPrChange's
-            # recorded old size and inserted-run content stay byte-exact (that formatting is conformed by
-            # the tree-model pass, not by this regex).
-            tc2 = tc2.replace('<w:pStyle w:val="TableData"/>', '<w:pStyle w:val="TableHeader"/>')
-            # Mask ALL tracked content (records AND inserted/deleted runs) so this regex strip only touches
-            # the non-tracked current formatting. Header sizes locked inside a tracked insertion are left for
-            # the tree-model pass — regex-stripping inside inserted runs mis-resolves the effective size.
-            masked, masks = self._mask_revisions(tc2)
+            # firstRow rPr, so give EVERY header paragraph the 10pt Table Header style and strip the direct
+            # run sizes/colours that would override it — INCLUDING inside a tracked insertion (D-A3: conform
+            # formatting regardless of tracked state). content=False masks only the tracked-change RECORDS
+            # (rPrChange/pPrChange/tcPrChange), so each record's old snapshot stays byte-exact for
+            # accept/reject while the CURRENT (incl. inserted/deleted) formatting is conformed. The text of
+            # every ins/del run is untouched — only formatting elements are removed.
+            masked, masks = self._mask_revisions(tc2, content=False)
+            masked = self._force_header_paragraph_style(masked)
             masked = re.sub(r'<w:szCs w:val="\d+"/>', '', masked)
             masked = re.sub(r'<w:sz w:val="\d+"/>', '', masked)
             masked = re.sub(r'<w:color w:val="[^"]+"/>', '', masked)
