@@ -1524,6 +1524,20 @@ class Conformer:
             self.say('M', -1, f'applied the Cross Reference character style to {styled} cross-reference run(s)')
         return styled, broken
 
+    def audit_crossref_targets(self):
+        """§9 verification: flag a REF cross-reference whose target bookmark is not present in the document
+        (a broken reference — it may not yet display the 'Error!' text if its cache is stale). Advisory."""
+        # scan the body AND the footnotes so a reference to a footnote bookmark is not a false positive
+        joined = ''.join(self.items) + getattr(self, 'fn', '') + getattr(self, 'head', '') + getattr(self, 'tail', '')
+        names = set(re.findall(r'<w:bookmarkStart[^>]*w:name="([^"]+)"', joined))
+        targets = re.findall(r'<w:instrText[^>]*>\s*REF\s+(\S+)', joined)
+        missing = sorted({t for t in targets if t not in names})
+        if missing:
+            self.audit = (self.audit or []) + [('xref-target-missing', f'{len(missing)} cross-reference(s) '
+                          f'point to a bookmark not in the document (broken): e.g. {missing[0]} — review')]
+            self.say('J', -1, f'CROSS-REF AUDIT: {len(missing)} reference(s) target a missing bookmark')
+        return missing
+
     def _finalize_verdict(self, force=False):
         """Compute (or reuse) the conformance verdict tied to the CURRENT mutation generation (issue #1 E).
         A later edit bumps self._gen and invalidates a stale verdict. A verification exception is UNKNOWN
@@ -1599,7 +1613,8 @@ class Conformer:
         self.typography(); self.house_style(); self.fix_sections(); self.replace_parts()
         # colour/highlight AFTER replace_parts so redundancy is judged against the FINAL (template) styles
         self._color_highlight_calls()
-        self.audit_figures(); self.audit_captions(); self.audit_headings(); self.force_field_update()
+        self.audit_figures(); self.audit_captions(); self.audit_headings()
+        self.audit_crossref_targets(); self.force_field_update()
 
     # ---------------------------------------------------------------- review-preserving pipeline
     def _snapshot(self):
@@ -1687,6 +1702,7 @@ class Conformer:
         self.audit_figures()
         self.audit_captions()               # §8.6 Table+Figure basis + per-section sequence (P1)
         self.audit_headings()               # §3/§4 heading + sublevel level-skip structure (P1)
+        self.audit_crossref_targets()       # §9 flag REF fields whose target bookmark is missing (P1)
         self.force_field_update()           # arm Word's refresh when the audit found caption/figure drift
         self._label_review_copy()           # GPT-6 2a: stamp as a normalized-formatting review copy
 
