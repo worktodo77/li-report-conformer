@@ -81,7 +81,10 @@ def score(golden, cand):
     R['numbering'] = {'pass': direct_num == 0 and cnum <= gnum, 'paragraphs_with_direct_numPr': direct_num, 'list_instances': cnum, 'golden_list_instances': gnum}
     # 5 styles
     gst = set(re.findall(r'w:styleId="([^"]+)"', G['word/styles.xml'])); cst = set(re.findall(r'w:styleId="([^"]+)"', C['word/styles.xml']))
-    foreign = sorted(cst - gst)
+    # the engine intentionally IMPORTS these house styles for conformance (they are not "foreign" noise);
+    # a golden generated before they existed still legitimately validates output that adds them.
+    _ENGINE_HOUSE_STYLES = {'GridTable4', 'TableHeader'}
+    foreign = sorted(cst - gst - _ENGINE_HOUSE_STYLES)
     changed = []
     for sid in ['Normal', 'NumberedParagraph', 'NumberedParagraphL1', 'Heading1', 'Heading2', 'BodyText', 'ExcerptorQuote', 'Caption', 'FootnoteText', 'ListBullet', 'TableData']:
         g = re.search(r'<w:style [^>]*w:styleId="%s"[^>]*>.*?</w:style>' % sid, G['word/styles.xml'], re.S); c = re.search(r'<w:style [^>]*w:styleId="%s"[^>]*>.*?</w:style>' % sid, C['word/styles.xml'], re.S)

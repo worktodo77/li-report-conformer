@@ -151,6 +151,12 @@ def _borders_form_house_grid(borders_el):
     return True
 
 
+def _style_defined(styles_xml, style_id):
+    """True when styles.xml actually defines a `w:styleId="style_id"` style."""
+    return bool(style_id) and bool(
+        re.search(r'<w:style\b[^>]*w:styleId="' + re.escape(style_id) + r'"', styles_xml or ''))
+
+
 def _effective_style_size(styles_xml, style_id, _seen=None):
     """Resolve a PARAGRAPH style's effective run size (sz, half-points) from styles.xml, following the
     basedOn chain. Returns the value as a string, or None if unset/unknown. The style's own paragraph-mark
@@ -283,14 +289,20 @@ def effective_table_issues(tbl_xml, nsdecls=None, styles_xml=None):
             # first paragraph resolves to a non-10pt style (e.g. a stray Heading in a header cell) renders
             # the wrong size even though no direct run size flags it. This catches the style-resolved case
             # the direct-size check misses (surfaced as review — informational).
-            if is_header and not direct_szs and styles_xml:
+            if is_header and styles_xml:
                 p0 = tc.find(_w('p'))
                 pst = _val(p0.find(_w('pPr')), 'pStyle') if p0 is not None and p0.find(_w('pPr')) is not None else None
-                eff = _effective_style_size(styles_xml, pst)
-                if eff is not None and eff != want_sz:
-                    issues.append({'kind': 'header-style-size', 'detail': f'header cell c{ci} first paragraph '
-                                   f'style {pst!r} renders at {int(eff) // 2}pt, not the house '
-                                   f'{int(want_sz) // 2}pt', 'severity': 'review'})
+                if pst and not _style_defined(styles_xml, pst):
+                    # a header paragraph referencing a style absent from styles.xml renders at the default
+                    # size (Word ~12pt) — an unresolved defect, never a silent pass (GPT audit F1).
+                    issues.append({'kind': 'header-style-missing', 'detail': f'header cell c{ci} first '
+                                   f'paragraph references undefined style {pst!r}', 'severity': 'fail'})
+                elif not direct_szs:
+                    eff = _effective_style_size(styles_xml, pst)
+                    if eff is not None and eff != want_sz:
+                        issues.append({'kind': 'header-style-size', 'detail': f'header cell c{ci} first '
+                                       f'paragraph style {pst!r} renders at {int(eff) // 2}pt, not the house '
+                                       f'{int(want_sz) // 2}pt', 'severity': 'review'})
             # shading
             shd = tcPr.find(_w('shd')) if tcPr is not None else None
             fill = shd.get(_w('fill')) if shd is not None else None

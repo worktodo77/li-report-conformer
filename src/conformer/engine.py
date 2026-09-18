@@ -1643,6 +1643,10 @@ class Conformer:
         self.fix_footnotes(); self.rebuild_fields(); self._style_crossreferences()
         self._emit('type')
         self.typography(); self.house_style(); self.fix_sections(); self.replace_parts()
+        # replace_parts() reset styles to the template, which does NOT define the engine-added TableHeader
+        # style that fix_tables() stamped on header cells — re-inject it so header paragraphs do not
+        # reference a missing style (which Word renders at the default 12pt) (GPT audit F1).
+        self._ensure_table_header_style()
         # colour/highlight AFTER replace_parts so redundancy is judged against the FINAL (template) styles
         self._color_highlight_calls()
         self.audit_figures(); self.audit_captions(); self.audit_headings()
