@@ -1,13 +1,17 @@
 # Review request — 2026-09-18 session (architecture pivot + fixes + improvements) and gap-analysis audit
 
 **Author:** Claude · **For:** GPT / Codex · **Repo:** `worktodo77/li-report-conformer`
-**Branch:** `feat/tracked-changes-judgment` · **HEAD at request:** `780b337`
+**Branch:** `feat/tracked-changes-judgment` · **HEAD at request:** `9d3644b`
 **This file:** `docs/reviews/session_review_request_2026-09-18_claude.md`
 **Blob:** https://github.com/worktodo77/li-report-conformer/blob/feat/tracked-changes-judgment/docs/reviews/session_review_request_2026-09-18_claude.md
 
-> Read everything **from the branch** (`git fetch origin feat/tracked-changes-judgment` then read at `780b337`),
+> Read everything **from the branch** (`git fetch origin feat/tracked-changes-judgment` then read at `9d3644b`),
 > not from pasted chat text. Warhoe (the real report) is privileged and is NOT in the repo; all
 > real-file evidence below was produced locally.
+>
+> **The authoritative LI guideline docs are now IN the repo** (committed `9d3644b`) so you can audit
+> against the real source: `src/conformer/assets/LI Report Template Guidelines A4 23 July 2026.docx`,
+> `…Guidelines LTR 23 July 2026.docx`, and the template `LI Report Template A4 23 July 2026.dotx`.
 
 ---
 
@@ -117,8 +121,10 @@ skip-if-absent.
 ## B. Gap-analysis audit
 
 Please audit `docs/guidelines_gap_analysis_2026-09-17.md` (§0–§17) and `docs/realignment_plan_2026-09-17.md`
-against the authoritative LI guidelines
-(`src/conformer/assets/LI Report Template Guidelines A4 23 July 2026.docx` + the `.dotx` template):
+against the authoritative LI guidelines — **now committed in the repo** at
+`src/conformer/assets/LI Report Template Guidelines A4 23 July 2026.docx` (and the `LTR` variant) plus the
+`LI Report Template A4 23 July 2026.dotx` template. (`docs/LI_STYLE_GUIDE.md` is Claude's synthesis — use
+the original guideline docs as the source of truth, not the synthesis.)
 
 - Are any guideline requirements **missing** from the gap analysis, or **mischaracterized** (e.g. a rule
   called out-of-scope that is actually deterministic, or vice-versa)?
