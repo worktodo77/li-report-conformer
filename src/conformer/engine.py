@@ -1712,6 +1712,7 @@ class Conformer:
                 continue
             prev_stream = after_stream
         self._merge_pdf_lines_preserving()   # #1 AUTO authorized text edit (clean excerpts only)
+        self._strip_excerpt_quotes_preserving()   # §5 remove redundant surrounding quotes (judgment call)
         # Interactive ASK structural changes (display-preserving, per-instance JudgmentCalls).
         # #8 first (Claire's explicit need): caption fielding then cross-reference rebuild.
         self._emit('refs')
@@ -1789,6 +1790,59 @@ class Conformer:
             if not clean:
                 self._restore(snap)
                 self.exceptions.append(('merge_pdf_lines', 'ledger backstop tripped (rolled back)'))
+
+    _OPEN_Q = ('“', '"', '‘')
+    _CLOSE_Q = ('”', '"', '’')
+
+    def _strip_excerpt_quotes_preserving(self):
+        """§5: an excerpt (block quote) is set off by its own style, so surrounding quotation marks are
+        redundant and are removed. A self-contained excerpt paragraph that BOTH opens and closes with a
+        quotation mark is offered as a JUDGMENT CALL (default: remove the outer pair). Only CLEAN excerpts
+        (no tracked change, comment or bookmark) are touched, and only the OUTERMOST pair — the verbatim
+        quoted text between them is never altered. A genuine quote that merely OPENS on one paragraph is
+        left alone (its close is ambiguous). A ledger backstop rolls the pass back if preservation slips."""
+        snap = self._snapshot()
+        changed = 0
+        for i in range(self.n()):
+            if not (self.is_par(i) and self.style(i) == 'ExcerptorQuote'):
+                continue
+            if self._para_has_marker(i):
+                continue
+            t = (self.text(i) or '').strip()
+            if len(t) >= 3 and t[:1] in self._OPEN_Q and t[-1:] in self._CLOSE_Q:
+                msg = 'excerpt wrapped in quotation marks — remove them (block quote sets off the quote, §5)'
+                jc = self._jcall('excerpt-quotes', i, msg, 'Remove surrounding quotation marks')
+                self.say('J', i, msg)
+                if self._decision_for(jc) == 'accept':
+                    self._strip_leading_quote(i)
+                    self._strip_trailing_quote(i)
+                    changed += 1
+        if changed:
+            clean, _ = self.verify_preservation()
+            if not clean:
+                self._restore(snap)
+                self.exceptions.append(('strip_excerpt_quotes', 'ledger backstop tripped (rolled back)'))
+
+    def _strip_leading_quote(self, i):
+        """Remove one leading quotation mark (after any leading whitespace) from the paragraph's first text run."""
+        x = self.item(i)
+        m = re.search(r'(<w:t[^>]*>)([^<]*)(</w:t>)', x)
+        if not m:
+            return
+        new = re.sub(r'^(\s*)["“‘]', r'\1', m.group(2), count=1)
+        if new != m.group(2):
+            self.set(i, x[:m.start()] + m.group(1) + new + m.group(3) + x[m.end():])
+
+    def _strip_trailing_quote(self, i):
+        """Remove one trailing quotation mark (before any trailing whitespace) from the paragraph's last text run."""
+        x = self.item(i)
+        ms = list(re.finditer(r'(<w:t[^>]*>)([^<]*)(</w:t>)', x))
+        if not ms:
+            return
+        m = ms[-1]
+        new = re.sub(r'["”’](\s*)$', r'\1', m.group(2), count=1)
+        if new != m.group(2):
+            self.set(i, x[:m.start()] + m.group(1) + new + m.group(3) + x[m.end():])
 
     @staticmethod
     def _text_is_upper(t):
