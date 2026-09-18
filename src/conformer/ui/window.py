@@ -678,12 +678,10 @@ class MainWindow(QMainWindow):
         self.tally_bar.setObjectName('tallyBar')
         tally_layout = QHBoxLayout(self.tally_bar)
         tally_layout.setContentsMargins(20, 10, 20, 10)
-        self.tally_label = QLabel('')
-        self.tally_label.setObjectName('tallyText')
         self.apply_btn = QPushButton('Apply && Save')
         self.apply_btn.setObjectName('primaryBtn')
         self.apply_btn.clicked.connect(self._apply_decisions)
-        tally_layout.addWidget(self.tally_label, 1)
+        tally_layout.addStretch(1)
         tally_layout.addWidget(self.apply_btn)
         self.tally_bar.setVisible(False)
         root.addWidget(self.tally_bar)
@@ -1456,12 +1454,10 @@ class MainWindow(QMainWindow):
         self._build_error_state('Analysis failed', msg)
 
     def _update_tally(self):
-        accepted = sum(1 for r in self.judgment_rows if r.decision == 'accept')
-        changed = sum(1 for r in self.judgment_rows if r.decision == 'change')
-        skipped = sum(1 for r in self.judgment_rows if r.decision == 'skip')
-        self.tally_label.setText(
-            f'{accepted} accepted · {changed} changed · {skipped} skipped'
-        )
+        # The old "N accepted · N changed · N skipped" counter only reflected judgment calls and ignored
+        # the conformance-fix and text-edit Skips that now dominate the review, so it was removed. Kept as
+        # a no-op so existing callers (decision-change handlers) don't need to change.
+        return
 
     def _apply_decisions(self):
         if not self.conformer:

@@ -1273,13 +1273,15 @@ class Conformer:
         """Arm Word's on-open field refresh ONLY when the figure audit found numbering/TOC drift.
         A clean report opens with no prompt (nothing needs updating); a drifted one prompts the user
         to update so the numbering and Table of Figures self-correct. Runs after audit_figures()."""
+        if self._skip('update-fields'):
+            return
         if not self.audit:
             return
         if '<w:updateFields' in self.settings:
             self.settings = re.sub(r'<w:updateFields[^>]*/>', '<w:updateFields w:val="true"/>', self.settings, count=1)
         else:
             self.settings = re.sub(r'(<w:settings\b[^>]*>)', r'\1<w:updateFields w:val="true"/>', self.settings, count=1)
-        self.say('M', -1, f'updateFields=true (audit found {len(self.audit)} issue(s)): Word will refresh numbering and the Table of Figures on open')
+        self.say('M', -1, f'updateFields=true (audit found {len(self.audit)} issue(s)): Word will refresh numbering and the Table of Figures on open', 'update-fields')
 
     # ---------------------------------------------------------------- figure integrity audit
     @staticmethod
@@ -1521,6 +1523,8 @@ class Conformer:
         515/515 REF fields lacked it though the style is defined). A broken reference (cached "Error!
         Reference source not found") is flagged. Formatting-only: the display text is unchanged, revision
         content is masked, so the content-stream gate holds."""
+        if self._skip('crossref'):
+            return 0, 0
         self._ensure_crossref_style()
         styled = broken = 0
         for i in range(self.n()):
@@ -1538,7 +1542,7 @@ class Conformer:
                           '"Error! Reference source not found" (broken target) — review')]
             self.say('J', -1, f'CROSS-REF AUDIT: {broken} broken cross-reference(s)')
         if styled:
-            self.say('M', -1, f'applied the Cross Reference character style to {styled} cross-reference run(s)')
+            self.say('M', -1, f'applied the Cross Reference character style to {styled} cross-reference run(s)', 'crossref')
         return styled, broken
 
     def audit_crossref_targets(self):
@@ -2761,7 +2765,8 @@ class Conformer:
         if re.search(r'<w:style\b[^>]*w:styleId="GridTable4"', self.styles):
             return
         self.styles = self.styles.replace('</w:styles>', self._house_table_style + '</w:styles>', 1)
-        self.say('M', -1, 'imported the house table style Grid Table 4 ("LI Table")')
+        # internal prerequisite of the tables fix (runs only past the 'tables' skip gate) — not a separate
+        # ledger row; the "tables set to the LI table style" row and its Skip cover it.
 
     def _ensure_table_header_style(self):
         """Ensure the 10pt-bold 'Table Header' paragraph style exists so header cells render at the house
@@ -2770,7 +2775,7 @@ class Conformer:
         if re.search(r'<w:style\b[^>]*w:styleId="TableHeader"', self.styles):
             return
         self.styles = self.styles.replace('</w:styles>', self.TABLE_HEADER_STYLE + '</w:styles>', 1)
-        self.say('M', -1, 'imported the Table Header paragraph style (house 10pt bold header text)')
+        # internal prerequisite of the tables fix — not a separate ledger row (the 'tables' Skip covers it).
 
     def _conform_tables_preserving(self):
         """Make every table USE the (now-repaired) LI table style so its built-in settings apply
