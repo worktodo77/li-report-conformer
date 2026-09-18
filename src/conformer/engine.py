@@ -211,6 +211,7 @@ def house_norm(t):
     British->American is case-preserving here (as in the pass), so a capitalized 'Analysed'->'Analyzed'
     canonicalizes the same from both sides."""
     t = re.sub(r'(\d)["”]', r'\1-inch', t)    # authorize the body-prose inch spelling-out (D-2)
+    t = re.sub(r'(\d(?:\.\d+)?)\s*%', r'\1 percent', t)   # NUM-2: "15%" -> "15 percent" in prose
     t = _BRIT_RE.sub(_brit_case, t)
     t = _USA_RE.sub('U.S.', t)
     t = re.sub(r'\b(%s)\b' % _LOWER_ALT, lambda m: m.group(0).lower(), t)
@@ -1224,6 +1225,7 @@ class Conformer:
             if seg[:1] in ('"', '“'):
                 out.append(seg); continue          # a quotation span — never edited
             seg = re.sub(r'(\d)["”]', r'\1-inch', seg)   # spell out a body-prose inch measurement (D-2)
+            seg = re.sub(r'(\d(?:\.\d+)?)\s*%', r'\1 percent', seg)   # NUM-2: "15%" -> "15 percent" (prose)
             seg = _HOUSE_LOWER_RE.sub(lambda m: m.group(1) + m.group(2) + m.group(3).lower(), seg)
             seg = _HOUSE_CAP_RE.sub(lambda m: m.group(1) + m.group(2) + m.group(3).capitalize(), seg)
             seg = _BRIT_RE.sub(_brit_case, seg)
