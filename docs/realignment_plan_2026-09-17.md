@@ -1,3 +1,7 @@
+> ⚠️ **Coverage claims SUPERSEDED (2026-09-18)** by `docs/conformance_coverage_2026-09-18.md` after the
+> GPT/Codex audit. "P0/P1 complete" here overstates scope: P0 (authoritative template + effective
+> formatting) and P1 (real sequence + field-result verification) are REOPENED. Retained as historical plan.
+
 # LI Report Conformer — realignment plan (2026-09-17)
 
 Consolidates `guidelines_gap_analysis_2026-09-17.md` (§0–§17) into an ordered plan. Organizing principle:

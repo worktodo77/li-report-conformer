@@ -1,3 +1,10 @@
+> ⚠️ **SUPERSEDED as spec (2026-09-18)** by `docs/conformance_coverage_2026-09-18.md`. The GPT/Codex audit
+> (`docs/reviews/session_and_guideline_audit_2026-09-18_codex.md`) found this doc has shifted section
+> numbers (§4/5/6/7 → actually §5/6/7/8), an incorrect date rule (correct: `D Month YYYY`), unsourced
+> synthesis rules (percent, programme→schedule, U.S.), omitted exceptions (from/between; acronym
+> apostrophes; multi-line bullets), and a false "template styles already match" claim. Retained as dated
+> historical investigation only.
+
 # LI Report Template Guidelines vs. Conformer engine — gap analysis (2026-09-17)
 
 Source of truth: `assets/LI Report Template Guidelines LTR/A4 23 July 2026.docx` + `LI Report Template A4
