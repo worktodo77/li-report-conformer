@@ -71,17 +71,25 @@ needs conforming lives *inside* tracked edits — and is therefore skipped. The 
 built, **forbids the very edits conformance requires.** No amount of engine cleverness resolves this while
 the rule is "skip tracked content."
 
-**The domain-correct resolution:** don't skip — apply each conformance edit **as a new tracked formatting
-change** (`rPrChange`, `pPrChange`, numbering change) attributed to a conformer author. The reviewer sees
-"LI Conformer: 9pt → 10pt" and can accept/reject. Nothing is hidden, every existing mark is preserved, *and*
-the report conforms. This is how conformance of a marked draft is supposed to work.
+**The resolution (Alex, 2026-09-18):** don't skip, and **don't add new tracked changes either** — conform
+the formatting **in place**, silently, *reaching through* the tracked wrapper. A wrong font size inside a
+`<w:ins>` is simply corrected; the `<w:ins>` wrapper, its author/date, and the inserted text all stay. What
+is preserved is the **review history** — the revision *content* (which words were inserted/deleted, by whom,
+when) and the *comments*. What is conformed is **formatting, everywhere**, tracked or not. Adding conformance
+as new tracked changes was explicitly rejected: it would bury the report in markup and make it a nightmare to
+review.
+
+**Honest consequence (recorded, not relitigated):** editing formatting inside a tracked insertion means the
+inserted text's formatting will differ from exactly what the reviewer typed. The who/what/when of the edit is
+fully preserved; only its non-conforming formatting is silently corrected. This is consistent with Alex's
+prior ruling (2026-09-17) that a wrong header fill is corrected to house even when it is a tracked change.
 
 ### 3.2 Structural correctness is done with regex on XML strings
 Numbering resolution, style inheritance, field/bookmark integrity, and table-cell geometry are tree/graph
 problems. Regex handles the easy 80% and mishandles the structural 20% — exactly the bullet↔number,
 PAGEREF/TOC, and header-detection failures above. The codebase already concedes this: `numbering.py` is
-lxml, an island in an otherwise regex engine. Safe conformance-as-tracked-changes (§3.1) is not achievable
-with string regex; it needs a tree model.
+lxml, an island in an otherwise regex engine. Surgically editing properties **inside** tracked wrappers
+(§3.1) without disturbing the ins/del/comment structure is not safe with string regex; it needs a tree model.
 
 ### 3.3 Verification measured names and counts, not rendered effect
 250 tests were green while the Word output was visibly wrong. "333/333 GridTable4 stamped" was *true* and the
@@ -92,34 +100,47 @@ untrustworthy until a rendering-level check exists (§6).
 
 ## 4. Decisions settled
 
-- **D-A1 (2026-09-18): Two modes, shipped separately.** The tool offers both a clean-conform path and a
-  preserve-marks path, with different guarantees. *(Alex, "Both, as separate modes".)*
+- **D-A1 — SUPERSEDED 2026-09-18 PM.** ~~Two modes, shipped separately.~~ Reversed by D-A3: two workflow
+  tracks make the software too complex. **One workflow only.**
 - **D-A2 (2026-09-18): Design doc before code.** This reassessment is written and reviewable before any
   rebuild begins. *(Alex, "Write the design doc first".)*
+- **D-A3 (2026-09-18): One workflow; conform in place; never add tracked changes.** A single path: report in,
+  conformed report out. Conformance fixes are applied **silently, in place** — including on formatting that
+  sits inside a tracked change. Emitting conformance as new tracked changes is rejected (it makes the document
+  a nightmare to review). *(Alex, "just one workflow… I do not want us adding tracked changes for the
+  conformance fixes… regardless if it is tracked change or not, the software shall conform those instances.")*
+- **D-A4 (2026-09-18): "Preserve" = review history, not formatting.** The tool preserves the tracked-change
+  **content** (which words were inserted/deleted, by whom, when) and the **comments**. It does **not** preserve
+  non-conforming **formatting** — that is conformed everywhere. This refines the older "preserve tracked
+  changes byte-exact" contract, which conflated content with formatting.
 
 ---
 
-## 5. Target architecture — two modes
+## 5. Target architecture — one workflow
 
-### Mode A — Clean-conform ("accept, then conform") — the common case, fast path
-- Tool emits an **accepted copy** (original untouched; new file) with all tracked changes resolved, then
-  conforms that clean document.
-- With no tracked content to mask, the masking-vs-conforming conflict (§3.1) **disappears**: every run,
-  cell, and list is editable. Findings 2.2 and most of 2.3/2.4 cannot occur in this mode.
-- Remaining work is bounded: hand list-style resolution fully to the `numbering.py` graph (retire the regex
-  numbering paths for this mode), and guarantee field/TOC bookmark survival.
-- **Largely salvageable** from the current engine.
+A single conform path. No modes, no accepted-copy branch, no tracked-change emission.
 
-### Mode B — Preserve-marks (live tracked draft) — the Warhoe case, research build
-- Conformance edits emitted **as new tracked formatting changes** (§3.1), authored "LI Conformer", dated.
-- Structural passes (numbering, fields, tables) reimplemented on a **tree model** (lxml) so layering tracked
-  changes onto tracked content is safe.
-- Staged **after** Mode A validates the conformance logic on clean input.
+**Preserve (untouched):**
+- Tracked-change **structure and content**: `<w:ins>`/`<w:del>`/`<w:moveFrom>`/`<w:moveTo>` wrappers with
+  their authors and dates, and the inserted/deleted **text** itself.
+- **Comments** and their anchors.
+- Document substance — no wording, quotes, or content changes.
 
-### Shared foundation
-- One conformance rule-set drives both modes; only the *application layer* differs (direct edit vs.
-  tracked-change edit). This keeps the guideline logic single-sourced.
-- Existing UI, ledger, gates, and audit scaffolding are retained.
+**Conform (everywhere, in place, silently):**
+- All formatting to the guideline — fonts, sizes, colours, paragraph/character styles, list numbering,
+  tables, captions, cross-references — **regardless of whether the run sits inside a tracked change.** The
+  engine reaches through the wrapper and corrects the property; the wrapper stays.
+- Where a reviewer's tracked *formatting* change (`rPrChange`/`tcPrChange`) set a non-conforming value, the
+  current effective formatting is conformed; the old-value change-record is normalised so "reject" cannot
+  revert to a non-conforming state. *(Consistent with the 2026-09-17 header-fill ruling.)*
+
+**Implementation consequences:**
+- Move the structural + property passes onto a **tree model (lxml)** so formatting can be edited safely
+  *inside* tracked wrappers without disturbing revision structure, content, or comments (§3.2). Retire the
+  "mask tracked content and skip it" behaviour for formatting; masking is no longer how preservation works.
+- List numbering is owned fully by the `numbering.py` graph (retire the regex numbering paths).
+- Existing UI, ledger, gates, and audit scaffolding are retained; the ledger now records in-place formatting
+  corrections rather than emitted tracked changes.
 
 ---
 
@@ -132,7 +153,7 @@ Root cause 3.3 must be closed first or every fix stays unverifiable.
   sizes — asserting against the guideline.
 - Re-run it against the *current* Warhoe output to produce one truthful, complete defect list (and to
   root-cause finding 2.5).
-- It becomes the acceptance gate every Mode A / Mode B change must pass — replacing "XML-shape green" with
+- It becomes the acceptance gate every conform change must pass — replacing "XML-shape green" with
   "renders correctly."
 
 ---
@@ -143,18 +164,21 @@ Kept separate so small honest wins aren't blocked on the big build:
 
 - **Quick, in-place fixes** (independent of the rebuild): the "98 nested/complex" mislabel (2.1); the ~5
   plain-table header fails (2.2); likely finding 2.5 once root-caused.
-- **Rebuild** (the two mismatches): conformance-as-tracked-changes application layer (3.1); tree-model
-  structural passes (3.2); the two-mode split (§5).
+- **Rebuild** (the two mismatches, under the single contract): conform-through-tracked-wrappers in place —
+  no tracked-change emission (3.1 / D-A3); tree-model structural passes so those in-place edits are safe
+  (3.2); retire the mask-and-skip formatting behaviour (§5).
 
 ---
 
 ## 8. Open items / next decision
 
 - **Build order** is the next call (verification-harness-first is the standing recommendation, so no fix is
-  trusted on XML-shape alone again). Options: harness → Mode A → Mode B; or Mode A first; or Mode B first.
-- **Accepted-copy mechanics for Mode A**: does the tool accept changes itself (via OOXML) or drive Word-COM
-  to do it? (COM is more faithful; OOXML is dependency-free. To be decided at Mode A kickoff.)
-- **Conformer author identity / date** for Mode B tracked edits (naming, so reviewers can filter).
+  trusted on XML-shape alone again). Options: harness first → then the conform rebuild; or start the conform
+  rebuild now with the harness built alongside.
+- **Ledger semantics** under D-A3: the audit now records in-place formatting corrections (what conformed,
+  where) rather than emitted tracked changes — confirm the log shape at rebuild kickoff.
+- **rPrChange/tcPrChange handling**: normalising the old-value record so "reject" can't revert to a
+  non-conforming state (per §5) — confirm at kickoff.
 - Finding 2.5 root cause (folds into the verification phase).
 
 ---
