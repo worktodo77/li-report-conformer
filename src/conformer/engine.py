@@ -142,6 +142,12 @@ def typo_text(t):
     t = re.sub(r'(^|[\s(\[])"', '\\1\u201c', t); t = t.replace('"', '\u201d')
     t = re.sub(r"(^|[\s(\[])'", '\\1\u2018', t); t = t.replace("'", '\u2019')
     t = re.sub(r'(\w)--(\w)', '\\1\u2013\\2', t)
+    # PUNC-2 / NUM-4: en dash for number/date RANGES, scoped to unambiguous contexts so caption numbers
+    # (Table 3-1, 3.6.15-7), activity IDs (C-MT-MC-2020) and other hyphenated tokens are never touched:
+    # a bare year-year range, or "N-N" immediately followed by a time unit.
+    t = re.sub(r'(?<![\d.\-A-Za-z])((?:19|20)\d{2})-((?:19|20)\d{2})(?![\d.\-])', '\\1\u2013\\2', t)
+    t = re.sub(r'(?<![\d.\-])(\d+)-(\d+)(\s+(?:calendar days?|working days?|business days?|days?|'
+               r'weeks?|months?|years?|CD|WD)\b)', '\\1\u2013\\2\\3', t)
     t = re.sub(r'([A-Za-z]*[a-z]|\))\. ([A-Z])', _sentence_space, t)
     t = re.sub(r'\b0(\d) (%s)' % _TYPO_MONTHS, r'\1 \2', t)
     return t.replace('\ufb00', 'ff').replace('\ufb01', 'fi').replace('\ufb02', 'fl')
