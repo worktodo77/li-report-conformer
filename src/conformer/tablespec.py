@@ -151,6 +151,28 @@ def _borders_form_house_grid(borders_el):
     return True
 
 
+def _effective_style_size(styles_xml, style_id, _seen=None):
+    """Resolve a PARAGRAPH style's effective run size (sz, half-points) from styles.xml, following the
+    basedOn chain. Returns the value as a string, or None if unset/unknown. The style's own paragraph-mark
+    rPr (inside pPr) and any table-style conditionals are excluded so only the run-level style size is read."""
+    if not styles_xml or not style_id:
+        return None
+    _seen = _seen or set()
+    if style_id in _seen:
+        return None
+    _seen.add(style_id)
+    m = re.search(r'<w:style\b[^>]*w:styleId="' + re.escape(style_id) + r'".*?</w:style>', styles_xml, re.S)
+    if not m:
+        return None
+    body = m.group(0)
+    main = re.sub(r'<w:pPr>.*?</w:pPr>', '', re.sub(r'<w:tblStylePr\b.*?</w:tblStylePr>', '', body, flags=re.S), flags=re.S)
+    sz = re.search(r'<w:sz w:val="(\d+)"/>', main)
+    if sz:
+        return sz.group(1)
+    based = re.search(r'<w:basedOn w:val="([^"]+)"', body)
+    return _effective_style_size(styles_xml, based.group(1), _seen) if based else None
+
+
 def _style_defines_house_table(styles_xml):
     """Verify the Grid Table 4 style DEFINITION resolves the house appearance by its actual PROPERTIES (a
     black grid on tblBorders sides; a teal fill + black bold header text on the firstRow conditional) — not
@@ -246,13 +268,29 @@ def effective_table_issues(tbl_xml, nsdecls=None, styles_xml=None):
             # a direct run font size that CONFLICTS with the house size (header 10pt/sz20, body 11pt/sz22);
             # a direct size equal to the house size is equivalent and not flagged
             want_sz = HOUSE['header_sz'] if is_header else HOUSE['sz']
+            direct_szs = []
             for r in tc.iter(_w('r')):
                 sz = _val(r.find(_w('rPr')), 'sz') if r.find(_w('rPr')) is not None else None
+                if sz is not None:
+                    direct_szs.append(sz)
                 if sz is not None and sz != want_sz:
                     issues.append({'kind': 'font-size', 'detail': f'cell r{ri}c{ci} run has a direct font '
                                    f'size ({int(sz) // 2}pt) conflicting with the house '
                                    f'{int(want_sz) // 2}pt', 'severity': 'fail' if is_header else 'review'})
                     break
+            # EFFECTIVE header size: with no direct run size, the header renders at its paragraph STYLE's
+            # size — and a paragraph style overrides the Grid Table 4 firstRow rPr. So a header cell whose
+            # first paragraph resolves to a non-10pt style (e.g. a stray Heading in a header cell) renders
+            # the wrong size even though no direct run size flags it. This catches the style-resolved case
+            # the direct-size check misses (surfaced as review — informational).
+            if is_header and not direct_szs and styles_xml:
+                p0 = tc.find(_w('p'))
+                pst = _val(p0.find(_w('pPr')), 'pStyle') if p0 is not None and p0.find(_w('pPr')) is not None else None
+                eff = _effective_style_size(styles_xml, pst)
+                if eff is not None and eff != want_sz:
+                    issues.append({'kind': 'header-style-size', 'detail': f'header cell c{ci} first paragraph '
+                                   f'style {pst!r} renders at {int(eff) // 2}pt, not the house '
+                                   f'{int(want_sz) // 2}pt', 'severity': 'review'})
             # shading
             shd = tcPr.find(_w('shd')) if tcPr is not None else None
             fill = shd.get(_w('fill')) if shd is not None else None
