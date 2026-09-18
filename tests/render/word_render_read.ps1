@@ -50,20 +50,28 @@ try {
     try {
       $hdr = $tb.Rows.Item(1)
       try { $e.header_repeat = [bool]$hdr.HeadingFormat } catch {}
-      $c1 = $hdr.Cells.Item(1)             # read one cell, not the whole row range (much faster)
+      # read EVERY header cell, not only the first (a 10pt cell 1 must not mask a 16pt cell 2).
+      $sizes=@(); $fills=@()
+      foreach ($cell in $hdr.Cells) {
+        try { $sizes += [double]$cell.Range.Font.Size } catch { $sizes += 9999999 }
+        try { $fills += [long]$cell.Shading.BackgroundPatternColor } catch { $fills += 9999999 }
+      }
+      $e.header_sizes = $sizes                        # per cell (9999999 = mixed/unreadable)
+      $e.header_fills = $fills
+      $c1 = $hdr.Cells.Item(1)
       try { $e.header_cell1_fill_bgr = $c1.Shading.BackgroundPatternColor } catch {}
       $cf = $c1.Range.Font
-      try { $e.header_size = $cf.Size } catch {}     # effective (style+direct); 9999999=mixed
+      try { $e.header_size = $cf.Size } catch {}
       try { $e.header_bold = $cf.Bold } catch {}
       try { $e.header_name = $cf.Name } catch {}
     } catch { $e.header_error = $_.Exception.Message }
     $result.tables += $e
-    # distinct-style firstRow conditional (style-driven header teal). wdFirstRow = 1.
+    # distinct-style firstRow conditional (style-driven header teal). wdFirstRow = 0 (1 is wdLastRow).
     if ($sn -and -not $seen.ContainsKey($sn)) {
       $seen[$sn] = $true
       $se = [ordered]@{ name=$sn; firstrow_fill_bgr=$null; firstrow_bold=$null; firstrow_size=$null }
       try {
-        $c = $doc.Styles.Item($sn).Table.Condition(1)
+        $c = $doc.Styles.Item($sn).Table.Condition(0)
         try { $se.firstrow_fill_bgr = $c.Shading.BackgroundPatternColor } catch {}
         try { $se.firstrow_bold = $c.Font.Bold } catch {}
         try { $se.firstrow_size = $c.Font.Size } catch {}
@@ -74,21 +82,23 @@ try {
   $result.timing_ms.tables = $sw.ElapsedMilliseconds
 
   # ---- optional field update (SLOW) + TOC/PAGEREF/REF summary ----
+  $updateOk = $true
   if ($UpdateFields) {
-    try { $doc.Fields.Update() | Out-Null } catch {}
-    foreach ($toc in $doc.TablesOfContents) { try { $toc.Update() } catch {} }
-    foreach ($tof in $doc.TablesOfFigures) { try { $tof.Update() } catch {} }
+    try { $doc.Fields.Update() | Out-Null } catch { $updateOk = $false }
+    foreach ($toc in $doc.TablesOfContents) { try { $toc.Update() } catch { $updateOk = $false } }
+    foreach ($tof in $doc.TablesOfFigures) { try { $tof.Update() } catch { $updateOk = $false } }
     $result.timing_ms.fields_update = $sw.ElapsedMilliseconds
   }
   $pr=0;$pr1=0;$prBlank=0;$rf=0;$rfe=0
   foreach ($f in $doc.Fields) {
     $t=$f.Type; $r=''; try { $r=$f.Result.Text } catch {}
     if ($t -eq $wdFieldPageRef) { $pr++; $rt=$r.Trim(); if ($rt -eq '1'){$pr1++} elseif ($rt -eq ''){$prBlank++} }
-    if ($t -eq $wdFieldRef) { $rf++; if ($r -like '*Bookmark not found*'){$rfe++} }
+    # both Word REF error strings: a missing bookmark and the generic "reference source not found".
+    if ($t -eq $wdFieldRef) { $rf++; if (($r -like '*Bookmark not found*') -or ($r -like '*Reference source not found*')){$rfe++} }
   }
   $result.fields = [ordered]@{
-    updated=[bool]$UpdateFields; pageref_total=$pr; pageref_showing_1=$pr1; pageref_blank=$prBlank;
-    ref_total=$rf; ref_bookmark_errors=$rfe
+    updated=[bool]$UpdateFields; update_ok=$updateOk; pageref_total=$pr; pageref_showing_1=$pr1;
+    pageref_blank=$prBlank; ref_total=$rf; ref_bookmark_errors=$rfe
   }
   # sample the List of Tables / TOF and TOC text (first 600 chars each) as concrete evidence
   foreach ($tof in $doc.TablesOfFigures) {

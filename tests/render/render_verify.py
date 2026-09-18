@@ -145,7 +145,7 @@ def verify(docx_path, update_fields=False, timeout=1800):
 
     # ---- tables ----
     tables = _as_list(data.get('tables'))
-    nonhouse_style = navy = wrong_size = wrong_fill = 0
+    nonhouse_style = navy = wrong_size = wrong_fill = unknown_size = 0
     for t in tables:
         if t.get('nested'):
             continue  # nested tables read via a flat header row are not meaningful here
@@ -157,8 +157,13 @@ def verify(docx_path, update_fields=False, timeout=1800):
             navy += 1
         elif fill != HOUSE_HEADER_RGB:
             wrong_fill += 1
-        sz = t.get('header_size')
-        if isinstance(sz, (int, float)) and sz != _UNDEFINED and abs(sz - HOUSE_HEADER_PT) > 0.01:
+        # check EVERY header cell size (F6): any concrete size != 10pt is a defect; a mixed/unreadable
+        # size (9999999) is UNKNOWN, never a silent pass.
+        sizes = _as_list(t.get('header_sizes')) or ([t.get('header_size')] if t.get('header_size') is not None else [])
+        concrete = [s for s in sizes if isinstance(s, (int, float)) and s != _UNDEFINED]
+        if any(s == _UNDEFINED for s in sizes):
+            unknown_size += 1
+        if any(abs(s - HOUSE_HEADER_PT) > 0.01 for s in concrete):
             wrong_size += 1
     if nonhouse_style:
         rep.add('fail', 'table-style', f'{nonhouse_style} table(s) not on a house table style (Grid Table 4 / LI Table)')
@@ -167,16 +172,23 @@ def verify(docx_path, update_fields=False, timeout=1800):
     if wrong_fill:
         rep.add('fail', 'table-header-fill', f'{wrong_fill} table header(s) render a non-house fill (not teal {HOUSE_HEADER_RGB})')
     if wrong_size:
-        rep.add('fail', 'table-header-size', f'{wrong_size} table header(s) do not render at {HOUSE_HEADER_PT:g}pt')
+        rep.add('fail', 'table-header-size', f'{wrong_size} table header(s) have a cell not rendering at {HOUSE_HEADER_PT:g}pt')
+    if unknown_size:
+        rep.add('review', 'table-header-size-unknown', f'{unknown_size} table header(s) have an unreadable/mixed cell size (unverified)')
 
     # ---- fields / TOC ----
     fields = data.get('fields') or {}
-    pr, pr1 = fields.get('pageref_total', 0), fields.get('pageref_showing_1', 0)
+    if fields.get('updated') and fields.get('update_ok') is False:
+        rep.add('review', 'field-update-failed', 'a field/TOC update threw — PAGEREF/REF results below are unverified')
+    pr, pr1, prb = fields.get('pageref_total', 0), fields.get('pageref_showing_1', 0), fields.get('pageref_blank', 0)
     if pr and pr1 and pr1 >= max(3, pr // 2):
         rep.add('fail', 'toc-page-1', f'{pr1} of {pr} PAGEREF fields render page "1" — TOC/List of Tables collapsed to page 1'
                 + ('' if fields.get('updated') else ' (fields NOT updated; rerun with --fields to confirm live)'))
+    if prb:
+        rep.add('review', 'pageref-blank', f'{prb} PAGEREF field(s) render blank (target may be missing)')
     if fields.get('ref_bookmark_errors'):
-        rep.add('fail', 'ref-broken', f"{fields['ref_bookmark_errors']} REF field(s) render 'Error! Bookmark not found'")
+        rep.add('fail', 'ref-broken', f"{fields['ref_bookmark_errors']} REF field(s) render an error "
+                "('Bookmark not found' / 'Reference source not found')")
 
     # ---- lists: check the rendered marker against what each house style should render ----
     # Guideline: Numbered Paragraph + L1/L2/L3 = a number (1./a./i.); L4 = a dash "-"; the four bullet
