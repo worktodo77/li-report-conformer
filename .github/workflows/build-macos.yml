@@ -1,0 +1,60 @@
+name: Build macOS app
+
+# PyInstaller cannot cross-compile, so the macOS .app must be built ON macOS. This runs on GitHub's
+# macOS runners (no local Mac needed) and uploads the .app as a downloadable artifact. Both Intel and
+# Apple Silicon are built so the beta tester can use whichever matches her Mac.
+
+on:
+  workflow_dispatch:        # run on demand from the Actions tab
+  push:
+    branches: [feat/tracked-changes-judgment]
+    paths:
+      - 'src/**'
+      - 'conformer.spec'
+      - '.github/workflows/build-macos.yml'
+
+concurrency:
+  group: build-macos-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Build (${{ matrix.arch }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-13        # Intel (x86_64) — also runs on Apple Silicon via Rosetta 2
+            arch: intel
+          - os: macos-14        # Apple Silicon (arm64) — native on M1/M2/M3
+            arch: apple-silicon
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install PySide6 python-docx openpyxl pyinstaller
+
+      - name: Run tests (excluding the local-only Warhoe integration)
+        run: python -m pytest tests -q -k "not warhoe"
+
+      - name: Build the .app
+        run: pyinstaller conformer.spec --noconfirm --clean
+
+      - name: Package the .app
+        run: |
+          cd dist
+          ditto -c -k --keepParent "LI Report Conformer.app" "LI-Report-Conformer-${{ matrix.arch }}.zip"
+
+      - name: Upload the .app artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: LI-Report-Conformer-macOS-${{ matrix.arch }}
+          path: dist/LI-Report-Conformer-${{ matrix.arch }}.zip
+          if-no-files-found: error

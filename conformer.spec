@@ -18,10 +18,13 @@ _export_hidden = (collect_submodules('docx') + collect_submodules('openpyxl')
 # "no Qt platform plugin could be initialized"). The bundled qt.conf uses Prefix=., so Qt looks for
 # them under PySide6/plugins/<group>/. Collect them explicitly — the auto-hook did not.
 _qt_plugin_root = os.path.join(os.path.dirname(PySide6.__file__), 'plugins')
+# Qt plugin shared-library extension is platform specific: .dll on Windows, .dylib on macOS, .so on Linux.
+# Globbing only *.dll silently bundled NO plugins on macOS -> the .app aborted with "no Qt platform plugin".
+_qt_plugin_ext = {'win32': '*.dll', 'darwin': '*.dylib'}.get(sys.platform, '*.so')
 _qt_plugins = []
 for _group in ('platforms', 'styles', 'imageformats', 'iconengines', 'tls', 'networkinformation'):
-    for _dll in glob.glob(os.path.join(_qt_plugin_root, _group, '*.dll')):
-        _qt_plugins.append((_dll, 'PySide6/plugins/' + _group))
+    for _lib in glob.glob(os.path.join(_qt_plugin_root, _group, _qt_plugin_ext)):
+        _qt_plugins.append((_lib, 'PySide6/plugins/' + _group))
 
 a = Analysis(
     ['src/conformer/main.py'],
@@ -78,7 +81,7 @@ exe = EXE(
     upx=True,
     console=False,
     disable_windowed_traceback=False,
-    icon='src/conformer/assets/LI_icon.ico',
+    icon=('src/conformer/assets/LI_icon.ico' if sys.platform == 'win32' else None),
 )
 
 coll = COLLECT(
