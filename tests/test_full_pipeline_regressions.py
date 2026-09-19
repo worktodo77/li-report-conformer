@@ -84,6 +84,32 @@ def test_f5_broken_references_gate_clean():
     assert st['reasons']['broken_references']
 
 
+def test_f4_clean_pipeline_keeps_small_body_font_and_offers_normalization(tmp_path):
+    """F4: a clean (untracked) table whose body is an intentional small font (9pt) must SURVIVE the clean
+    pipeline — fix_tables used to strip every run size, silently forcing 11pt and never surfacing the
+    normalize-to-11pt judgment call. Now the size is kept and the class-level offer appears."""
+    src, tpl = _package(tmp_path, _HEADING + _table(body_sz='18'))   # 18 half-points = 9pt body
+    c = Conformer(tpl, src)
+    c.run()
+    assert c.disposition != 'preserve'                               # no revisions -> clean pipeline
+    tbl = next(x for x in c.items if x.startswith('<w:tbl'))
+    body_row = re.findall(r'<w:tr\b.*?</w:tr>', tbl, re.S)[1]
+    assert '<w:sz w:val="18"/>' in body_row                          # small font kept, not force-normalized
+    assert any(j.kind == 'table-body-size' for j in c.pending_judgments)   # offered in the clean pipeline
+
+
+def test_f4_clean_pipeline_strips_oversized_body_font(tmp_path):
+    """The same keep must not preserve an OVERSIZED body run — a 14pt (sz 28) body run drops its size so
+    Table Data's 11pt applies, and no small-font offer is made."""
+    src, tpl = _package(tmp_path, _HEADING + _table(body_sz='28'))   # 28 half-points = 14pt body
+    c = Conformer(tpl, src)
+    c.run()
+    tbl = next(x for x in c.items if x.startswith('<w:tbl'))
+    body_row = re.findall(r'<w:tr\b.*?</w:tr>', tbl, re.S)[1]
+    assert '<w:sz w:val="28"/>' not in body_row                      # oversized size stripped -> 11pt
+    assert not any(j.kind == 'table-body-size' for j in c.pending_judgments)
+
+
 def test_f5_advisory_audits_do_not_gate_clean():
     # a caption-basis / heading-skip advisory (not a broken ref) stays out of the verdict
     c = Conformer.__new__(Conformer)

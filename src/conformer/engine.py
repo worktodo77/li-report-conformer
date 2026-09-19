@@ -893,6 +893,26 @@ class Conformer:
             if nx != x:
                 self.set(i, nx)
 
+    @staticmethod
+    def _filter_table_rpr(inner):
+        """Filter a table run's rPr down to the properties the house style permits: keep style/bold/italic/
+        colour, and keep a DIRECT size only when it is <= 11pt (sz 22). An intentional small body font is
+        preserved so the reviewer gets the normalize-to-11pt judgment call (GPT audit F4: the clean pipeline
+        used to strip every size, so a small-font table silently became 11pt and was never offered); an
+        oversized run drops its size so Table Data's 11pt applies. The header row's size is stripped
+        separately (hr2 below), so this keep never blocks the 10pt header."""
+        if not inner:
+            return ''
+        keep = []
+        for t2, cx in children(inner):
+            if t2 in ('rStyle', 'b', 'bCs', 'i', 'iCs', 'color'):
+                keep.append(cx)
+            elif t2 in ('sz', 'szCs'):
+                m = re.search(r'w:val="(\d+)"', cx)
+                if m and int(m.group(1)) <= 22:
+                    keep.append(cx)
+        return '<w:rPr>' + ''.join(keep) + '</w:rPr>'
+
     def fix_tables(self):
         self._ensure_table_header_style()
         for i in range(self.n()):
@@ -927,7 +947,7 @@ class Conformer:
                 c = re.sub(r'<w:p\b[^>]*>(<w:pPr>(.*?)</w:pPr>)?', lambda pm: '<w:p><w:pPr><w:pStyle w:val="TableData"/>' + ''.join(cx for t2, cx in children(pm.group(2) or '') if t2 == 'jc') + '</w:pPr>', c)
                 return c
             x = re.sub(r'<w:tc>.*?</w:tc>', fixcell, x, flags=re.S)
-            x = re.sub(r'<w:rPr>(.*?)</w:rPr>', lambda r: ('<w:rPr>' + ''.join(cx for t2, cx in children(r.group(1)) if t2 in ('rStyle','b','bCs','i','iCs','color')) + '</w:rPr>') if r.group(1) else '', x, flags=re.S)
+            x = re.sub(r'<w:rPr>(.*?)</w:rPr>', lambda r: self._filter_table_rpr(r.group(1)), x, flags=re.S)
             first_row = re.search(r'<w:tr\b.*?</w:tr>', x, re.S).group(0)
             if '<w:tblHeader/>' not in first_row:
                 nfr = (first_row.replace('<w:trPr>', '<w:trPr><w:tblHeader/>', 1) if '<w:trPr>' in first_row
@@ -1652,6 +1672,10 @@ class Conformer:
         # style that fix_tables() stamped on header cells — re-inject it so header paragraphs do not
         # reference a missing style (which Word renders at the default 12pt) (GPT audit F1).
         self._ensure_table_header_style()
+        # the excerpt-quote and table-body offers run in BOTH pipelines, not only the preserving one, so the
+        # same report gets the same feature offers regardless of whether an unrelated revision exists (F2/F4).
+        self._strip_excerpt_quotes_preserving()
+        self._offer_table_body_normalization()
         # colour/highlight AFTER replace_parts so redundancy is judged against the FINAL (template) styles
         self._color_highlight_calls()
         self.audit_figures(); self.audit_captions(); self.audit_headings()
@@ -1812,16 +1836,48 @@ class Conformer:
                 self._restore(snap)
                 self.exceptions.append(('merge_pdf_lines', 'ledger backstop tripped (rolled back)'))
 
-    _OPEN_Q = ('“', '"', '‘')
-    _CLOSE_Q = ('”', '"', '’')
+    @staticmethod
+    def _single_enclosing_double_quote(text):
+        """True only when a DOUBLE quotation mark opens the excerpt, its MATCHING close ends it, and the
+        pair encloses the WHOLE text (the outer quote never closes early and re-opens). Rejects an
+        opens-only quote (nested inner close at the end), two separate quotations, and single-quote pairs
+        (left alone). Prevents mangling mismatched/multi-quote excerpts (GPT audit F8)."""
+        t = text.strip()
+        if len(t) < 3:
+            return False
+        if t[0] == '"' and t[-1] == '"':
+            return t.count('"') == 2                     # straight: exactly the one enclosing pair
+        if t[0] == '“' and t[-1] == '”':       # smart: the outer pair must span the whole text
+            depth = 0
+            for idx, ch in enumerate(t):
+                if ch == '“':
+                    depth += 1
+                elif ch == '”':
+                    depth -= 1
+                    if depth < 0 or (depth == 0 and idx != len(t) - 1):
+                        return False                     # closed before the end -> not a single enclosure
+            return depth == 0
+        return False
+
+    @staticmethod
+    def _boundary_strip_ok(before, after):
+        """The accepted output must equal the input minus EXACTLY the two outer boundary characters (the
+        first and last non-space characters). Guards against empty leading/trailing runs or fields causing
+        only one boundary to be removed (GPT audit F8)."""
+        l = len(before) - len(before.lstrip())
+        r = len(before.rstrip()) - 1
+        if r <= l:
+            return False
+        return after == before[:l] + before[l + 1:r] + before[r + 1:]
 
     def _strip_excerpt_quotes_preserving(self):
-        """§5: an excerpt (block quote) is set off by its own style, so surrounding quotation marks are
-        redundant and are removed. A self-contained excerpt paragraph that BOTH opens and closes with a
-        quotation mark is offered as a JUDGMENT CALL (default: remove the outer pair). Only CLEAN excerpts
-        (no tracked change, comment or bookmark) are touched, and only the OUTERMOST pair — the verbatim
-        quoted text between them is never altered. A genuine quote that merely OPENS on one paragraph is
-        left alone (its close is ambiguous). A ledger backstop rolls the pass back if preservation slips."""
+        """§6: an excerpt (block quote) is set off by its own style, so surrounding quotation marks are
+        redundant and are removed. A self-contained excerpt whose outer DOUBLE-quote pair encloses the
+        whole text is offered as a JUDGMENT CALL (default: remove the outer pair). Only CLEAN excerpts
+        (no tracked change, comment or bookmark) are touched; only the two outer boundary characters are
+        removed and the result is checked against that exact invariant (else that paragraph is reverted).
+        An opens-only quote, two separate quotations, or a single-quote pair are left alone. A ledger
+        backstop rolls the whole pass back if preservation slips."""
         snap = self._snapshot()
         changed = 0
         for i in range(self.n()):
@@ -1829,15 +1885,19 @@ class Conformer:
                 continue
             if self._para_has_marker(i):
                 continue
-            t = (self.text(i) or '').strip()
-            if len(t) >= 3 and t[:1] in self._OPEN_Q and t[-1:] in self._CLOSE_Q:
-                msg = 'excerpt wrapped in quotation marks — remove them (block quote sets off the quote, §5)'
+            before = self.text(i) or ''
+            if self._single_enclosing_double_quote(before):
+                msg = 'excerpt wrapped in quotation marks — remove them (block quote sets off the quote, §6)'
                 jc = self._jcall('excerpt-quotes', i, msg, 'Remove surrounding quotation marks')
                 self.say('J', i, msg)
                 if self._decision_for(jc) == 'accept':
+                    before_item = self.item(i)
                     self._strip_leading_quote(i)
                     self._strip_trailing_quote(i)
-                    changed += 1
+                    if self._boundary_strip_ok(before, self.text(i) or ''):
+                        changed += 1
+                    else:
+                        self.set(i, before_item)         # strip did not match the invariant — revert this para
         if changed:
             clean, _ = self.verify_preservation()
             if not clean:
@@ -1845,24 +1905,34 @@ class Conformer:
                 self.exceptions.append(('strip_excerpt_quotes', 'ledger backstop tripped (rolled back)'))
 
     def _table_body_is_small(self, tbl_xml):
-        """True when a table's BODY rows carry a direct font size and every such size is below the house
-        11pt (sz 22) — i.e. a deliberately-smaller table, not a stray cell. Header row excluded."""
+        """True when a table's BODY is UNIFORMLY smaller than the house 11pt: every body text run carries a
+        direct size below sz 22, and none inherits 11pt or is >= 22 (GPT audit F4: one small run among many
+        11pt-inheriting runs is NOT a small table). Header row excluded."""
         rows = re.findall(r'<w:tr\b.*?</w:tr>', tbl_xml, re.S)
         if len(rows) < 2:
             return False
-        szs = []
+        small = other = 0
         for r in rows[1:]:
-            r = re.sub(r'<w:rPrChange\b.*?</w:rPrChange>', '', r, flags=re.S)   # current sizes only
-            szs += [int(s) for s in re.findall(r'<w:sz w:val="(\d+)"/>', r)]
-        return bool(szs) and all(s < 22 for s in szs)
+            r = re.sub(r'<w:rPrChange\b.*?</w:rPrChange>', '', r, flags=re.S)   # current formatting only
+            for run in re.findall(r'<w:r\b.*?</w:r>', r, re.S):
+                if '<w:t' not in run:
+                    continue                                                    # only text-bearing runs
+                m = re.search(r'<w:sz w:val="(\d+)"/>', run)
+                if m and int(m.group(1)) < 22:
+                    small += 1
+                else:
+                    other += 1                                                  # sz>=22 or inherits 11pt
+        return small > 0 and other == 0
 
     def _normalize_table_body_to_11pt(self, i):
-        """Strip direct run sizes from a table's BODY rows (on cells with no tracked change) so the Table
-        Data 11pt applies. Header row (Table Header 10pt) is left untouched."""
+        """Strip direct run sizes from a table's BODY rows so the Table Data 11pt applies — reaching THROUGH
+        tracked wrappers (content=False masks only the *Change records, so each old snapshot stays
+        byte-exact) so the normalization also covers sizes inside a tracked insertion (GPT audit F4). Header
+        row (Table Header 10pt) is left untouched."""
         x = self.item(i)
         rows = re.findall(r'<w:tr\b.*?</w:tr>', x, re.S)
         for r in rows[1:]:
-            masked, masks = self._mask_revisions(r)
+            masked, masks = self._mask_revisions(r, content=False)
             masked = re.sub(r'<w:sz w:val="\d+"/>', '', masked)
             masked = re.sub(r'<w:szCs w:val="\d+"/>', '', masked)
             nr = self._unmask(masked, masks)
@@ -2871,14 +2941,25 @@ class Conformer:
         paragraph style is set. Headings/numbered/bulleted paragraphs are left as-is (see above)."""
         def fixp(pm):
             p = pm.group(0)
+            # a paragraph carrying a DIRECT numPr is a numbered/bulleted list item — never reclassify it,
+            # regardless of its pStyle. Reclassifying to Table Header would silently strip its list
+            # association (an unauthorized reference flip); such a list in a header cell is left as authored
+            # (GPT audit F9). Only the current pPr is inspected — a pPrChange record is masked upstream.
+            ppr = re.search(r'<w:pPr\b.*?</w:pPr>', p, re.S)
+            if ppr and '<w:numPr>' in ppr.group(0):
+                return p
             cur = re.search(r'<w:pStyle w:val="([^"]+)"', p)
             if cur:
                 if cur.group(1) in cls._HEADER_BODY_STYLES:
                     return re.sub(r'<w:pStyle w:val="[^"]+"/>', '<w:pStyle w:val="TableHeader"/>', p, count=1)
-                return p                                  # heading / numbered / other deliberate style — leave
-            # no explicit pStyle = a plain (default) header paragraph — give it Table Header
+                return p                                  # heading / other deliberate style — leave
+            # no explicit pStyle = a plain (default) header paragraph — give it Table Header. Handle a full
+            # <w:pPr>...</w:pPr> AND a self-closing <w:pPr/> (inserting a second pPr would be invalid
+            # paragraph structure — GPT audit F9 double-pPr).
             if '<w:pPr>' in p:
                 return p.replace('<w:pPr>', '<w:pPr><w:pStyle w:val="TableHeader"/>', 1)
+            if '<w:pPr/>' in p:
+                return p.replace('<w:pPr/>', '<w:pPr><w:pStyle w:val="TableHeader"/></w:pPr>', 1)
             return re.sub(r'(<w:p\b[^>]*>)', r'\1<w:pPr><w:pStyle w:val="TableHeader"/></w:pPr>', p, count=1)
         return re.sub(r'<w:p\b.*?</w:p>', fixp, xml, flags=re.S)
 
@@ -2982,7 +3063,11 @@ class Conformer:
             # direct run sizes that conflict with the house body 11pt, so the Grid Table 4 style supplies
             # them. Masked revision content is untouched (behind sentinels).
             nx = re.sub(r'<w:tcMar>.*?</w:tcMar>', '', nx, flags=re.S)
-            nx = re.sub(r'<w:sz w:val="(\d+)"/>', lambda mm: '' if mm.group(1) != '22' else mm.group(0), nx)
+            # Remove a direct run size only when it is LARGER than the house 11pt (a stray oversize cell),
+            # so the Grid Table 4 body 11pt applies. A SMALLER size (8-10pt dense data) is kept by default
+            # (intentional) and offered for normalization separately (GPT audit F4). Header sizes are
+            # conformed to 10pt by the header repair regardless.
+            nx = re.sub(r'<w:sz w:val="(\d+)"/>', lambda mm: '' if int(mm.group(1)) > 22 else mm.group(0), nx)
             if '<w:tblStyle' in nx:
                 nx = re.sub(r'<w:tblStyle w:val="[^"]+"/>', '<w:tblStyle w:val="GridTable4"/>', nx, count=1)
             else:

@@ -32,7 +32,7 @@ def pstyle(x):
 ALLOWED_PPR = {'pStyle', 'rPr', 'sectPr', 'keepNext', 'keepLines'}
 ALLOWED_PPR_BY_STYLE = {'Caption': {'jc'}, 'TableData': {'jc'}, 'BodyText': {'ind'}, 'SpacebehindafteraGraphic': {'jc'}, 'Heading1': {'pageBreakBefore', 'spacing'}}
 ALLOWED_RPR = {'rStyle', 'b', 'bCs', 'i', 'iCs', 'vanish', 'noProof', 'lang'}
-ALLOWED_RPR_IN = {'TABLE': {'color'}}  # header row white text lives in the table style in a perfect world; tolerate colour in tables
+ALLOWED_RPR_IN = {'TABLE': {'color', 'sz', 'szCs'}}  # header white text -> colour; an intentional small BODY font (<=11pt) is KEPT by default (normalize-to-11pt is a judgment call), so a direct table sz is not a defect
 
 def ppr_children(x):
     m = re.search(r'<w:pPr>(.*?)</w:pPr>', x, re.S)

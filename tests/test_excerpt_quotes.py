@@ -61,3 +61,25 @@ def test_skip_flag_leaves_excerpt_quotes():
     c.decisions = {'excerpt-quotes_1': 'skip'}           # user skipped this judgment call
     c._strip_excerpt_quotes_preserving()
     assert _text(c.items[0]) == '“Keep these quotes.”'      # left as-is
+
+
+def test_f8_mismatched_or_two_quotes_left_alone():
+    # GPT F8: an opens-only quote (inner nested single close) and two separate quotations must NOT be
+    # treated as one enclosing pair — leave them untouched (no judgment call, no strip).
+    for txt in ('“A quote ending in a nested ‘word’',           # opens only
+                '“One quote.” Some prose. “Another quote.”',  # two quotations
+                '“inner “nested” still open'):                    # unbalanced
+        c = _pass_conformer([_excerpt(txt)])
+        c._strip_excerpt_quotes_preserving()
+        assert _text(c.items[0]) == txt, txt
+        assert not [j for j in c.pending_judgments if j.kind == 'excerpt-quotes']
+
+
+def test_single_enclosing_helper():
+    ok = Conformer._single_enclosing_double_quote
+    assert ok('“fully enclosed.”') is True
+    assert ok('“with a “nested” pair inside.”') is True     # balanced interior
+    assert ok('“one.” two “three.”') is False              # closes early
+    assert ok('“opens only') is False
+    assert ok('"straight pair"') is True
+    assert ok('"a" and "b"') is False                                         # two straight pairs
