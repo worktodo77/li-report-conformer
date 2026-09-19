@@ -142,15 +142,18 @@ def typo_text(t):
     t = re.sub(r'(^|[\s(\[])"', '\\1\u201c', t); t = t.replace('"', '\u201d')
     t = re.sub(r"(^|[\s(\[])'", '\\1\u2018', t); t = t.replace("'", '\u2019')
     t = re.sub(r'(\w)--(\w)', '\\1\u2013\\2', t)
-    # PUNC-2 / NUM-4: en dash for number/date RANGES, scoped to unambiguous contexts so caption numbers
-    # (Table 3-1, 3.6.15-7), activity IDs (C-MT-MC-2020) and other hyphenated tokens are never touched:
-    # a bare year-year range, or "N-N" immediately followed by a time unit.
-    t = re.sub(r'(?<![\d.\-A-Za-z])((?:19|20)\d{2})-((?:19|20)\d{2})(?![\d.\-])', '\\1\u2013\\2', t)
-    t = re.sub(r'(?<![\d.\-])(\d+)-(\d+)(\s+(?:calendar days?|working days?|business days?|days?|'
+    # PUNC-2 / NUM-4: en dash for number/date RANGES, scoped so caption numbers (Table 3-1, 3.6.15-7),
+    # activity IDs (A7-14, 2017-2019A, C-MT-MC-2020) and other hyphenated tokens are never touched:
+    # ALPHABETIC boundaries both sides; a trailing sentence period is allowed but a decimal is not; and
+    # §8.2.1: a range introduced by "from" or "between" is left as-is (no en dash there).
+    t = re.sub(r'(?<![Ff]rom )(?<![Bb]etween )(?<!Table )(?<!Figure )(?<!Section )(?<![\d.\-A-Za-z])'
+               r'((?:19|20)\d{2})-((?:19|20)\d{2})(?![-\dA-Za-z]|\.\d)', '\\1\u2013\\2', t)
+    t = re.sub(r'(?<![Ff]rom )(?<![Bb]etween )(?<![\d.\-A-Za-z])'
+               r'(\d+)-(\d+)(\s+(?:calendar days?|working days?|business days?|days?|'
                r'weeks?|months?|years?|CD|WD)\b)', '\\1\u2013\\2\\3', t)
-    # PUNC-2: em dash closed up (no surrounding spaces) — only BETWEEN two non-space characters, so a
-    # standalone "—" (e.g. a table "none" placeholder) or a line-edge dash is left alone.
-    t = re.sub(r'(\S)\s*\u2014\s*(\S)', '\\1\u2014\\2', t)
+    # PUNC-2: em dash closed up (no surrounding spaces) — only BETWEEN two non-space characters. Use a
+    # lookahead for the trailing char (do not consume it) so adjacent em dashes ("a — b — c") both close.
+    t = re.sub(r'(\S)\s*\u2014\s*(?=\S)', '\\1\u2014', t)
     t = re.sub(r'([A-Za-z]*[a-z]|\))\. ([A-Z])', _sentence_space, t)
     t = re.sub(r'\b0(\d) (%s)' % _TYPO_MONTHS, r'\1 \2', t)
     return t.replace('\ufb00', 'ff').replace('\ufb01', 'fi').replace('\ufb02', 'fl')
@@ -182,15 +185,18 @@ _HOUSE_LOWER_RE = re.compile(r'\b((?i:%s))(\s+)(%s)\b' % (_DET, _LOWER_ALT))
 # CAP-5 (expert-report exception): capitalize the specific Report / Project.
 _HOUSE_CAP_RE = re.compile(r'\b(the|this|my|our|its|present|entire|whole)(\s+)(report|project)\b', re.I)
 # British -> American spelling + the programme->schedule terminology swap (LI prose only).
+# British -> American spelling (§8.1). GPT audit: 'analyses'->'analyzes' CORRUPTS the noun ("the analyses
+# are complete"), so the ambiguous -yses form is removed (the verb forms analyse/analysed/analysing stay);
+# 'matrices'->'matrixes' is not required. 'programme'->'schedule' is a TERMINOLOGY swap, not a spelling
+# rule, and is not in the template guidelines — removed here (re-add only under a cited house-style authority).
 BRIT_US = {
-    'programme': 'schedule', 'programmes': 'schedules', 'analyse': 'analyze', 'analysed': 'analyzed',
-    'analysing': 'analyzing', 'analyses': 'analyzes', 'modelling': 'modeling', 'modelled': 'modeled',
+    'analyse': 'analyze', 'analysed': 'analyzed', 'analysing': 'analyzing',
+    'modelling': 'modeling', 'modelled': 'modeled',
     'behaviour': 'behavior', 'behaviours': 'behaviors', 'colour': 'color', 'favour': 'favor',
     'labour': 'labor', 'organisation': 'organization', 'organisations': 'organizations',
     'organise': 'organize', 'organised': 'organized', 'recognise': 'recognize',
     'recognised': 'recognized', 'prioritise': 'prioritize', 'judgement': 'judgment',
     'defence': 'defense', 'centre': 'center', 'metre': 'meter', 'litre': 'liter', 'fibre': 'fiber',
-    'matrices': 'matrixes',
 }
 _BRIT_RE = re.compile(r'\b(%s)\b' % '|'.join(BRIT_US), re.I)
 # "USA"/"U.S.A." -> "U.S." — deliberately NOT bare "US" (would corrupt the currency prefix "US$").
@@ -211,9 +217,7 @@ def house_norm(t):
     British->American is case-preserving here (as in the pass), so a capitalized 'Analysed'->'Analyzed'
     canonicalizes the same from both sides."""
     t = re.sub(r'(\d)["”]', r'\1-inch', t)    # authorize the body-prose inch spelling-out (D-2)
-    t = re.sub(r'(\d(?:\.\d+)?)\s*%', r'\1 percent', t)   # NUM-2: "15%" -> "15 percent" in prose
     t = _BRIT_RE.sub(_brit_case, t)
-    t = _USA_RE.sub('U.S.', t)
     t = re.sub(r'\b(%s)\b' % _LOWER_ALT, lambda m: m.group(0).lower(), t)
     t = re.sub(r'\b(report|project)\b', lambda m: m.group(0).lower(), t, flags=re.I)
     t = _ACR_PLURAL_RE.sub(lambda m: m.group(1) + 's', t)
@@ -1200,6 +1204,9 @@ class Conformer:
     def typography(self):
         for i in range(self.n()):
             if not self.is_par(i): continue
+            # An Excerpt/Quote is VERBATIM (§6) — typography must not alter its interior characters
+            # (e.g. an en dash in a quoted "2017-2019") (GPT audit F3).
+            if self.style(i) == 'ExcerptorQuote': continue
             x = self.item(i)
             def fix(m):
                 return m.group(1) + typo_text(m.group(2)) + m.group(3)
@@ -1225,11 +1232,9 @@ class Conformer:
             if seg[:1] in ('"', '“'):
                 out.append(seg); continue          # a quotation span — never edited
             seg = re.sub(r'(\d)["”]', r'\1-inch', seg)   # spell out a body-prose inch measurement (D-2)
-            seg = re.sub(r'(\d(?:\.\d+)?)\s*%', r'\1 percent', seg)   # NUM-2: "15%" -> "15 percent" (prose)
             seg = _HOUSE_LOWER_RE.sub(lambda m: m.group(1) + m.group(2) + m.group(3).lower(), seg)
             seg = _HOUSE_CAP_RE.sub(lambda m: m.group(1) + m.group(2) + m.group(3).capitalize(), seg)
             seg = _BRIT_RE.sub(_brit_case, seg)
-            seg = _USA_RE.sub('U.S.', seg)
             seg = _ACR_PLURAL_RE.sub(lambda m: m.group(1) + 's', seg)
             seg = _EG_RE.sub(lambda m: m.group(1) + ',', seg)
             out.append(seg)

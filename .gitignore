@@ -39,3 +39,11 @@ _LI Conformer Backups/
 
 # Claude Code
 .claude/worktrees/
+
+# build outputs and review checkouts (never commit)
+dist/
+build/
+dist_*/
+build_*/
+mac-build/
+.codex-review-*/

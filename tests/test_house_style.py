@@ -39,16 +39,20 @@ def test_report_project_capitalized():
 
 
 def test_terminology_and_spelling():
+    # GPT audit: programme->schedule (terminology, not in the template guidelines), matrices->matrixes
+    # (not required) and the ambiguous analyses->analyzes were REVERTED. The verb analysed->analyzed and
+    # the unambiguous British spellings stay (§8.1 American spelling).
     assert he('The programme was analysed using the matrices.') == \
-        'The schedule was analyzed using the matrixes.'
+        'The programme was analyzed using the matrices.'
     assert he('behaviour, colour, organisation') == 'behavior, color, organization'
+    assert he('the analyses are complete') == 'the analyses are complete'   # noun no longer corrupted
 
 
 def test_currency_prefix_and_eg_preserved():
     assert he('The sum was US$212,400,000.') == 'The sum was US$212,400,000.'   # currency untouched
     assert he('i.e., a windows analysis') == 'i.e., a windows analysis'          # no double comma
     assert he('e.g. the owner') == 'e.g., the owner'
-    assert he('the USA and U.S.A.') == 'the U.S. and U.S.'
+    assert he('the USA and U.S.A.') == 'the USA and U.S.A.'   # USA->U.S. reverted (not in guidelines)
 
 
 def test_acronym_plural():
@@ -100,9 +104,9 @@ def test_preserve_mode_house_style_applies_and_preserves_tracked():
         c.run()
         assert c.disposition == 'preserve'
         out = ''.join(c.items)
-        # settled prose is house-styled: "the Contractor"->"the contractor", programme->schedule
+        # settled prose is house-styled: "the Contractor"->"the contractor" (programme->schedule reverted)
         assert 'the contractor delayed the owner' in out
-        assert 'the schedule slipped' in out
+        assert 'the programme slipped' in out
         # the tracked insertion's text is masked -> untouched (still "the Contractor"), author intact
         assert '<w:ins' in out and 'the Contractor disputes this' in out and 'w:author="Ann"' in out
         clean, disc = c.verify_preservation()
