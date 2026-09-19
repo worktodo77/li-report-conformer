@@ -182,22 +182,28 @@ def typo_text(t):
     only and never rewrites a verbatim Excerpt/Quote or Caption (guideline §5, D-2)."""
     t = re.sub(r'(^|[\s(\[])"', '\\1\u201c', t); t = t.replace('"', '\u201d')
     t = re.sub(r"(^|[\s(\[])'", '\\1\u2018', t); t = t.replace("'", '\u2019')
-    t = re.sub(r'(\w)--(\w)', '\\1\u2013\\2', t)
-    # PUNC-2 / NUM-4: en dash for number/date RANGES, scoped so caption numbers (Table 3-1, 3.6.15-7),
-    # activity IDs (A7-14, 2017-2019A, C-MT-MC-2020) and other hyphenated tokens are never touched:
-    # ALPHABETIC boundaries both sides; a trailing sentence period is allowed but a decimal is not; and
-    # §8.2.1: a range introduced by "from" or "between" is left as-is (no en dash there).
-    t = re.sub(r'(?<![Ff]rom )(?<![Bb]etween )(?<!Table )(?<!Figure )(?<!Section )(?<![\d.\-A-Za-z])'
-               r'((?:19|20)\d{2})-((?:19|20)\d{2})(?![-\dA-Za-z]|\.\d)', '\\1\u2013\\2', t)
-    t = re.sub(r'(?<![Ff]rom )(?<![Bb]etween )(?<![\d.\-A-Za-z])'
-               r'(\d+)-(\d+)(\s+(?:calendar days?|working days?|business days?|days?|'
-               r'weeks?|months?|years?|CD|WD)\b)', '\\1\u2013\\2\\3', t)
-    # PUNC-2: em dash closed up (no surrounding spaces) — only BETWEEN two non-space characters. Use a
-    # lookahead for the trailing char (do not consume it) so adjacent em dashes ("a — b — c") both close.
-    t = re.sub(r'(\S)\s*\u2014\s*(?=\S)', '\\1\u2014', t)
-    t = re.sub(r'([A-Za-z]*[a-z]|\))\. ([A-Z])', _sentence_space, t)
-    t = re.sub(r'\b0(\d) (%s)' % _TYPO_MONTHS, r'\1 \2', t)
-    return t.replace('\ufb00', 'ff').replace('\ufb01', 'fi').replace('\ufb02', 'fl')
+    def _wording(s):
+        s = re.sub(r'(\w)--(\w)', '\\1\u2013\\2', s)
+        # PUNC-2 / NUM-4: en dash for number/date RANGES, scoped so caption numbers (Table 3-1, 3.6.15-7),
+        # activity IDs (A7-14, 2017-2019A, C-MT-MC-2020) and other hyphenated tokens are never touched:
+        # ALPHABETIC boundaries both sides; a trailing sentence period is allowed but a decimal is not; and
+        # §8.2.1: a range introduced by "from" or "between" is left as-is (no en dash there).
+        s = re.sub(r'(?<![Ff]rom )(?<![Bb]etween )(?<!Table )(?<!Figure )(?<!Section )(?<![\d.\-A-Za-z])'
+                   r'((?:19|20)\d{2})-((?:19|20)\d{2})(?![-\dA-Za-z]|\.\d)', '\\1\u2013\\2', s)
+        s = re.sub(r'(?<![Ff]rom )(?<![Bb]etween )(?<![\d.\-A-Za-z])'
+                   r'(\d+)-(\d+)(\s+(?:calendar days?|working days?|business days?|days?|'
+                   r'weeks?|months?|years?|CD|WD)\b)', '\\1\u2013\\2\\3', s)
+        # PUNC-2: em dash closed up (no surrounding spaces) — only BETWEEN two non-space characters. Use a
+        # lookahead for the trailing char (do not consume it) so adjacent em dashes ("a — b — c") both close.
+        s = re.sub(r'(\S)\s*\u2014\s*(?=\S)', '\\1\u2014', s)
+        s = re.sub(r'([A-Za-z]*[a-z]|\))\. ([A-Z])', _sentence_space, s)
+        s = re.sub(r'\b0(\d) (%s)' % _TYPO_MONTHS, r'\1 \2', s)
+        return s.replace('\ufb00', 'ff').replace('\ufb01', 'fi').replace('\ufb02', 'fl')
+    # The wording transforms run only OUTSIDE a balanced double-quotation span. A quoted excerpt is
+    # verbatim source (§6): its interior wording — e.g. a quoted date "03 April 2011" — must not be
+    # normalized, though the delimiters are still smart-quoted (GPT re-review R2).
+    return ''.join(p if p[:1] == '\u201c' else _wording(p)
+                   for p in re.split(r'(\u201c[^\u201d]*\u201d)', t))
 
 # ---------------------------------------------------------------- LI house style (deterministic)
 # The DETERMINISTIC subset of docs/LI_STYLE_GUIDE.md \u2014 applied like typography, and authorized by the
@@ -1310,8 +1316,20 @@ class Conformer:
             # (e.g. an en dash in a quoted "2017-2019") (GPT audit F3).
             if self.style(i) == 'ExcerptorQuote': continue
             x = self.item(i)
+            # Transform each run with the PARAGRAPH text seen so far as context, so the §8.2.1 from/between
+            # range exception fires even when "from " and the range fall in separate runs (Word splits runs
+            # for emphasis/edits) — otherwise the range's run alone has no "from" and gets an en dash it must
+            # not (GPT re-review R2). Only "from "/"between " is prepended (fixed length, never rewritten by
+            # typo_text), so the run's own transform is unchanged except that a cross-run range is suppressed
+            # (leaving that run byte-identical — the preservation gate authorizes it either way).
+            seen = ['']
             def fix(m):
-                return m.group(1) + typo_text(m.group(2)) + m.group(3)
+                s = m.group(2)
+                cm = re.search(r'(?i)\b(from|between)\s+$', seen[0])
+                ctx = cm.group(0) if cm else ''
+                new = typo_text(ctx + s)[len(ctx):] if ctx else typo_text(s)
+                seen[0] += s
+                return m.group(1) + new + m.group(3)
             # In preserve mode, mask revision content so typography never rewrites the characters of
             # an inserted/deleted payload (which must stay byte-exact); it still fixes settled text.
             masked, masks = self._mask_revisions(x) if self.disposition == 'preserve' else (x, {})

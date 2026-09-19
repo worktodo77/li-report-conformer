@@ -25,7 +25,7 @@ rule, unsourced synthesis rules, omitted exceptions, and a false "template style
 |---|---|---|
 | §1 | Report Template Guidelines (intro) | paper size A4 vs Letter; logo space |
 | §2 | Style Inspector and Style Pane | |
-| §3 | Report Level Headings | H1 ALL CAPS + new-page/36pt exception; H2–H6 initial caps; H2–H6 link to H1 numbering |
+| §3 | Report Level Headings | Headings **1 AND 2 ALL CAPS**; **3–6 initial caps**; consistent-initial-caps exception for a very long **Heading 2** title; H1 new-page/36pt exception; H2–H6 link to H1 numbering |
 | §4 | "Heading 1 — Type Heading 1 in All Caps" (a **sample** section, not a rule) | H2…H6 samples |
 | §5 | Numbered Paragraphs | Numbered Paragraph Sublevels (L1–L4 = a/i/-) |
 | §6 | Excerpts and Quotes | |
@@ -61,9 +61,11 @@ rule, unsourced synthesis rules, omitted exceptions, and a false "template style
 7. **Column alignment is contextual (§8.7), not universal.** "Appropriate alignment"; category-left /
    numbers-right is an **example**, not a rule that every first column is left or every header centered.
    D-3 is project policy, not verbatim guideline.
-8. **Ligatures normalization** and **inch/prime handling** are not stated verbatim; treat as separately
-   authorized normalizations with protected-content policy. The originals illustrate straight prime
-   characters, not a mandate to Unicode-prime everything.
+8. **Inch/prime handling IS sourced (§8):** the guidelines distinguish prime marks from smart quotes and
+   say to **spell out inches/feet in report prose**, with **prime marks acceptable in tables** to save
+   space — a measurement/context rule, not "not verbatim." The originals illustrate straight prime
+   characters, so there is **no mandate to Unicode-prime everything**. **Ligature normalization** is a
+   separate, unsourced normalization — treat it as separately authorized with a protected-content policy.
 9. **Sentence-bullet criterion (§7):** "List Bullet as a Sentence" applies to a sentence **or an item
    spanning more than one line** — not merely sentence-vs-short-phrase. Character length only flags
    candidates; it does not measure rendered lines.
@@ -81,7 +83,7 @@ re-source) · 🐞 defect (see F-number in the audit).**
 ### §3 Report-level headings
 | Requirement (source) | Current @ eb2220b | Detection | Repair policy | Verification | Exception |
 |---|---|---|---|---|---|
-| H1 ALL CAPS; H2–H6 initial caps | ⚠ `_heading_caps_preserving` flags lowercase H1 / inconsistent H2, never force-recases; adds no `<w:caps/>` | present | flag only (D-4) | render caps | H1 long-title initial-caps exception if consistent (D-4) |
+| Headings 1 **and 2** ALL CAPS; 3–6 initial caps (§3) | ⚠ `_heading_caps_preserving` flags lowercase H1/H2 and inconsistent H2, never force-recases; adds no `<w:caps/>` | present | flag only (D-4) | render caps | **Heading 2** long-title initial-caps exception if consistent (D-4) |
 | H1 new-page + 36pt short-section exception | ❌ not modeled | — | — | — | the exception itself |
 | H2–H6 auto-numbering links to H1; correct sequence/restart/parent | ⚠ `audit_headings` flags level-skips only; **sequence/restart/parent not verified** (F/12) | partial | audit | none | hidden "Hidden text for numbering" H2 must not leak to TOC (§8.6) |
 
@@ -164,7 +166,8 @@ Do **not** add more automatic text rules before repairing the preservation and v
 | Dates | `D Month YYYY`, no leading zero | leading-zero only, touches quotes | named-month scoped; quote-exempt |
 | American spelling | explicit | ambiguous rewrites corrupt (`analyses`) | remove ambiguous lexical rewrites |
 | **Percent / programme→schedule / U.S. / matrices** | **NOT in source** | shipped/partial | **revert or re-source** |
-| Ligatures / inch / prime | not verbatim | partial | separately authorized; context-scoped |
+| Inch/feet spelled out in prose; primes OK in tables (§8, **sourced**) | partial | prose vs table context | context-scoped (no blanket Unicode-prime) | grammar/context | quoted text; tables keep primes |
+| Ligature normalization (separate, **not verbatim**) | partial | — | separately authorized | — | protected content |
 | TERM/CITE consistency; that/which; Oxford comma | explicit (consistency, that/which, Oxford) | not implemented | audit + reviewer; not doc-state alone |
 | shall/since/But-However/0–9/scare quotes | **several not in source**; tense/since are contextual | not implemented | reviewer-approved only |
 
