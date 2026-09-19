@@ -103,6 +103,59 @@ def test_f2_formatting_only_revision_routes_to_preserve_and_is_kept(tmp_path):
     assert clean, disc
 
 
+def _combined_text(c):
+    return ''.join(re.findall(r'<w:t[^>]*>([^<]*)</w:t>', ''.join(c.items)))
+
+
+def test_t1_quote_prefix_inside_insertion_protects_settled_date(tmp_path):
+    """GPT re-review T1: an opening quote inside a tracked INSERTION must still protect the adjacent
+    SETTLED date — the insertion is read-only context, not erased. The quoted date stays verbatim; the
+    insertion text is byte-exact and preservation is clean."""
+    body = ('<w:p><w:pPr><w:pStyle w:val="BodyText"/></w:pPr>'
+            '<w:ins w:id="88" w:author="Rev" w:date="2026-01-01T00:00:00Z">'
+            '<w:r><w:t xml:space="preserve">He said "</w:t></w:r></w:ins>'
+            '<w:r><w:t>03 April 2011</w:t></w:r>'
+            '<w:r><w:t>".</w:t></w:r></w:p>')
+    src, tpl = _package(tmp_path, _HEADING + body)
+    c = Conformer(tpl, src)
+    c.run()
+    assert c.disposition == 'preserve'
+    assert '03 April 2011' in _combined_text(c)          # leading zero preserved (date NOT normalized)
+    assert 'He said "' in _combined_text(c)              # the inserted prefix is byte-exact
+    clean, disc = c.verify_preservation()
+    assert clean, disc
+
+
+def test_t1_from_prefix_inside_insertion_suppresses_range_endash(tmp_path):
+    body = ('<w:p><w:pPr><w:pStyle w:val="BodyText"/></w:pPr>'
+            '<w:ins w:id="89" w:author="Rev" w:date="2026-01-01T00:00:00Z">'
+            '<w:r><w:t xml:space="preserve">the period from  </w:t></w:r></w:ins>'
+            '<w:r><w:t>2017-2019</w:t></w:r></w:p>')
+    src, tpl = _package(tmp_path, _HEADING + body)
+    c = Conformer(tpl, src)
+    c.run()
+    assert '–' not in ''.join(c.items)               # no en dash: the inserted "from" is context
+    assert '2017-2019' in _combined_text(c)
+
+
+def test_t2_split_sentence_does_not_roll_back_the_typography_pass(tmp_path):
+    """GPT re-review T2: a sentence boundary split across runs must NOT make the whole typography pass roll
+    back in the preserving pipeline (undoing valid fixes elsewhere). The unrelated date paragraph is still
+    normalized and there is no typography exception."""
+    body = (_FMT_REV +                                    # selects the preserving pipeline
+            '<w:p><w:pPr><w:pStyle w:val="BodyText"/></w:pPr>'
+            '<w:r><w:t>First sentence.</w:t></w:r>'
+            '<w:r><w:t xml:space="preserve"> Next sentence.</w:t></w:r></w:p>'
+            '<w:p><w:pPr><w:pStyle w:val="BodyText"/></w:pPr>'
+            '<w:r><w:t>on 03 April 2011</w:t></w:r></w:p>')
+    src, tpl = _package(tmp_path, _HEADING + body)
+    c = Conformer(tpl, src)
+    c.run()
+    assert c.disposition == 'preserve'
+    assert 'on 3 April 2011' in _combined_text(c)          # the unrelated date fix survived (no rollback)
+    assert not any(name == 'typography' for name, _ in getattr(c, 'exceptions', []))
+
+
 def test_f4_clean_pipeline_keeps_small_body_font_and_offers_normalization(tmp_path):
     """F4: a clean (untracked) table whose body is an intentional small font (9pt) must SURVIVE the clean
     pipeline — fix_tables used to strip every run size, silently forcing 11pt and never surfacing the

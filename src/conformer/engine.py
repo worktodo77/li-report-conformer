@@ -1316,47 +1316,81 @@ class Conformer:
             # (e.g. an en dash in a quoted "2017-2019") (GPT audit F3).
             if self.style(i) == 'ExcerptorQuote': continue
             x = self.item(i)
-            # In preserve mode, mask revision content so typography never rewrites the characters of
-            # an inserted/deleted payload (which must stay byte-exact); it still fixes settled text.
-            masked, masks = self._mask_revisions(x) if self.disposition == 'preserve' else (x, {})
-            nx = self._typography_paragraph(masked)
-            nx = self._unmask(nx, masks)
+            nx = self._typography_paragraph(x)
             if nx != x: self._apply_text_edit('typo', 'Typography', i, x, nx)
         self.say('M', -1, 'typography normalised (smart quotes, en dashes, sentence spacing, dates, ligatures)')
 
     @staticmethod
+    def _qfold(s):
+        """Fold smart-quote glyphs back to straight so a change in only quote DIRECTION reads as equal —
+        the paragraph-level transform may open/close a quote differently from a per-token transform, which
+        is still only a smart-quote, never a content change."""
+        return (s.replace('“', '"').replace('”', '"')
+                .replace('‘', "'").replace('’', "'"))
+
+    @staticmethod
+    def _para_text_tokens(xml):
+        """Ordered text tokens of a paragraph for LOGICAL-text typography, each tagged editable. A <w:t>
+        outside any revision is SETTLED (editable); a <w:t> inside a <w:ins> is CURRENT inserted text —
+        included as read-only CONTEXT so it still protects adjacent settled text (a quote/range prefix in an
+        insertion), but never itself edited (revision payloads stay byte-exact); deleted text (<w:delText>,
+        and any run inside <w:del>) is not part of the current reading, so it is excluded entirely (GPT
+        re-review T1). Returns [(inner_start, inner_end, text, editable), …] in document order."""
+        ins_spans = [(m.start(), m.end()) for m in re.finditer(r'<w:ins\b.*?</w:ins>', xml, re.S)]
+        del_spans = [(m.start(), m.end()) for m in re.finditer(r'<w:del\b(?![a-zA-Z]).*?</w:del>', xml, re.S)]
+        toks = []
+        for m in re.finditer(r'<w:t(?: [^>]*)?>([^<]*)</w:t>', xml):
+            s = m.start()
+            if any(a <= s < b for a, b in del_spans):
+                continue                                            # deleted content — not current reading
+            editable = not any(a <= s < b for a, b in ins_spans)     # inside <w:ins> => read-only context
+            toks.append((m.start(1), m.end(1), m.group(1), editable))
+        return toks
+
+    @staticmethod
     def _typography_paragraph(xml):
-        """Apply typo_text over the paragraph's LOGICAL text (all visible runs concatenated), so quotation
-        protection and the from/between range context hold regardless of how Word split the text into runs
-        (GPT re-review S1) — a quoted date "03 April 2011" spread across three runs stays verbatim. The
-        transformed text is mapped back to the runs; an edit that spans a run boundary is left unapplied
-        (the runs keep their original characters), so run boundaries and any masked revision runs are never
-        disturbed. Only per-run smart-quote GLYPH direction may differ from a per-run transform, which the
-        preservation gate authorizes (typo_ok folds quote glyphs)."""
-        parts = list(re.finditer(r'(<w:t(?: xml:space="preserve")?>)([^<]*)(</w:t>)', xml))
-        if not parts:
+        """Apply typo_text over the paragraph's LOGICAL text so quotation protection and from/between range
+        context hold across run boundaries AND across tracked insertions (GPT re-review S1/T1). Inserted
+        text contributes to context but is never edited; each SETTLED run is changed only when the change is
+        contained within that run AND the per-token gate authorizes it (fold on quote direction), so the
+        transformer and the preservation gate always agree — an edit the gate could not justify (e.g. a
+        sentence space that depends on a preceding run) is simply not made, never a whole-pass rollback
+        (T2)."""
+        toks = Conformer._para_text_tokens(xml)
+        if not any(t[3] for t in toks):
             return xml
-        segs = [p.group(2) for p in parts]
+        # Fast path for the common single-run paragraph: no boundaries to map, so skip the diff entirely
+        # (SequenceMatcher on a long single run is orders of magnitude slower — GPT re-review perf note).
+        if len(toks) == 1:
+            s0, e0, seg, _ed = toks[0]
+            new = typo_text(seg)
+            return xml if new == seg else xml[:s0] + new + xml[e0:]
+        segs = [t[2] for t in toks]
+        editable = [t[3] for t in toks]
         full = ''.join(segs)
         new_full = typo_text(full)
         if new_full == full:
             return xml
-        new_segs = Conformer._backmap_typo(segs, full, new_full)
+        authorize = lambda old, new: Conformer._qfold(typo_text(old)) == Conformer._qfold(new)
+        new_segs = Conformer._backmap_typo(segs, full, new_full, editable=editable, authorize=authorize)
         if new_segs == segs:
             return xml
         out, last = [], 0
-        for p, ns in zip(parts, new_segs):
-            out.append(xml[last:p.start(2)]); out.append(ns); last = p.end(2)
+        for (s0, e0, _txt, _ed), ns in zip(toks, new_segs):
+            out.append(xml[last:s0]); out.append(ns); last = e0
         out.append(xml[last:])
         return ''.join(out)
 
     @staticmethod
-    def _backmap_typo(segs, full, new_full):
-        """Map a paragraph-level text transform back onto its run segments. A change contained within ONE
-        run is applied; a change spanning a run boundary keeps the original characters in their runs; an
-        insertion exactly between two runs is dropped. This guarantees every run is either unchanged or a
-        within-run typography edit (so the content gate stays satisfied)."""
+    def _backmap_typo(segs, full, new_full, editable=None, authorize=None):
+        """Map a paragraph-level text transform back onto its token segments. A change contained within ONE
+        editable token is applied; a change spanning a token boundary, or touching a read-only (revision)
+        token, keeps the original characters; an insertion between two tokens is dropped. Finally, an
+        editable token's applied change is reverted unless `authorize(old, new)` accepts it, so every change
+        that survives is one the per-token content gate will also authorize (GPT re-review T2)."""
         import difflib
+        if editable is None:
+            editable = [True] * len(segs)
         owner = []
         for ri, s in enumerate(segs):
             owner.extend([ri] * len(s))
@@ -1367,19 +1401,23 @@ class Conformer:
                     out[owner[k]] += full[k]
             elif tag in ('replace', 'delete'):
                 owners = {owner[k] for k in range(i1, i2)}
-                if len(owners) == 1:
+                if len(owners) == 1 and editable[next(iter(owners))]:
                     out[next(iter(owners))] += (new_full[j1:j2] if tag == 'replace' else '')
                 else:
                     for k in range(i1, i2):
-                        out[owner[k]] += full[k]                 # cross-run edit -> keep original
+                        out[owner[k]] += full[k]                 # cross-token OR read-only -> keep original
             else:  # insert
                 left = owner[i1 - 1] if i1 > 0 else None
                 right = owner[i1] if i1 < len(owner) else None
-                if left is not None and left == right:
+                if left is not None and left == right and editable[left]:
                     out[left] += new_full[j1:j2]
-                elif left is None and right is not None:
+                elif left is None and right is not None and editable[right]:
                     out[right] += new_full[j1:j2]                # insertion at the very start
-                # else: insertion between two runs -> dropped (conservative)
+                # else: insertion between two tokens (or into a read-only token) -> dropped
+        if authorize is not None:
+            for ri in range(len(segs)):
+                if editable[ri] and out[ri] != segs[ri] and not authorize(segs[ri], out[ri]):
+                    out[ri] = segs[ri]                          # not per-token authorizable -> leave as-is
         return out
 
     _HOUSE_SKIP_STYLES = {'ExcerptorQuote', 'Caption', 'TableofFigures', 'Title', 'TitleofProject',
@@ -1874,13 +1912,10 @@ class Conformer:
         and recorded as exceptions. Correctness is guaranteed by the gate, not by pass ordering."""
         self.exceptions = []
         from conformer import revisions as _rev
-        # Authorize a typography edit when it matches typo_text UP TO smart-quote glyph direction: the
-        # paragraph-level transform may open/close a quote differently from a per-run typo_text when a
-        # quotation spans runs, but that is still only a smart-quote — never a content change (S1). Folding
-        # affects quote glyphs only, so any other text change is still caught.
-        _qfold = lambda s: (s.replace('“', '"').replace('”', '"')
-                            .replace('‘', "'").replace('’', "'"))
-        typo_ok = lambda old, new: _qfold(typo_text(old)) == _qfold(new)
+        # Authorize a typography edit when it matches typo_text UP TO smart-quote glyph direction — the
+        # SAME predicate _typography_paragraph applies before it makes an edit, so the transformer and this
+        # gate always agree (GPT re-review T2). Folding affects quote glyphs only; any other change is caught.
+        typo_ok = lambda old, new: self._qfold(typo_text(old)) == self._qfold(new)
         # (pass, gate): 'stream' = strict content stream (formatting only); 'text' = typography's
         # authorized text edit; 'struct' = AUTO structural change (paragraph structure may change,
         # every text token / object / revision-comment-bookmark boundary must still line up); 'prune' =
