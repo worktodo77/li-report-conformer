@@ -129,6 +129,62 @@ def test_f4_clean_pipeline_strips_oversized_body_font(tmp_path):
     assert not any(j.kind == 'table-body-size' for j in c.pending_judgments)
 
 
+def _table_header_charstyle():
+    """A table whose header run wears a size-bearing character style (rStyle=BigChar, sz 32 = 16pt)."""
+    hdr = ('<w:tr><w:tc><w:tcPr/><w:p><w:pPr><w:pStyle w:val="TableData"/></w:pPr>'
+           '<w:r><w:rPr><w:rStyle w:val="BigChar"/><w:sz w:val="32"/></w:rPr><w:t>Head</w:t></w:r></w:p></w:tc></w:tr>')
+    body = ('<w:tr><w:tc><w:tcPr/><w:p><w:pPr><w:pStyle w:val="TableData"/></w:pPr>'
+            '<w:r><w:t>data</w:t></w:r></w:p></w:tc></w:tr>')
+    return ('<w:tbl><w:tblPr><w:tblStyle w:val="TableGrid"/><w:tblW w:w="5000" w:type="dxa"/>'
+            '<w:tblLook w:val="04A0"/></w:tblPr><w:tblGrid><w:gridCol w:w="5000"/></w:tblGrid>'
+            + hdr + body + '</w:tbl>')
+
+
+def _header_run(tbl):
+    row = re.findall(r'<w:tr\b.*?</w:tr>', tbl, re.S)[0]
+    return re.search(r'<w:r\b.*?</w:r>', row, re.S).group(0)
+
+
+def test_r1_header_character_style_size_is_overridden_to_10pt(tmp_path):
+    """GPT re-review R1: a header run with a size-bearing character style rendered larger than the house
+    10pt while conformance reported CLEAN (the repair stripped the direct size but the rStyle size won).
+    The repair now forces an explicit 10pt (sz 20) on header runs, which overrides any character style."""
+    src, tpl = _package(tmp_path, _HEADING + _table_header_charstyle() + _FMT_REV)   # _FMT_REV -> preserve path
+    c = Conformer(tpl, src)
+    c.run()
+    tbl = next(x for x in c.items if x.startswith('<w:tbl'))
+    hrun = _header_run(tbl)
+    assert '<w:sz w:val="20"/>' in hrun          # explicit house 10pt now wins over the character style
+    assert '<w:sz w:val="32"/>' not in hrun       # the 16pt override is gone
+    assert c.conformance_status()['clean'] is True
+
+
+def test_r3_normalize_action_forces_11pt_through_a_revised_paragraph(tmp_path):
+    """GPT re-review R3: the reviewer-selected 'normalize table bodies to 11pt' action stripped the direct
+    size, exposing a revised paragraph's surviving 12pt Body Text style instead of 11pt, yet reported
+    CLEAN. It now sets an explicit 11pt (sz 22) that renders regardless of the surviving style."""
+    body_ins = ('<w:tr><w:tc><w:tcPr/><w:p><w:pPr><w:pStyle w:val="BodyText"/></w:pPr>'
+                '<w:ins w:id="7" w:author="Rev" w:date="2026-01-01T00:00:00Z">'
+                '<w:r><w:rPr><w:sz w:val="18"/></w:rPr><w:t xml:space="preserve">inserted 9pt data</w:t></w:r></w:ins>'
+                '</w:p></w:tc></w:tr>')
+    hdr = ('<w:tr><w:tc><w:tcPr/><w:p><w:pPr><w:pStyle w:val="TableData"/></w:pPr>'
+           '<w:r><w:t>Head</w:t></w:r></w:p></w:tc></w:tr>')
+    tbl = ('<w:tbl><w:tblPr><w:tblStyle w:val="TableGrid"/><w:tblW w:w="5000" w:type="dxa"/>'
+           '<w:tblLook w:val="04A0"/></w:tblPr><w:tblGrid><w:gridCol w:w="5000"/></w:tblGrid>'
+           + hdr + body_ins + '</w:tbl>')
+    src, tpl = _package(tmp_path, _HEADING + tbl)
+    c = Conformer(tpl, src)
+    calls = c.analyze()
+    tb = next(j for j in calls if j.kind == 'table-body-size')       # the offer is surfaced
+    fresh = c.apply_with_decisions({tb.id: 'change:Normalize all table bodies to 11pt'})
+    body_row = re.findall(r'<w:tr\b.*?</w:tr>', next(x for x in fresh.items if x.startswith('<w:tbl')), re.S)[1]
+    assert '<w:sz w:val="22"/>' in body_row       # explicit 11pt applied to the (still tracked) run
+    assert '<w:sz w:val="18"/>' not in body_row    # the 9pt is gone
+    assert '<w:ins' in body_row                    # the insertion itself is preserved
+    clean, disc = fresh.verify_preservation()
+    assert clean, disc
+
+
 def test_f5_advisory_audits_do_not_gate_clean():
     # a caption-basis / heading-skip advisory (not a broken ref) stays out of the verdict
     c = Conformer.__new__(Conformer)

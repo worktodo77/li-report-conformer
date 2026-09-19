@@ -223,7 +223,10 @@ def test_r5_header_fill_corrected_even_when_tracked_record_preserved():
     assert 'BDD6EE' not in out and 'D9EAF7' not in out   # current fills corrected (tracked one too)
     assert out.count('w:fill="B6DDE8"') == 2            # both current backgrounds are concrete house teal
     assert 'tcPrChange' in out and 'ABCDEF' in out      # the tracked-change record + its old colour preserved
-    assert '<w:sz' not in out and 'w:val="222222"' not in out  # stray-cell run overrides normalised
+    # stray-cell run overrides normalised: the 9pt size and dark colour are gone, and the header run now
+    # carries an explicit house 10pt (sz 20) that overrides any character style (GPT re-review R1).
+    assert 'w:val="18"' not in out and 'w:val="222222"' not in out
+    assert '<w:sz w:val="20"/>' in out
     assert any('TRACKED' in n and 'corrected' in n for n in c._table_notes)
 
 

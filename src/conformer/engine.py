@@ -954,6 +954,37 @@ class Conformer:
                     keep.append(cx)
         return '<w:rPr>' + ''.join(keep) + '</w:rPr>'
 
+    # rPr children that must follow <w:sz>/<w:szCs> in canonical order (RPR_ORDER); a direct size is
+    # inserted just before the first of these so the record (rPrChange, masked or not) stays last.
+    _RPR_AFTER_SZ = ('highlight', 'u', 'effect', 'bdr', 'shd', 'fitText', 'vertAlign', 'rtl', 'cs', 'em',
+                     'lang', 'eastAsianLayout', 'specVanish', 'oMath', 'rPrChange')
+
+    @classmethod
+    def _force_run_size(cls, xml, sz):
+        """Give every text-bearing run in `xml` an explicit direct size `sz` (half-points). A direct run
+        size overrides a CHARACTER STYLE's and a paragraph style's size, so this guarantees the rendered
+        size regardless of an rStyle or the surviving paragraph style — the fix for a header run wearing a
+        size-bearing character style (R1) and for the normalize-to-11pt action reaching a revised paragraph
+        left on a non-Table-Data style (R3). Any existing direct sz/szCs is replaced; the new size is placed
+        in canonical rPr order so a masked rPrChange snapshot stays last and byte-exact."""
+        tag = f'<w:sz w:val="{sz}"/><w:szCs w:val="{sz}"/>'
+        def fixrun(rm):
+            run = rm.group(0)
+            if '<w:t' not in run:                      # only runs that carry visible text
+                return run
+            m = re.search(r'<w:rPr>(.*?)</w:rPr>', run, re.S)
+            if not m:
+                return re.sub(r'(<w:r\b[^>]*>)', lambda o: o.group(1) + '<w:rPr>' + tag + '</w:rPr>',
+                              run, count=1)
+            inner = re.sub(r'<w:szCs w:val="\d+"/>', '', re.sub(r'<w:sz w:val="\d+"/>', '', m.group(1)))
+            pos = len(inner)
+            for t in cls._RPR_AFTER_SZ:
+                mm = re.search(r'<w:%s\b' % t, inner)
+                if mm:
+                    pos = min(pos, mm.start())
+            return run.replace(m.group(0), '<w:rPr>' + inner[:pos] + tag + inner[pos:] + '</w:rPr>', 1)
+        return re.sub(r'<w:r\b.*?</w:r>', fixrun, xml, flags=re.S)
+
     def fix_tables(self):
         self._ensure_table_header_style()
         for i in range(self.n()):
@@ -982,12 +1013,22 @@ class Conformer:
             x = re.sub(r'<w:tblW [^>]*/>', f'<w:tblW w:w="{width}" w:type="dxa"/>', x)
             x = re.sub(r'<w:tblInd [^>]*/>', '', x)
             if width <= 8640: x = x.replace('<w:tblW', '<w:tblInd w:w="720" w:type="dxa"/><w:tblW', 1)
-            # cell paragraphs -> Table Data, keep alignment
-            def fixcell(m):
-                c = m.group(0)
-                c = re.sub(r'<w:p\b[^>]*>(<w:pPr>(.*?)</w:pPr>)?', lambda pm: '<w:p><w:pPr><w:pStyle w:val="TableData"/>' + ''.join(cx for t2, cx in children(pm.group(2) or '') if t2 == 'jc') + '</w:pPr>', c)
-                return c
-            x = re.sub(r'<w:tc>.*?</w:tc>', fixcell, x, flags=re.S)
+            # cell paragraphs -> Table Data, keep alignment. Leave a list item (direct numPr) or a deliberate
+            # heading exactly as authored — the same guard the preserving path uses (GPT re-review R4).
+            def fixp(pm):
+                p = pm.group(0)
+                ppr = re.search(r'<w:pPr\b.*?</w:pPr>', p, re.S)
+                if ppr and '<w:numPr>' in ppr.group(0):
+                    return p
+                cur = re.search(r'<w:pStyle w:val="([^"]+)"', p)
+                if cur and cur.group(1) not in self._HEADER_BODY_STYLES:
+                    return p
+                return re.sub(r'<w:p\b[^>]*>(<w:pPr>(.*?)</w:pPr>)?',
+                              lambda p2: '<w:p><w:pPr><w:pStyle w:val="TableData"/>'
+                              + ''.join(cx for t2, cx in children(p2.group(2) or '') if t2 == 'jc')
+                              + '</w:pPr>', p, count=1)
+            x = re.sub(r'<w:tc>.*?</w:tc>',
+                       lambda m: re.sub(r'<w:p\b.*?</w:p>', fixp, m.group(0), flags=re.S), x, flags=re.S)
             x = re.sub(r'<w:rPr>(.*?)</w:rPr>', lambda r: self._filter_table_rpr(r.group(1)), x, flags=re.S)
             first_row = re.search(r'<w:tr\b.*?</w:tr>', x, re.S).group(0)
             if '<w:tblHeader/>' not in first_row:
@@ -1974,16 +2015,17 @@ class Conformer:
         return small > 0 and other == 0
 
     def _normalize_table_body_to_11pt(self, i):
-        """Strip direct run sizes from a table's BODY rows so the Table Data 11pt applies — reaching THROUGH
-        tracked wrappers (content=False masks only the *Change records, so each old snapshot stays
-        byte-exact) so the normalization also covers sizes inside a tracked insertion (GPT audit F4). Header
-        row (Table Header 10pt) is left untouched."""
+        """Force every BODY text run to an explicit 11pt (sz 22) so the reviewer-selected normalization
+        actually renders 11pt — reaching THROUGH tracked wrappers (content=False masks only the *Change
+        records, so each old snapshot stays byte-exact). Setting an explicit direct size (rather than
+        stripping it, which merely exposes whatever paragraph/character style survives — 12pt Body Text on a
+        revised paragraph the table pass leaves alone) guarantees the promised 11pt (GPT re-review R3).
+        Header row (Table Header 10pt) is left untouched."""
         x = self.item(i)
         rows = re.findall(r'<w:tr\b.*?</w:tr>', x, re.S)
         for r in rows[1:]:
             masked, masks = self._mask_revisions(r, content=False)
-            masked = re.sub(r'<w:sz w:val="\d+"/>', '', masked)
-            masked = re.sub(r'<w:szCs w:val="\d+"/>', '', masked)
+            masked = self._force_run_size(masked, 22)
             nr = self._unmask(masked, masks)
             if nr != r:
                 x = x.replace(r, nr, 1)
@@ -2983,34 +3025,37 @@ class Conformer:
     _HEADER_BODY_STYLES = {'TableData', 'TableHeader', 'Normal', 'TableParagraph', 'TableText'}
 
     @classmethod
+    def _restyle_cell_paragraph(cls, p, target):
+        """Set ONE table-cell paragraph's style to `target`, with the structural guards shared by every
+        table pass (GPT re-review R4 — the guards must hold in cell_para too, not only the header helper):
+        a paragraph carrying a masked revision (sentinel) or a DIRECT numPr (a list item — reclassifying
+        would strip its numbering) or a deliberate non-body style (a heading, etc.) is left exactly as
+        authored; a plain/body paragraph is restyled. A full <w:pPr>…</w:pPr> and a self-closing <w:pPr/>
+        are both handled without ever producing a second pPr."""
+        if '\x00' in p:
+            return p                                       # masked revision content — leave the cell
+        ppr = re.search(r'<w:pPr\b.*?</w:pPr>', p, re.S)
+        if ppr and '<w:numPr>' in ppr.group(0):
+            return p                                       # numbered/bulleted list item — never reclassify
+        cur = re.search(r'<w:pStyle w:val="([^"]+)"', p)
+        if cur:
+            if cur.group(1) in cls._HEADER_BODY_STYLES or cur.group(1) == target:
+                return re.sub(r'<w:pStyle w:val="[^"]+"/>', f'<w:pStyle w:val="{target}"/>', p, count=1)
+            return p                                       # heading / other deliberate style — leave
+        if '<w:pPr>' in p:
+            return p.replace('<w:pPr>', f'<w:pPr><w:pStyle w:val="{target}"/>', 1)
+        if '<w:pPr/>' in p:
+            return p.replace('<w:pPr/>', f'<w:pPr><w:pStyle w:val="{target}"/></w:pPr>', 1)
+        return re.sub(r'(<w:p\b[^>]*>)', lambda mm: mm.group(1) + f'<w:pPr><w:pStyle w:val="{target}"/></w:pPr>',
+                      p, count=1)
+
+    @classmethod
     def _force_header_paragraph_style(cls, xml):
-        """Give each header-cell BODY paragraph the 10pt-bold Table Header style (replace its current
-        pStyle, else insert one for a plain default paragraph). Operates on text whose tracked-change
-        RECORDS are masked, so a pPrChange's recorded old pStyle is never touched — only the CURRENT
-        paragraph style is set. Headings/numbered/bulleted paragraphs are left as-is (see above)."""
-        def fixp(pm):
-            p = pm.group(0)
-            # a paragraph carrying a DIRECT numPr is a numbered/bulleted list item — never reclassify it,
-            # regardless of its pStyle. Reclassifying to Table Header would silently strip its list
-            # association (an unauthorized reference flip); such a list in a header cell is left as authored
-            # (GPT audit F9). Only the current pPr is inspected — a pPrChange record is masked upstream.
-            ppr = re.search(r'<w:pPr\b.*?</w:pPr>', p, re.S)
-            if ppr and '<w:numPr>' in ppr.group(0):
-                return p
-            cur = re.search(r'<w:pStyle w:val="([^"]+)"', p)
-            if cur:
-                if cur.group(1) in cls._HEADER_BODY_STYLES:
-                    return re.sub(r'<w:pStyle w:val="[^"]+"/>', '<w:pStyle w:val="TableHeader"/>', p, count=1)
-                return p                                  # heading / other deliberate style — leave
-            # no explicit pStyle = a plain (default) header paragraph — give it Table Header. Handle a full
-            # <w:pPr>...</w:pPr> AND a self-closing <w:pPr/> (inserting a second pPr would be invalid
-            # paragraph structure — GPT audit F9 double-pPr).
-            if '<w:pPr>' in p:
-                return p.replace('<w:pPr>', '<w:pPr><w:pStyle w:val="TableHeader"/>', 1)
-            if '<w:pPr/>' in p:
-                return p.replace('<w:pPr/>', '<w:pPr><w:pStyle w:val="TableHeader"/></w:pPr>', 1)
-            return re.sub(r'(<w:p\b[^>]*>)', r'\1<w:pPr><w:pStyle w:val="TableHeader"/></w:pPr>', p, count=1)
-        return re.sub(r'<w:p\b.*?</w:p>', fixp, xml, flags=re.S)
+        """Give each header-cell BODY paragraph the 10pt-bold Table Header style. Operates on text whose
+        tracked-change RECORDS are masked, so a pPrChange's recorded old pStyle is never touched — only the
+        CURRENT style is set. Headings/numbered/bulleted paragraphs are left as-is (see _restyle_cell_paragraph)."""
+        return re.sub(r'<w:p\b.*?</w:p>', lambda pm: cls._restyle_cell_paragraph(pm.group(0), 'TableHeader'),
+                      xml, flags=re.S)
 
     def _repair_stray_header_formatting(self, tbl_xml, locator):
         """Correct the header row to the house style so the Grid Table 4 teal/black-bold header renders
@@ -3041,8 +3086,10 @@ class Conformer:
             # every ins/del run is untouched — only formatting elements are removed.
             masked, masks = self._mask_revisions(tc2, content=False)
             masked = self._force_header_paragraph_style(masked)
-            masked = re.sub(r'<w:szCs w:val="\d+"/>', '', masked)
-            masked = re.sub(r'<w:sz w:val="\d+"/>', '', masked)
+            # Force an explicit 10pt on every header run so a size-bearing CHARACTER STYLE (rStyle) cannot
+            # render the header larger than the house 10pt — a direct run size beats a character style, and
+            # stripping the direct size alone left the rStyle size to win (GPT re-review R1).
+            masked = self._force_run_size(masked, 20)
             masked = re.sub(r'<w:color w:val="[^"]+"/>', '', masked)
             tc2 = self._unmask(masked, masks)
             if fill_fixed and cell_tracked:
@@ -3124,22 +3171,11 @@ class Conformer:
             nx = re.sub(r'<w:tblLook [^>]*/>',
                         '<w:tblLook w:val="04A0" w:firstRow="1" w:lastRow="0" w:firstColumn="0" '
                         'w:lastColumn="0" w:noHBand="0" w:noVBand="1"/>', nx)
-            # cell paragraphs -> TableData (keep alignment); skip any paragraph holding a masked
-            # revision (sentinel) so revised cells are left exactly as authored.
-            def cell_para(pm):
-                p = pm.group(0)
-                if '\x00' in p:                       # masked content revision -> leave the cell
-                    return p
-                # set ONLY pStyle=TableData; keep the rest of pPr (jc, and any paragraph-mark
-                # revision markers in the mark's rPr) so nothing tracked is dropped.
-                if '<w:pStyle' in p:
-                    return re.sub(r'<w:pStyle w:val="[^"]+"/>', '<w:pStyle w:val="TableData"/>', p, count=1)
-                if '<w:pPr>' in p:
-                    return p.replace('<w:pPr>', '<w:pPr><w:pStyle w:val="TableData"/>', 1)
-                return re.sub(r'(<w:p\b[^>]*>)',
-                              lambda mm: mm.group(1) + '<w:pPr><w:pStyle w:val="TableData"/></w:pPr>',
-                              p, count=1)
-            nx = re.sub(r'<w:p\b.*?</w:p>', cell_para, nx, flags=re.S)
+            # cell paragraphs -> TableData through the SHARED restyle helper (GPT re-review R4): a masked
+            # revision, a direct-numPr list item, or a deliberate heading is left as authored, and a
+            # self-closing <w:pPr/> never becomes a second pPr — the same guards the header pass relies on.
+            nx = re.sub(r'<w:p\b.*?</w:p>',
+                        lambda pm: self._restyle_cell_paragraph(pm.group(0), 'TableData'), nx, flags=re.S)
             # Conform each NON-revised table run's direct formatting to the house table style the same way
             # the clean pipeline does (drop a stray rFonts/spacing/oversize that fights Table Data; keep
             # style/bold/italic/colour and an intentional small size). A run holding masked revision content
