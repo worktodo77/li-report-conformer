@@ -1204,26 +1204,34 @@ class MainWindow(QMainWindow):
                     r = st['reasons']
                     nimp = len(r.get('unresolved_imports') or [])
                     npru = len(r.get('paragraph_reference_unresolved') or [])
+                    nbroken = len(r.get('broken_references') or [])
                     nrev = (len(r.get('tables_needing_review') or []) + len(r.get('tables_unresolved') or [])
                             + nimp + npru)
                     nroll = len(r.get('rolled_back_passes') or [])
                     ninfo = sum(len(v) for v in st.get('informational', {}).values())
                 except Exception:
                     formatting_ok = None                         # UNKNOWN — verification did not complete
-                    nimp = npru = nrev = nroll = ninfo = 0
+                    nimp = npru = nbroken = nrev = nroll = ninfo = 0
                 info_note = f'  ({ninfo} preserved formatting note(s) — informational)' if ninfo else ''
+                # A broken cross-reference (missing target) is a reference-conformance failure a field
+                # refresh cannot fix — it gates the authoritative verdict, so it must turn the Formatting
+                # row amber rather than let it claim "references resolve as intended" (GPT re-review R5).
+                if formatting_ok is None:
+                    fmt_ok, fmt_detail = False, 'Conformance could not be verified — treat this as an unverified review copy'
+                elif not formatting_ok:
+                    fmt_ok, fmt_detail = False, (f'{nflip} list-meaning flip(s), {npref} paragraph-reference '
+                                                 f'change(s), {ninteg} definition issue(s), {ntbl} table(s) off')
+                elif nbroken:
+                    fmt_ok, fmt_detail = False, f'{nbroken} cross-reference(s) point to a missing target'
+                else:
+                    fmt_ok, fmt_detail = True, ('Numbering, references, definitions and table formatting '
+                                                'resolve as intended' + info_note)
                 oc = QFrame(); oc.setObjectName('card')
                 ol = QVBoxLayout(oc)
                 for label, ok, detail in (
                     ('Review history preserved', rep.get('preservation', {}).get('clean') is True,
                      'Every tracked change and comment intact'),
-                    ('Formatting conforms', formatting_ok is True,
-                     'Numbering, references, definitions and table formatting resolve as intended' + info_note
-                     if formatting_ok
-                     else ('Conformance could not be verified — treat this as an unverified review copy'
-                           if formatting_ok is None
-                           else f'{nflip} list-meaning flip(s), {npref} paragraph-reference change(s), '
-                                f'{ninteg} definition issue(s), {ntbl} table(s) off')),
+                    ('Formatting conforms', fmt_ok, fmt_detail),
                     ('Nothing left unresolved', not (nrev or nroll),
                      ('No exceptions' + info_note) if not (nrev or nroll)
                      else f'{nroll} pass(es) held back, {nrev} item(s) need a manual look '

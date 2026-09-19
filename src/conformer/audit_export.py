@@ -83,6 +83,46 @@ def _locate(heads, item):
     return (f'{sec} · ¶{item + 1}' if sec else f'¶{item + 1}')
 
 
+def outcome_verdicts(fresh):
+    """The two conformance outcomes as strings, from the AUTHORITATIVE conformance_status (never derived
+    from ZIP/XML validity), plus the clean tri-state (True/False/None). Fails CLOSED to UNKNOWN when the
+    verdict cannot be computed (GPT audit F5). A broken cross-reference (missing target) is counted as a
+    genuinely-unresolved defect a field refresh cannot fix, so it appears in BOTH the not-clean conformance
+    line and the unresolved line — it can no longer read 'None' while the verdict is NOT CLEAN (re-review R5)."""
+    outcome = fresh.outcome_report() if hasattr(fresh, 'outcome_report') else {}
+    conf = outcome.get('conformance', {})
+    unres = outcome.get('unresolved', {})
+    n_flip = len(conf.get('numbering_flips', []) or [])
+    n_integ = len(conf.get('definition_integrity_violations', []) or [])
+    n_tblfail = len(conf.get('tables_failing_effective_format', []) or [])
+    try:
+        st = fresh.conformance_status()
+        clean = st['clean']
+        r = st['reasons']
+        n_unres_tbl = len(r.get('tables_needing_review') or []) + len(r.get('tables_unresolved') or [])
+        n_rolled = len(r.get('rolled_back_passes') or [])
+        n_broken = len(r.get('broken_references') or [])
+        n_info = sum(len(v) for v in st.get('informational', {}).values())
+    except Exception:
+        clean = None
+        n_unres_tbl = len(unres.get('tables_unresolved', []) or [])
+        n_rolled = len(unres.get('rolled_back_passes', []) or [])
+        n_broken = 0
+        n_info = 0
+    _info_tail = f' ({n_info} preserved formatting note(s) — informational)' if n_info else ''
+    _broken_tail = f', {n_broken} broken cross-reference(s)' if n_broken else ''
+    conformance_verdict = (
+        'UNKNOWN — verification did not complete; treat this as an unverified review copy' if clean is None
+        else ('Clean — numbering, definitions and table formatting resolve as intended' + _info_tail
+              if clean
+              else f'NOT CLEAN — {n_flip} list-meaning flip(s), {n_integ} definition-integrity '
+                   f'violation(s), {n_tblfail} table(s) failing effective format' + _broken_tail))
+    unresolved_verdict = (('None' + _info_tail) if not (n_unres_tbl or n_rolled or n_broken)
+                          else f'{n_rolled} pass(es) rolled back, {n_unres_tbl} table(s) unresolved / need '
+                               f'independent review{_broken_tail}')
+    return conformance_verdict, unresolved_verdict, clean
+
+
 def build_records(fresh, source_path, output_path, decisions_log=None,
                   source_sha=None, output_sha=None):
     preserve = getattr(fresh, 'disposition', None) == 'preserve'
@@ -170,38 +210,7 @@ def build_records(fresh, source_path, output_path, decisions_log=None,
     from collections import Counter
     by_cat = Counter(r['Category'] for r in records)
     # Three separate outcomes (a clean preservation result never substitutes for conformance).
-    outcome = fresh.outcome_report() if hasattr(fresh, 'outcome_report') else {}
-    conf = outcome.get('conformance', {})
-    unres = outcome.get('unresolved', {})
-    n_flip = len(conf.get('numbering_flips', []) or [])
-    n_integ = len(conf.get('definition_integrity_violations', []) or [])
-    n_tblfail = len(conf.get('tables_failing_effective_format', []) or [])
-    # Authoritative verdict — never derived from ZIP/XML validity. 'clean' gates on blocking damage AND
-    # genuinely-unresolved items; informational surfacings (legitimate variation the engine preserved,
-    # completed-correction notes) are reported but do not gate.
-    try:
-        st = fresh.conformance_status()
-        clean = st['clean']
-        r = st['reasons']
-        n_unres_tbl = len(r.get('tables_needing_review') or []) + len(r.get('tables_unresolved') or [])
-        n_rolled = len(r.get('rolled_back_passes') or [])
-        n_info = sum(len(v) for v in st.get('informational', {}).values())
-    except Exception:
-        # FAIL CLOSED (GPT audit F5): if the verdict cannot be computed the output is UNKNOWN, never an
-        # inferred pass. The old `not (n_flip or ...)` fallback could certify Clean when verification threw.
-        clean = None
-        n_unres_tbl = len(unres.get('tables_unresolved', []) or [])
-        n_rolled = len(unres.get('rolled_back_passes', []) or [])
-        n_info = 0
-    _info_tail = f' ({n_info} preserved formatting note(s) — informational)' if n_info else ''
-    conformance_verdict = (
-        'UNKNOWN — verification did not complete; treat this as an unverified review copy' if clean is None
-        else ('Clean — numbering, definitions and table formatting resolve as intended' + _info_tail
-              if clean
-              else f'NOT CLEAN — {n_flip} list-meaning flip(s), {n_integ} definition-integrity '
-                   f'violation(s), {n_tblfail} table(s) failing effective format'))
-    unresolved_verdict = (('None' + _info_tail) if not (n_unres_tbl or n_rolled)
-                          else f'{n_rolled} pass(es) rolled back, {n_unres_tbl} table(s) unresolved / need independent review')
+    conformance_verdict, unresolved_verdict, clean = outcome_verdicts(fresh)
     summary = {
         'source_name': os.path.basename(source_path),
         'source_sha256': source_sha or _sha256(source_path),

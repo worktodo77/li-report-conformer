@@ -1379,8 +1379,22 @@ class Conformer:
         land = re.sub(r'<w:sectPr\b[^>]*>', '<w:sectPr>', re.search(r'<w:sectPr\b.*?</w:sectPr>', final, re.S).group(0), 1)
         x = self.item(k); x = x.replace('</w:pPr>', land + '</w:pPr>', 1) if '<w:pPr>' in x else x.replace('<w:p>', '<w:p><w:pPr>' + land + '</w:pPr>', 1)
         self.set(k, x)
-        portrait = re.sub(r'<w:pgSz [^>]*/>', '<w:pgSz w:w="12240" w:h="15840" w:code="9"/>', final)
-        portrait = re.sub(r'<w:pgMar [^>]*/>', '<w:pgMar w:top="2160" w:right="1440" w:bottom="1440" w:left="1440" w:header="1872" w:footer="720" w:gutter="0"/>', portrait)
+        # Derive the portrait page size from THIS section's OWN landscape dimensions (swap so height >=
+        # width and drop the landscape orient) — an A4 report stays A4, a Letter report stays Letter; do
+        # NOT hard-code Letter (GPT re-review R7). Portrait margins come from the report's own prior portrait
+        # section when present, else the section's existing margins are kept (never forced to Letter).
+        def _to_portrait_pgsz(mm):
+            w = re.search(r'w:w="(\d+)"', mm.group(0)); h = re.search(r'w:h="(\d+)"', mm.group(0))
+            code = re.search(r'w:code="\d+"', mm.group(0))
+            if not (w and h):
+                return mm.group(0)
+            lo, hi = sorted((int(w.group(1)), int(h.group(1))))
+            return f'<w:pgSz w:w="{lo}" w:h="{hi}"' + (f' {code.group(0)}' if code else '') + '/>'
+        portrait = re.sub(r'<w:pgSz [^>]*/>', _to_portrait_pgsz, final)
+        prior_sect = re.search(r'<w:sectPr\b.*?</w:sectPr>', self.item(start), re.S) if marks else None
+        prior_mar = re.search(r'<w:pgMar [^>]*/>', prior_sect.group(0)) if prior_sect else None
+        if prior_mar:
+            portrait = re.sub(r'<w:pgMar [^>]*/>', prior_mar.group(0), portrait)
         self.items[-1] = portrait; self.say('M', k, 'restored the section break ending the landscape block; final section back to portrait')
 
     def replace_parts(self):

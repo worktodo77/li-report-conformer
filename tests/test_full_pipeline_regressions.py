@@ -185,6 +185,41 @@ def test_r3_normalize_action_forces_11pt_through_a_revised_paragraph(tmp_path):
     assert clean, disc
 
 
+def test_r5_broken_reference_reaches_export_verdicts():
+    """GPT re-review R5: the engine gates 'clean' on broken cross-references, but the export/UI summaries
+    counted only tables and rolled-back passes, so a broken-reference-only verdict could read NOT CLEAN with
+    'Unresolved / exceptions: None'. outcome_verdicts must surface broken references in BOTH lines."""
+    from conformer import audit_export as ax
+
+    class _Fresh:
+        def outcome_report(self):
+            return {'conformance': {}, 'unresolved': {}}
+        def conformance_status(self):
+            return {'clean': False, 'blocking': False, 'informational': {},
+                    'reasons': {'broken_references': ['REF _Ref1 -> missing', 'REF _Ref2 -> missing'],
+                                'tables_needing_review': [], 'tables_unresolved': [],
+                                'rolled_back_passes': [], 'unresolved_imports': [],
+                                'paragraph_reference_unresolved': []}}
+
+    conf_v, unres_v, clean = ax.outcome_verdicts(_Fresh())
+    assert clean is False
+    assert 'NOT CLEAN' in conf_v and 'broken cross-reference' in conf_v
+    assert unres_v != 'None' and 'broken cross-reference' in unres_v
+
+
+def test_r5_export_verdicts_fail_closed_on_exception():
+    from conformer import audit_export as ax
+
+    class _Boom:
+        def outcome_report(self):
+            return {}
+        def conformance_status(self):
+            raise RuntimeError('verifier blew up')
+
+    conf_v, unres_v, clean = ax.outcome_verdicts(_Boom())
+    assert clean is None and conf_v.startswith('UNKNOWN')
+
+
 def test_f5_advisory_audits_do_not_gate_clean():
     # a caption-basis / heading-skip advisory (not a broken ref) stays out of the verdict
     c = Conformer.__new__(Conformer)
