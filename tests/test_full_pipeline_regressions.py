@@ -84,6 +84,25 @@ def test_f5_broken_references_gate_clean():
     assert st['reasons']['broken_references']
 
 
+_FMT_REV = ('<w:p><w:pPr><w:pStyle w:val="BodyText"/></w:pPr>'
+            '<w:r><w:rPr><w:b/><w:rPrChange w:id="9" w:author="Rev" w:date="2026-01-01T00:00:00Z">'
+            '<w:rPr/></w:rPrChange></w:rPr><w:t xml:space="preserve">a run made bold under review</w:t></w:r></w:p>')
+
+
+def test_f2_formatting_only_revision_routes_to_preserve_and_is_kept(tmp_path):
+    """F2: a document whose ONLY revision is a formatting change (rPrChange, no insert/delete) used to route
+    to the clean pipeline, whose revert_tracked_formatting() deleted the record — the review history was
+    silently lost and preservation failed. It must now take the single history-preserving path, keep the
+    rPrChange, and verify preservation clean."""
+    src, tpl = _package(tmp_path, _HEADING + _FMT_REV)
+    c = Conformer(tpl, src)
+    c.run()
+    assert c.disposition == 'preserve'                       # formatting-only revision -> preserving path
+    assert '<w:rPrChange' in ''.join(c.items)                # the review record is preserved, not reverted
+    clean, disc = c.verify_preservation()
+    assert clean, disc
+
+
 def test_f4_clean_pipeline_keeps_small_body_font_and_offers_normalization(tmp_path):
     """F4: a clean (untracked) table whose body is an intentional small font (9pt) must SURVIVE the clean
     pipeline — fix_tables used to strip every run size, silently forcing 11pt and never surfacing the

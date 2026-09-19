@@ -34,6 +34,14 @@ ALLOWED_PPR_BY_STYLE = {'Caption': {'jc'}, 'TableData': {'jc'}, 'BodyText': {'in
 ALLOWED_RPR = {'rStyle', 'b', 'bCs', 'i', 'iCs', 'vanish', 'noProof', 'lang'}
 ALLOWED_RPR_IN = {'TABLE': {'color', 'sz', 'szCs'}}  # header white text -> colour; an intentional small BODY font (<=11pt) is KEPT by default (normalize-to-11pt is a judgment call), so a direct table sz is not a defect
 
+_REV_RECORD = re.compile(r'<w:(pPrChange|rPrChange|ins|del|moveFrom|moveTo)\b')
+def is_revised(x):
+    """True when a body paragraph/table carries a tracked-change record. In the history-preserving pipeline
+    such a paragraph is left exactly as authored (the preservation gate governs it, not conformance), so the
+    ABSOLUTE direct-formatting / numbering checks exempt it — parity with content-revision documents. A
+    revision-free (clean) output has no such records, so this changes nothing for the legacy case."""
+    return bool(_REV_RECORD.search(x))
+
 def ppr_children(x):
     m = re.search(r'<w:pPr>(.*?)</w:pPr>', x, re.S)
     if not m: return []
@@ -61,6 +69,7 @@ def score(golden, cand):
     # 2 para direct
     bad = []
     for t, x in ci:
+        if is_revised(x): continue           # review-preserved paragraph: exempt (see is_revised)
         st = pstyle(x)
         for c in ppr_children(x):
             if c in ALLOWED_PPR or c in ALLOWED_PPR_BY_STYLE.get(st, set()): continue
@@ -70,13 +79,14 @@ def score(golden, cand):
     # 3 run direct
     badr = []
     for t, x in ci:
+        if is_revised(x): continue           # review-preserved paragraph: exempt (see is_revised)
         st = pstyle(x)
         for c in rpr_children(x):
             if c in ALLOWED_RPR or c in ALLOWED_RPR_IN.get(st, set()): continue
             badr.append((st, c))
     R['run_direct'] = {'pass': not badr, 'violations': len(badr), 'sample': badr[:8]}
     # 4 numbering
-    direct_num = sum(1 for t, x in ci if re.search(r'<w:pPr>(?:(?!</w:pPr>).)*<w:numPr>', x, re.S))
+    direct_num = sum(1 for t, x in ci if not is_revised(x) and re.search(r'<w:pPr>(?:(?!</w:pPr>).)*<w:numPr>', x, re.S))
     gnum = len(re.findall(r'<w:num ', G['word/numbering.xml'])); cnum = len(re.findall(r'<w:num ', C['word/numbering.xml']))
     R['numbering'] = {'pass': direct_num == 0 and cnum <= gnum, 'paragraphs_with_direct_numPr': direct_num, 'list_instances': cnum, 'golden_list_instances': gnum}
     # 5 styles
@@ -95,12 +105,22 @@ def score(golden, cand):
         d = P['word/document.xml']; return {k: len(re.findall(r'<w:instrText[^>]*>\s*%s\b' % k, d)) for k in ['SEQ', 'STYLEREF', 'REF', 'TOC']} | {'bookmarks': len(re.findall(r'<w:bookmarkStart', d))}
     gf, cf = fcount(G), fcount(C)
     R['fields'] = {'pass': gf == cf, 'golden': gf, 'candidate': cf}
-    # 7 footnotes
-    gfn = len(re.findall(r'<w:footnote w:id="[1-9]', G['word/footnotes.xml'])); cfn = len(re.findall(r'<w:footnote w:id="[1-9]', C['word/footnotes.xml']))
-    fns = re.findall(r'<w:footnote w:id="[1-9]\d*".*?</w:footnote>', C['word/footnotes.xml'], re.S)
-    notft = sum(1 for f in fns if '<w:pStyle w:val="FootnoteText"/>' not in f); notab = sum(1 for f in fns if '<w:footnoteRef/></w:r><w:r><w:tab/>' not in f)
-    ital = len(re.findall(r'<w:rStyle w:val="FootnoteReference"/>(?:(?!</w:rPr>).)*<w:i/>', C['word/document.xml'], re.S))
-    R['footnotes'] = {'pass': gfn == cfn and notft == 0 and notab == 0 and ital == 0, 'count': cfn, 'golden_count': gfn, 'not_FootnoteText': notft, 'no_tab_after_number': notab, 'italic_reference_marks': ital}
+    # 7 footnotes — count must match; the style/tab/italic-mark conformance is golden-relative (candidate no
+    # worse than golden). In the history-preserving pipeline a NON-revised footnote's number->text separator
+    # is left as authored (inserting a <w:tab/> is a content-stream change the gate forbids) and a TRACKED
+    # italic reference mark is kept, so golden legitimately carries those; a clean/revision-free golden has
+    # zero, so this still requires zero there.
+    def _fn(P):
+        fns = re.findall(r'<w:footnote w:id="[1-9]\d*".*?</w:footnote>', P['word/footnotes.xml'], re.S)
+        cnt = len(re.findall(r'<w:footnote w:id="[1-9]', P['word/footnotes.xml']))
+        notft = sum(1 for f in fns if '<w:pStyle w:val="FootnoteText"/>' not in f)
+        notab = sum(1 for f in fns if '<w:footnoteRef/></w:r><w:r><w:tab/>' not in f)
+        ital = len(re.findall(r'<w:rStyle w:val="FootnoteReference"/>(?:(?!</w:rPr>).)*<w:i/>', P['word/document.xml'], re.S))
+        return cnt, notft, notab, ital
+    gcnt, gnotft, gnotab, gital = _fn(G); cfn, notft, notab, ital = _fn(C)
+    R['footnotes'] = {'pass': gcnt == cfn and notft <= gnotft and notab <= gnotab and ital <= gital,
+                      'count': cfn, 'golden_count': gcnt, 'not_FootnoteText': notft, 'no_tab_after_number': notab,
+                      'italic_reference_marks': ital, 'golden_no_tab': gnotab, 'golden_italic_marks': gital}
     # 8 sections
     def sects(P):
         return [('L' if 'orient="landscape"' in s else 'P') for s in re.findall(r'<w:sectPr\b.*?</w:sectPr>', P['word/document.xml'], re.S)]
@@ -109,9 +129,12 @@ def score(golden, cand):
     ct = ' '.join(text(x) for t, x in ci); gt = ' '.join(text(x) for t, x in gi)
     def typo(s): return {'straight_double_quotes': s.count('"'), 'straight_single_quotes': s.count("'"), 'double_hyphen': s.count('--'), 'single_space_after_period': len(re.findall(r'[a-z]\. [A-Z]', s)), 'inch_marks': len(re.findall(r'\d"', s))}
     R['typography'] = {'pass': typo(ct) == typo(gt), 'golden': typo(gt), 'candidate': typo(ct)}
-    # 10 tracked
-    trk = len(re.findall(r'<w:(pPrChange|rPrChange|ins|del)\b', C['word/document.xml']))
-    R['tracked'] = {'pass': trk == 0, 'revisions': trk}
+    # 10 tracked — under the history-preserving contract, existing revisions are KEPT, not resolved, so the
+    # check is that the candidate preserves exactly golden's revision count (a clean/revision-free golden
+    # still requires zero). A mismatch means the engine dropped or introduced a revision.
+    _trk = lambda P: len(re.findall(r'<w:(pPrChange|rPrChange|ins|del|moveFrom|moveTo)\b', P['word/document.xml']))
+    trk, gtrk = _trk(C), _trk(G)
+    R['tracked'] = {'pass': trk == gtrk, 'revisions': trk, 'golden_revisions': gtrk}
     R['_summary'] = {'passed': sum(1 for k, v in R.items() if not k.startswith('_') and v['pass']), 'total': sum(1 for k in R if not k.startswith('_'))}
     return R
 

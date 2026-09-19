@@ -1645,7 +1645,15 @@ class Conformer:
                 pass
 
     def _run_passes(self):
-        if self.revision_ledger.has_content_revisions() and self.disposition in (None, 'preserve'):
+        led = self.revision_ledger
+        # F2: ONE history-preserving path handles EVERY kind of tracked revision — content revisions
+        # (insert/delete/move) AND formatting-only revisions (pPrChange/rPrChange). The legacy clean path
+        # REVERTS formatting revisions (revert_tracked_formatting), silently destroying that review history,
+        # so it now runs only for a genuinely revision-free document. (Comments do not force this path: the
+        # clean path preserves comment anchors, and routing comment-only reports here would skip content-
+        # stream fixes like the footnote tab; the preservation gate still governs any doc that does land in
+        # the preserving path.)
+        if led.has_revisions() and self.disposition in (None, 'preserve'):
             self.disposition = 'preserve'
             s = self.revision_ledger.summary()
             self._emit('__mode__', 'preserve')
@@ -3091,6 +3099,15 @@ class Conformer:
                               lambda mm: mm.group(1) + '<w:pPr><w:pStyle w:val="TableData"/></w:pPr>',
                               p, count=1)
             nx = re.sub(r'<w:p\b.*?</w:p>', cell_para, nx, flags=re.S)
+            # Conform each NON-revised table run's direct formatting to the house table style the same way
+            # the clean pipeline does (drop a stray rFonts/spacing/oversize that fights Table Data; keep
+            # style/bold/italic/colour and an intentional small size). A run holding masked revision content
+            # (a sentinel) is left exactly as authored — its formatting is review history (GPT audit F2).
+            def _conform_run_rpr(rm):
+                if '\x00' in rm.group(1):
+                    return rm.group(0)
+                return self._filter_table_rpr(rm.group(1))
+            nx = re.sub(r'<w:rPr>(.*?)</w:rPr>', _conform_run_rpr, nx, flags=re.S)
             # First (flat) table row repeats as a header. Nested tables never reach here (handled above).
             fr = re.search(r'<w:tr\b.*?</w:tr>', nx, re.S)
             if fr and '<w:tblHeader' not in fr.group(0):
