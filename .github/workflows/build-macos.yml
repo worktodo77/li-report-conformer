@@ -24,7 +24,7 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - os: macos-13        # Intel (x86_64) — also runs on Apple Silicon via Rosetta 2
+          - os: macos-15-intel  # Intel (x86_64) — macos-13 was retired Dec 2025 (GPT audit F10)
             arch: intel
           - os: macos-14        # Apple Silicon (arm64) — native on M1/M2/M3
             arch: apple-silicon
@@ -46,6 +46,17 @@ jobs:
 
       - name: Build the .app
         run: pyinstaller conformer.spec --noconfirm --clean
+
+      - name: Smoke check — arch + Qt platform plugin present
+        run: |
+          python -c "import platform; print('runner arch:', platform.machine())"
+          APP="dist/LI Report Conformer.app"
+          test -d "$APP" || { echo "no .app produced"; exit 1; }
+          # the cocoa platform plugin must be bundled or the app cannot start
+          if ! find "$APP/Contents" -name 'libqcocoa.dylib' | grep -q .; then
+            echo "ERROR: libqcocoa.dylib (Qt platform plugin) missing from the bundle"; exit 1
+          fi
+          echo "Qt cocoa platform plugin present."
 
       - name: Package the .app
         run: |
