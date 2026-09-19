@@ -1226,16 +1226,26 @@ class MainWindow(QMainWindow):
                 else:
                     fmt_ok, fmt_detail = True, ('Numbering, references, definitions and table formatting '
                                                 'resolve as intended' + info_note)
+                # 'Nothing left unresolved' must reflect ALL authoritative gating reasons — broken
+                # references included — and must NOT read green when the verdict could not be computed
+                # (UNKNOWN is not an empty issue list) (GPT re-review S3).
+                unknown = formatting_ok is None
+                nunres = nrev + nroll + nbroken
+                if unknown:
+                    unres_ok, unres_detail = False, 'Verification did not complete — unresolved state unknown'
+                elif nunres:
+                    unres_ok, unres_detail = False, (f'{nroll} pass(es) held back, {nrev} item(s) need a manual '
+                                                     f'look ({nimp} unresolved import(s), {npru} uncorresponded '
+                                                     f'paragraph(s)), {nbroken} broken cross-reference(s)')
+                else:
+                    unres_ok, unres_detail = True, ('No exceptions' + info_note)
                 oc = QFrame(); oc.setObjectName('card')
                 ol = QVBoxLayout(oc)
                 for label, ok, detail in (
                     ('Review history preserved', rep.get('preservation', {}).get('clean') is True,
                      'Every tracked change and comment intact'),
                     ('Formatting conforms', fmt_ok, fmt_detail),
-                    ('Nothing left unresolved', not (nrev or nroll),
-                     ('No exceptions' + info_note) if not (nrev or nroll)
-                     else f'{nroll} pass(es) held back, {nrev} item(s) need a manual look '
-                          f'({nimp} unresolved import(s), {npru} uncorresponded paragraph(s))')):
+                    ('Nothing left unresolved', unres_ok, unres_detail)):
                     row = QLabel(f'{"✓" if ok else "⚠"}  <b>{label}</b> — {detail}')
                     row.setTextFormat(Qt.RichText); row.setWordWrap(True)
                     row.setStyleSheet('font-size: 12px; color: %s;' % ('#1f7a34' if ok else '#b26a00'))

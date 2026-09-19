@@ -55,8 +55,10 @@ try {
       foreach ($cell in $hdr.Cells) {
         try { $sizes += [double]$cell.Range.Font.Size } catch { $sizes += 9999999 }
         try { $fills += [long]$cell.Shading.BackgroundPatternColor } catch { $fills += 9999999 }
-        try { $fonts += [string]$cell.Range.Font.Name } catch { $fonts += $null }
-        try { $bolds += [bool]([int]$cell.Range.Font.Bold -ne 0) } catch { $bolds += $null }
+        try { $fn = [string]$cell.Range.Font.Name; if ($fn -eq '') { $fonts += $null } else { $fonts += $fn } } catch { $fonts += $null }
+        # Font.Bold is tri-state: -1 all bold, 0 none, 9999999 (wdUndefined) MIXED. Only Word's actual TRUE
+        # (-1) becomes $true; a mixed cell becomes $null (unverified), never silently $true (GPT re-review S4).
+        try { $bv = [int]$cell.Range.Font.Bold; if ($bv -eq -1) { $bolds += $true } elseif ($bv -eq 0) { $bolds += $false } else { $bolds += $null } } catch { $bolds += $null }
       }
       $e.header_sizes = $sizes                        # per cell (9999999 = mixed/unreadable)
       $e.header_fills = $fills

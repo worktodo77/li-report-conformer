@@ -172,38 +172,75 @@ def verify(docx_path, update_fields=False, timeout=1800):
         if t.get('header_error'):
             read_err += 1
             continue
-        miss = False
-        # fill — EVERY header cell (fall back to the single effective fill; none observed -> unverified)
+        # Per-table flags. An UNOBSERVABLE cell (mixed / empty / null) within a populated array marks the
+        # table incomplete — it must NOT disappear behind a valid neighbour or a table-wide fallback
+        # (GPT re-review S4). A concrete wrong value in ANY cell is a fail.
+        miss = f_navy = f_fill = f_size = f_unknownsz = f_font = f_bold = False
+        style_fill = None
+        _st = styles_by_name.get(t.get('style'))
+        if _st is not None:
+            style_fill = bgr_to_rgb_hex(_st.get('firstrow_fill_bgr'))
+        # fill — EVERY header cell; AUTO resolves through the style's firstRow fill
         fills = [bgr_to_rgb_hex(v) for v in _as_list(t.get('header_fills'))]
-        concrete_f = [f for f in fills if f and f not in ('AUTO', 'MIXED') and not str(f).startswith('?')]
-        if not concrete_f:
+        if not fills:
             eff, _src = _effective_header_fill(t, styles_by_name)
-            if eff and eff not in ('AUTO', 'MIXED') and not str(eff).startswith('?'):
-                concrete_f = [eff]
-        if not concrete_f:
+            fills = [eff] if eff else []
+        if not fills:
             miss = True
-        elif any(f == OLD_NAVY_RGB for f in concrete_f):
-            navy += 1
-        elif any(f != HOUSE_HEADER_RGB for f in concrete_f):
-            wrong_fill += 1
+        for f in fills:
+            if f == OLD_NAVY_RGB:
+                f_navy = True
+            elif f == 'AUTO':
+                if style_fill == HOUSE_HEADER_RGB:
+                    pass                                   # the style supplies teal
+                elif style_fill == OLD_NAVY_RGB:
+                    f_navy = True
+                elif style_fill and style_fill not in ('AUTO', 'MIXED') and not str(style_fill).startswith('?'):
+                    f_fill = True
+                else:
+                    miss = True                            # no concrete fill anywhere
+            elif f in ('MIXED', None) or str(f).startswith('?'):
+                miss = True                                # cell fill could not be read
+            elif f != HOUSE_HEADER_RGB:
+                f_fill = True
         # size — every header cell
         sizes = _as_list(t.get('header_sizes')) or ([t.get('header_size')] if t.get('header_size') is not None else [])
         if not sizes:
             miss = True
-        if any(s == _UNDEFINED for s in sizes):
-            unknown_size += 1
-        if any(isinstance(s, (int, float)) and s != _UNDEFINED and abs(s - HOUSE_HEADER_PT) > 0.01 for s in sizes):
-            wrong_size += 1
-        # font family + bold
+        for s in sizes:
+            if not isinstance(s, (int, float)) or s == _UNDEFINED:
+                f_unknownsz = True                         # mixed/unreadable cell size
+            elif abs(s - HOUSE_HEADER_PT) > 0.01:
+                f_size = True
+        # font family — a null/empty cell value is unobserved, not a pass
         fonts = _as_list(t.get('header_fonts'))
         if not fonts:
             miss = True
-        elif any(f and f != HOUSE_HEADER_FONT for f in fonts):
-            wrong_font += 1
+        for f in fonts:
+            if not f:
+                miss = True
+            elif f != HOUSE_HEADER_FONT:
+                f_font = True
+        # bold — True / False / None(=mixed/unreadable)
         bolds = _as_list(t.get('header_bold'))
         if not bolds:
             miss = True
-        elif any(b is False for b in bolds):
+        for b in bolds:
+            if b is None:
+                miss = True
+            elif b is False:
+                f_bold = True
+        if f_navy:
+            navy += 1
+        elif f_fill:
+            wrong_fill += 1
+        if f_size:
+            wrong_size += 1
+        if f_unknownsz:
+            unknown_size += 1
+        if f_font:
+            wrong_font += 1
+        if f_bold:
             not_bold += 1
         # repeat-as-header (tblHeader) — a review item, not a hard fail (a single-row table is legitimate)
         if t.get('header_repeats') is None:

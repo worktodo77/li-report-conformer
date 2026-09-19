@@ -187,12 +187,19 @@ def typo_text(t):
         # PUNC-2 / NUM-4: en dash for number/date RANGES, scoped so caption numbers (Table 3-1, 3.6.15-7),
         # activity IDs (A7-14, 2017-2019A, C-MT-MC-2020) and other hyphenated tokens are never touched:
         # ALPHABETIC boundaries both sides; a trailing sentence period is allowed but a decimal is not; and
-        # §8.2.1: a range introduced by "from" or "between" is left as-is (no en dash there).
-        s = re.sub(r'(?<![Ff]rom )(?<![Bb]etween )(?<!Table )(?<!Figure )(?<!Section )(?<![\d.\-A-Za-z])'
-                   r'((?:19|20)\d{2})-((?:19|20)\d{2})(?![-\dA-Za-z]|\.\d)', '\\1\u2013\\2', s)
-        s = re.sub(r'(?<![Ff]rom )(?<![Bb]etween )(?<![\d.\-A-Za-z])'
-                   r'(\d+)-(\d+)(\s+(?:calendar days?|working days?|business days?|days?|'
-                   r'weeks?|months?|years?|CD|WD)\b)', '\\1\u2013\\2\\3', s)
+        # §8.2.1: a range introduced by "from"/"between" is left as-is. The from/between test looks back over
+        # the ACTUAL preceding text (any run of whitespace), not a fixed one-space lookbehind that "from  "
+        # (two spaces) would slip past (GPT re-review S1).
+        def _no_from(m):
+            return bool(re.search(r'(?i)\b(?:from|between)\s+$', s[:m.start()]))
+        def _year(m):
+            return m.group(0) if _no_from(m) else m.group(1) + '\u2013' + m.group(2)
+        s = re.sub(r'(?<!Table )(?<!Figure )(?<!Section )(?<![\d.\-A-Za-z])'
+                   r'((?:19|20)\d{2})-((?:19|20)\d{2})(?![-\dA-Za-z]|\.\d)', _year, s)
+        def _unit(m):
+            return m.group(0) if _no_from(m) else m.group(1) + '\u2013' + m.group(2) + m.group(3)
+        s = re.sub(r'(?<![\d.\-A-Za-z])(\d+)-(\d+)(\s+(?:calendar days?|working days?|business days?|days?|'
+                   r'weeks?|months?|years?|CD|WD)\b)', _unit, s)
         # PUNC-2: em dash closed up (no surrounding spaces) — only BETWEEN two non-space characters. Use a
         # lookahead for the trailing char (do not consume it) so adjacent em dashes ("a — b — c") both close.
         s = re.sub(r'(\S)\s*\u2014\s*(?=\S)', '\\1\u2014', s)
@@ -1019,22 +1026,15 @@ class Conformer:
             x = re.sub(r'<w:tblW [^>]*/>', f'<w:tblW w:w="{width}" w:type="dxa"/>', x)
             x = re.sub(r'<w:tblInd [^>]*/>', '', x)
             if width <= 8640: x = x.replace('<w:tblW', '<w:tblInd w:w="720" w:type="dxa"/><w:tblW', 1)
-            # cell paragraphs -> Table Data, keep alignment. Leave a list item (direct numPr) or a deliberate
-            # heading exactly as authored — the same guard the preserving path uses (GPT re-review R4).
-            def fixp(pm):
-                p = pm.group(0)
-                ppr = re.search(r'<w:pPr\b.*?</w:pPr>', p, re.S)
-                if ppr and '<w:numPr>' in ppr.group(0):
-                    return p
-                cur = re.search(r'<w:pStyle w:val="([^"]+)"', p)
-                if cur and cur.group(1) not in self._HEADER_BODY_STYLES:
-                    return p
-                return re.sub(r'<w:p\b[^>]*>(<w:pPr>(.*?)</w:pPr>)?',
-                              lambda p2: '<w:p><w:pPr><w:pStyle w:val="TableData"/>'
-                              + ''.join(cx for t2, cx in children(p2.group(2) or '') if t2 == 'jc')
-                              + '</w:pPr>', p, count=1)
+            # cell paragraphs -> Table Data via the SHARED restyle helper (keep_only_jc = clean-conform
+            # policy): a list item / heading is left as authored and a self-closing <w:pPr/> is rebuilt in
+            # place, never doubled (GPT re-review R4/S2).
             x = re.sub(r'<w:tc>.*?</w:tc>',
-                       lambda m: re.sub(r'<w:p\b.*?</w:p>', fixp, m.group(0), flags=re.S), x, flags=re.S)
+                       lambda m: re.sub(r'<w:p\b.*?</w:p>',
+                                        lambda pm: self._restyle_cell_paragraph(pm.group(0), 'TableData',
+                                                                                keep_only_jc=True),
+                                        m.group(0), flags=re.S),
+                       x, flags=re.S)
             x = re.sub(r'<w:rPr>(.*?)</w:rPr>', lambda r: self._filter_table_rpr(r.group(1)), x, flags=re.S)
             first_row = re.search(r'<w:tr\b.*?</w:tr>', x, re.S).group(0)
             if '<w:tblHeader/>' not in first_row:
@@ -1316,27 +1316,71 @@ class Conformer:
             # (e.g. an en dash in a quoted "2017-2019") (GPT audit F3).
             if self.style(i) == 'ExcerptorQuote': continue
             x = self.item(i)
-            # Transform each run with the PARAGRAPH text seen so far as context, so the §8.2.1 from/between
-            # range exception fires even when "from " and the range fall in separate runs (Word splits runs
-            # for emphasis/edits) — otherwise the range's run alone has no "from" and gets an en dash it must
-            # not (GPT re-review R2). Only "from "/"between " is prepended (fixed length, never rewritten by
-            # typo_text), so the run's own transform is unchanged except that a cross-run range is suppressed
-            # (leaving that run byte-identical — the preservation gate authorizes it either way).
-            seen = ['']
-            def fix(m):
-                s = m.group(2)
-                cm = re.search(r'(?i)\b(from|between)\s+$', seen[0])
-                ctx = cm.group(0) if cm else ''
-                new = typo_text(ctx + s)[len(ctx):] if ctx else typo_text(s)
-                seen[0] += s
-                return m.group(1) + new + m.group(3)
             # In preserve mode, mask revision content so typography never rewrites the characters of
             # an inserted/deleted payload (which must stay byte-exact); it still fixes settled text.
             masked, masks = self._mask_revisions(x) if self.disposition == 'preserve' else (x, {})
-            nx = re.sub(r'(<w:t(?: xml:space="preserve")?>)([^<]*)(</w:t>)', fix, masked)
+            nx = self._typography_paragraph(masked)
             nx = self._unmask(nx, masks)
             if nx != x: self._apply_text_edit('typo', 'Typography', i, x, nx)
         self.say('M', -1, 'typography normalised (smart quotes, en dashes, sentence spacing, dates, ligatures)')
+
+    @staticmethod
+    def _typography_paragraph(xml):
+        """Apply typo_text over the paragraph's LOGICAL text (all visible runs concatenated), so quotation
+        protection and the from/between range context hold regardless of how Word split the text into runs
+        (GPT re-review S1) — a quoted date "03 April 2011" spread across three runs stays verbatim. The
+        transformed text is mapped back to the runs; an edit that spans a run boundary is left unapplied
+        (the runs keep their original characters), so run boundaries and any masked revision runs are never
+        disturbed. Only per-run smart-quote GLYPH direction may differ from a per-run transform, which the
+        preservation gate authorizes (typo_ok folds quote glyphs)."""
+        parts = list(re.finditer(r'(<w:t(?: xml:space="preserve")?>)([^<]*)(</w:t>)', xml))
+        if not parts:
+            return xml
+        segs = [p.group(2) for p in parts]
+        full = ''.join(segs)
+        new_full = typo_text(full)
+        if new_full == full:
+            return xml
+        new_segs = Conformer._backmap_typo(segs, full, new_full)
+        if new_segs == segs:
+            return xml
+        out, last = [], 0
+        for p, ns in zip(parts, new_segs):
+            out.append(xml[last:p.start(2)]); out.append(ns); last = p.end(2)
+        out.append(xml[last:])
+        return ''.join(out)
+
+    @staticmethod
+    def _backmap_typo(segs, full, new_full):
+        """Map a paragraph-level text transform back onto its run segments. A change contained within ONE
+        run is applied; a change spanning a run boundary keeps the original characters in their runs; an
+        insertion exactly between two runs is dropped. This guarantees every run is either unchanged or a
+        within-run typography edit (so the content gate stays satisfied)."""
+        import difflib
+        owner = []
+        for ri, s in enumerate(segs):
+            owner.extend([ri] * len(s))
+        out = [''] * len(segs)
+        for tag, i1, i2, j1, j2 in difflib.SequenceMatcher(None, full, new_full, autojunk=False).get_opcodes():
+            if tag == 'equal':
+                for k in range(i1, i2):
+                    out[owner[k]] += full[k]
+            elif tag in ('replace', 'delete'):
+                owners = {owner[k] for k in range(i1, i2)}
+                if len(owners) == 1:
+                    out[next(iter(owners))] += (new_full[j1:j2] if tag == 'replace' else '')
+                else:
+                    for k in range(i1, i2):
+                        out[owner[k]] += full[k]                 # cross-run edit -> keep original
+            else:  # insert
+                left = owner[i1 - 1] if i1 > 0 else None
+                right = owner[i1] if i1 < len(owner) else None
+                if left is not None and left == right:
+                    out[left] += new_full[j1:j2]
+                elif left is None and right is not None:
+                    out[right] += new_full[j1:j2]                # insertion at the very start
+                # else: insertion between two runs -> dropped (conservative)
+        return out
 
     _HOUSE_SKIP_STYLES = {'ExcerptorQuote', 'Caption', 'TableofFigures', 'Title', 'TitleofProject',
                           'PRIVCONFSTATEMENT', 'TOCListTitle'}
@@ -1830,7 +1874,13 @@ class Conformer:
         and recorded as exceptions. Correctness is guaranteed by the gate, not by pass ordering."""
         self.exceptions = []
         from conformer import revisions as _rev
-        typo_ok = lambda old, new: typo_text(old) == new
+        # Authorize a typography edit when it matches typo_text UP TO smart-quote glyph direction: the
+        # paragraph-level transform may open/close a quote differently from a per-run typo_text when a
+        # quotation spans runs, but that is still only a smart-quote — never a content change (S1). Folding
+        # affects quote glyphs only, so any other text change is still caught.
+        _qfold = lambda s: (s.replace('“', '"').replace('”', '"')
+                            .replace('‘', "'").replace('’', "'"))
+        typo_ok = lambda old, new: _qfold(typo_text(old)) == _qfold(new)
         # (pass, gate): 'stream' = strict content stream (formatting only); 'text' = typography's
         # authorized text edit; 'struct' = AUTO structural change (paragraph structure may change,
         # every text token / object / revision-comment-bookmark boundary must still line up); 'prune' =
@@ -3057,23 +3107,33 @@ class Conformer:
     _HEADER_BODY_STYLES = {'TableData', 'TableHeader', 'Normal', 'TableParagraph', 'TableText'}
 
     @classmethod
-    def _restyle_cell_paragraph(cls, p, target):
-        """Set ONE table-cell paragraph's style to `target`, with the structural guards shared by every
-        table pass (GPT re-review R4 — the guards must hold in cell_para too, not only the header helper):
-        a paragraph carrying a masked revision (sentinel) or a DIRECT numPr (a list item — reclassifying
-        would strip its numbering) or a deliberate non-body style (a heading, etc.) is left exactly as
-        authored; a plain/body paragraph is restyled. A full <w:pPr>…</w:pPr> and a self-closing <w:pPr/>
-        are both handled without ever producing a second pPr."""
+    def _restyle_cell_paragraph(cls, p, target, keep_only_jc=False):
+        """Set ONE table-cell paragraph's style to `target`, with the structural guards shared by EVERY
+        table pass — the preserving cell_para, the clean-path fixcell, and the header helper all route here
+        (GPT re-review R4/S2): a paragraph carrying a masked revision (sentinel) or a DIRECT numPr (a list
+        item — reclassifying would strip its numbering) or a deliberate non-body style (a heading) is left
+        exactly as authored. A full <w:pPr>…</w:pPr> and a self-closing <w:pPr/> are both handled without
+        ever producing a second pPr. keep_only_jc=True is the clean-conform policy: rebuild the pPr to the
+        target style keeping only alignment (jc); otherwise keep the rest of the paragraph properties."""
         if '\x00' in p:
             return p                                       # masked revision content — leave the cell
-        ppr = re.search(r'<w:pPr\b.*?</w:pPr>', p, re.S)
-        if ppr and '<w:numPr>' in ppr.group(0):
+        ppr_full = re.search(r'<w:pPr\b.*?</w:pPr>', p, re.S)
+        if ppr_full and '<w:numPr>' in ppr_full.group(0):
             return p                                       # numbered/bulleted list item — never reclassify
         cur = re.search(r'<w:pStyle w:val="([^"]+)"', p)
-        if cur:
-            if cur.group(1) in cls._HEADER_BODY_STYLES or cur.group(1) == target:
-                return re.sub(r'<w:pStyle w:val="[^"]+"/>', f'<w:pStyle w:val="{target}"/>', p, count=1)
+        if cur and cur.group(1) not in cls._HEADER_BODY_STYLES and cur.group(1) != target:
             return p                                       # heading / other deliberate style — leave
+        if keep_only_jc:
+            inner = re.search(r'<w:pPr\b[^>]*>(.*?)</w:pPr>', p, re.S)
+            jc = ''.join(cx for t2, cx in children(inner.group(1) if inner else '') if t2 == 'jc')
+            new_ppr = f'<w:pPr><w:pStyle w:val="{target}"/>{jc}</w:pPr>'
+            if ppr_full:
+                return p.replace(ppr_full.group(0), new_ppr, 1)
+            if '<w:pPr/>' in p:
+                return p.replace('<w:pPr/>', new_ppr, 1)
+            return re.sub(r'(<w:p\b[^>]*>)', lambda mm: mm.group(1) + new_ppr, p, count=1)
+        if cur:
+            return re.sub(r'<w:pStyle w:val="[^"]+"/>', f'<w:pStyle w:val="{target}"/>', p, count=1)
         if '<w:pPr>' in p:
             return p.replace('<w:pPr>', f'<w:pPr><w:pStyle w:val="{target}"/>', 1)
         if '<w:pPr/>' in p:

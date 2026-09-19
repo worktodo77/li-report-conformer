@@ -218,6 +218,39 @@ def test_r5_export_verdicts_fail_closed_on_exception():
 
     conf_v, unres_v, clean = ax.outcome_verdicts(_Boom())
     assert clean is None and conf_v.startswith('UNKNOWN')
+    assert unres_v.startswith('UNKNOWN')                 # S3: unknown != "None" (empty issue list)
+
+
+def test_s3_export_verdicts_unknown_when_outcome_report_raises():
+    # S3: an exception in outcome_report() (outside the old try) must still yield UNKNOWN, not propagate
+    from conformer import audit_export as ax
+
+    class _Boom2:
+        def outcome_report(self):
+            raise RuntimeError('outcome boom')
+        def conformance_status(self):
+            return {'clean': True, 'blocking': False, 'informational': {}, 'reasons': {}}
+
+    conf_v, unres_v, clean = ax.outcome_verdicts(_Boom2())
+    assert clean is None and conf_v.startswith('UNKNOWN') and unres_v.startswith('UNKNOWN')
+
+
+def test_s3_export_unresolved_counts_imports_and_paragraphs():
+    # S3: the export unresolved line must include unresolved imports and uncorresponded paragraphs
+    from conformer import audit_export as ax
+
+    class _Fresh:
+        def outcome_report(self):
+            return {'conformance': {}}
+        def conformance_status(self):
+            return {'clean': False, 'blocking': False, 'informational': {},
+                    'reasons': {'unresolved_imports': ['imp1'], 'paragraph_reference_unresolved': ['p1', 'p2'],
+                                'tables_needing_review': [], 'tables_unresolved': [], 'rolled_back_passes': [],
+                                'broken_references': []}}
+
+    conf_v, unres_v, clean = ax.outcome_verdicts(_Fresh())
+    assert clean is False
+    assert unres_v != 'None' and '3 item(s) unresolved' in unres_v       # 1 import + 2 paragraphs
 
 
 def test_f5_advisory_audits_do_not_gate_clean():

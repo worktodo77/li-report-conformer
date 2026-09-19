@@ -89,6 +89,31 @@ def test_failed_field_update_is_unverified_and_blocks(monkeypatch):
     assert not r.passed
 
 
+def test_partial_null_bold_is_unverified_not_pass(monkeypatch):
+    # GPT re-review S4: a null (mixed/unreadable) bold cell must not hide behind a bold neighbour
+    r = _verify(monkeypatch, _data([_house_table(header_bold=[True, None])]))
+    assert not r.passed
+    assert any(d['kind'] == 'table-header-incomplete' for d in r.unverified)
+
+
+def test_partial_empty_font_is_unverified_not_pass(monkeypatch):
+    r = _verify(monkeypatch, _data([_house_table(header_fonts=['Times New Roman', ''])]))
+    assert not r.passed
+    assert any(d['kind'] == 'table-header-incomplete' for d in r.unverified)
+
+
+def test_partial_mixed_fill_is_unverified_not_pass(monkeypatch):
+    # a valid teal neighbour must not certify a MIXED (9999999) cell fill
+    r = _verify(monkeypatch, _data([_house_table(header_fills=[_TEAL_BGR, 9999999])]))
+    assert not r.passed
+    assert any(d['kind'] == 'table-header-incomplete' for d in r.unverified)
+
+
+def test_explicitly_non_bold_cell_fails(monkeypatch):
+    r = _verify(monkeypatch, _data([_house_table(header_bold=[True, False])]))
+    assert any(d['kind'] == 'table-header-not-bold' for d in r.fails)
+
+
 def test_non_repeating_header_is_review_only(monkeypatch):
     # a header row not marked to repeat is a review note, not a hard fail (a single-row table is fine)
     r = _verify(monkeypatch, _data([_house_table(header_repeats=False)]))

@@ -89,37 +89,41 @@ def outcome_verdicts(fresh):
     verdict cannot be computed (GPT audit F5). A broken cross-reference (missing target) is counted as a
     genuinely-unresolved defect a field refresh cannot fix, so it appears in BOTH the not-clean conformance
     line and the unresolved line — it can no longer read 'None' while the verdict is NOT CLEAN (re-review R5)."""
-    outcome = fresh.outcome_report() if hasattr(fresh, 'outcome_report') else {}
-    conf = outcome.get('conformance', {})
-    unres = outcome.get('unresolved', {})
-    n_flip = len(conf.get('numbering_flips', []) or [])
-    n_integ = len(conf.get('definition_integrity_violations', []) or [])
-    n_tblfail = len(conf.get('tables_failing_effective_format', []) or [])
+    # outcome_report() is inside the try too: an exception ANYWHERE in computing the verdict yields the
+    # advertised UNKNOWN result, never a propagated crash (GPT re-review S3).
     try:
+        outcome = fresh.outcome_report() if hasattr(fresh, 'outcome_report') else {}
+        conf = outcome.get('conformance', {})
+        n_flip = len(conf.get('numbering_flips', []) or [])
+        n_integ = len(conf.get('definition_integrity_violations', []) or [])
+        n_tblfail = len(conf.get('tables_failing_effective_format', []) or [])
         st = fresh.conformance_status()
         clean = st['clean']
         r = st['reasons']
-        n_unres_tbl = len(r.get('tables_needing_review') or []) + len(r.get('tables_unresolved') or [])
+        # every authoritative gating reason: tables, imports, uncorresponded paragraphs, rolled-back passes,
+        # and broken references — the export unresolved line must not omit any of them (S3).
+        n_unres = (len(r.get('tables_needing_review') or []) + len(r.get('tables_unresolved') or [])
+                   + len(r.get('unresolved_imports') or []) + len(r.get('paragraph_reference_unresolved') or []))
         n_rolled = len(r.get('rolled_back_passes') or [])
         n_broken = len(r.get('broken_references') or [])
         n_info = sum(len(v) for v in st.get('informational', {}).values())
     except Exception:
         clean = None
-        n_unres_tbl = len(unres.get('tables_unresolved', []) or [])
-        n_rolled = len(unres.get('rolled_back_passes', []) or [])
-        n_broken = 0
-        n_info = 0
+        n_flip = n_integ = n_tblfail = n_unres = n_rolled = n_broken = n_info = 0
     _info_tail = f' ({n_info} preserved formatting note(s) — informational)' if n_info else ''
     _broken_tail = f', {n_broken} broken cross-reference(s)' if n_broken else ''
-    conformance_verdict = (
-        'UNKNOWN — verification did not complete; treat this as an unverified review copy' if clean is None
-        else ('Clean — numbering, definitions and table formatting resolve as intended' + _info_tail
-              if clean
-              else f'NOT CLEAN — {n_flip} list-meaning flip(s), {n_integ} definition-integrity '
-                   f'violation(s), {n_tblfail} table(s) failing effective format' + _broken_tail))
-    unresolved_verdict = (('None' + _info_tail) if not (n_unres_tbl or n_rolled or n_broken)
-                          else f'{n_rolled} pass(es) rolled back, {n_unres_tbl} table(s) unresolved / need '
-                               f'independent review{_broken_tail}')
+    if clean is None:
+        conformance_verdict = 'UNKNOWN — verification did not complete; treat this as an unverified review copy'
+        unresolved_verdict = 'UNKNOWN — verification did not complete'          # not an empty issue list (S3)
+    elif clean:
+        conformance_verdict = 'Clean — numbering, definitions and table formatting resolve as intended' + _info_tail
+        unresolved_verdict = 'None' + _info_tail
+    else:
+        conformance_verdict = (f'NOT CLEAN — {n_flip} list-meaning flip(s), {n_integ} definition-integrity '
+                               f'violation(s), {n_tblfail} table(s) failing effective format' + _broken_tail)
+        unresolved_verdict = (('None' + _info_tail) if not (n_unres or n_rolled or n_broken)
+                              else f'{n_rolled} pass(es) rolled back, {n_unres} item(s) unresolved / need '
+                                   f'independent review{_broken_tail}')
     return conformance_verdict, unresolved_verdict, clean
 
 

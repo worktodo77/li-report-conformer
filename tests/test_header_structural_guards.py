@@ -121,3 +121,18 @@ def test_r4_full_pass_self_closing_ppr_stays_single(tmp_path):
     assert hp.count('<w:pPr') == 1                            # never a second pPr from cell_para (R4)
     assert '<w:pStyle w:val="TableHeader"/>' in hp
     assert '<w:pPr/>' not in hp
+
+
+def test_s2_clean_path_self_closing_ppr_stays_single(tmp_path):
+    # GPT re-review S2: the CLEAN path (no revision) must also collapse a self-closing <w:pPr/> to a single
+    # styled pPr — the old clean fixcell inserted a new pPr and left the <w:pPr/> behind (duplicate).
+    hdr = ('<w:tr><w:tc><w:tcPr/><w:p><w:pPr/><w:r><w:t>Head</w:t></w:r></w:p></w:tc></w:tr>')
+    body = ('<w:tr><w:tc><w:tcPr/><w:p><w:pPr><w:pStyle w:val="TableData"/></w:pPr>'
+            '<w:r><w:t>data</w:t></w:r></w:p></w:tc></w:tr>')
+    tbl = ('<w:tbl><w:tblPr><w:tblStyle w:val="TableGrid"/><w:tblW w:w="5000" w:type="dxa"/>'
+           '<w:tblLook w:val="04A0"/></w:tblPr><w:tblGrid><w:gridCol w:w="5000"/></w:tblGrid>' + hdr + body + '</w:tbl>')
+    c = _pkg(tmp_path, _H1 + tbl)                             # NO revision -> clean pipeline
+    assert c.disposition != 'preserve'
+    for p in re.findall(r'<w:p\b.*?</w:p>', next(x for x in c.items if x.startswith('<w:tbl')), re.S):
+        assert p.count('<w:pPr') == 1, p                     # exactly one paragraph-properties element
+    assert '<w:pPr/>' not in next(x for x in c.items if x.startswith('<w:tbl'))

@@ -66,3 +66,24 @@ def test_cross_run_plain_range_still_gets_endash():
          '<w:r><w:rPr><w:b/></w:rPr><w:t>2017-2019</w:t></w:r></w:p>')
     c = _para_typography([p])
     assert _text(c.item(0)) == f'the period 2017{ENDASH}2019'
+
+
+def test_quoted_date_split_across_three_runs_is_verbatim():
+    # GPT re-review S1: the quotation is split He said "  /  03 April 2011  /  ".  — the interior date
+    # must NOT be normalized even though it sits in its own run with no quote glyph.
+    p = ('<w:p><w:pPr><w:pStyle w:val="BodyText"/></w:pPr>'
+         '<w:r><w:t xml:space="preserve">He said "</w:t></w:r>'
+         '<w:r><w:t>03 April 2011</w:t></w:r>'
+         '<w:r><w:t>".</w:t></w:r></w:p>')
+    c = _para_typography([p])
+    assert _text(c.item(0)) == f'He said {LQ}03 April 2011{RQ}.'      # date preserved, delimiters smart-quoted
+
+
+def test_cross_run_from_with_two_spaces_gets_no_endash():
+    # GPT re-review S1: "from  " (two spaces) in run 1 must still trigger the exception for run 2's range
+    p = ('<w:p><w:pPr><w:pStyle w:val="BodyText"/></w:pPr>'
+         '<w:r><w:t xml:space="preserve">the period from  </w:t></w:r>'
+         '<w:r><w:rPr><w:b/></w:rPr><w:t>2017-2019</w:t></w:r></w:p>')
+    c = _para_typography([p])
+    assert ENDASH not in c.item(0)
+    assert 'from  2017-2019' in _text(c.item(0))
