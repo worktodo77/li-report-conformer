@@ -84,6 +84,18 @@ class RenderReport:
     def fails(self):
         return [d for d in self.defects if d['severity'] == 'fail']
 
+    @property
+    def unverified(self):
+        """Defects that mean a required property could NOT be observed — an incomplete render read, not a
+        pass (GPT re-review R6). As a release gate these block just like a fail."""
+        return [d for d in self.defects if d['severity'] == 'unverified']
+
+    @property
+    def passed(self):
+        """A release-gate pass requires zero failures AND zero unverified observations; a plain 'review'
+        item (a real but non-blocking observation) does not block."""
+        return not (self.fails or self.unverified)
+
 
 def _as_list(x):
     """PowerShell ConvertTo-Json collapses a 1-element array to an object; normalize back to a list."""
@@ -144,27 +156,62 @@ def verify(docx_path, update_fields=False, timeout=1800):
     styles_by_name = {s.get('name'): s for s in _as_list(data.get('table_styles'))}
 
     # ---- tables ----
+    # Every REQUIRED header property is checked across EVERY header cell: fill, size, font, bold, and the
+    # repeat-header flag. A concrete wrong value is a fail; a value that could not be observed (no fill, no
+    # size, no font/bold observation, a mixed size, or a per-table read error) is UNVERIFIED, never a
+    # silent pass, so an incomplete render read cannot certify the table (GPT re-review R6).
     tables = _as_list(data.get('tables'))
     nonhouse_style = navy = wrong_size = wrong_fill = unknown_size = 0
+    wrong_font = not_bold = not_repeat = incomplete = read_err = 0
     for t in tables:
         if t.get('nested'):
             continue  # nested tables read via a flat header row are not meaningful here
         if not (_style_parts(t.get('style')) & HOUSE_TABLE_STYLES):
             nonhouse_style += 1
             continue
-        fill, src = _effective_header_fill(t, styles_by_name)
-        if fill == OLD_NAVY_RGB:
+        if t.get('header_error'):
+            read_err += 1
+            continue
+        miss = False
+        # fill — EVERY header cell (fall back to the single effective fill; none observed -> unverified)
+        fills = [bgr_to_rgb_hex(v) for v in _as_list(t.get('header_fills'))]
+        concrete_f = [f for f in fills if f and f not in ('AUTO', 'MIXED') and not str(f).startswith('?')]
+        if not concrete_f:
+            eff, _src = _effective_header_fill(t, styles_by_name)
+            if eff and eff not in ('AUTO', 'MIXED') and not str(eff).startswith('?'):
+                concrete_f = [eff]
+        if not concrete_f:
+            miss = True
+        elif any(f == OLD_NAVY_RGB for f in concrete_f):
             navy += 1
-        elif fill != HOUSE_HEADER_RGB:
+        elif any(f != HOUSE_HEADER_RGB for f in concrete_f):
             wrong_fill += 1
-        # check EVERY header cell size (F6): any concrete size != 10pt is a defect; a mixed/unreadable
-        # size (9999999) is UNKNOWN, never a silent pass.
+        # size — every header cell
         sizes = _as_list(t.get('header_sizes')) or ([t.get('header_size')] if t.get('header_size') is not None else [])
-        concrete = [s for s in sizes if isinstance(s, (int, float)) and s != _UNDEFINED]
+        if not sizes:
+            miss = True
         if any(s == _UNDEFINED for s in sizes):
             unknown_size += 1
-        if any(abs(s - HOUSE_HEADER_PT) > 0.01 for s in concrete):
+        if any(isinstance(s, (int, float)) and s != _UNDEFINED and abs(s - HOUSE_HEADER_PT) > 0.01 for s in sizes):
             wrong_size += 1
+        # font family + bold
+        fonts = _as_list(t.get('header_fonts'))
+        if not fonts:
+            miss = True
+        elif any(f and f != HOUSE_HEADER_FONT for f in fonts):
+            wrong_font += 1
+        bolds = _as_list(t.get('header_bold'))
+        if not bolds:
+            miss = True
+        elif any(b is False for b in bolds):
+            not_bold += 1
+        # repeat-as-header (tblHeader) — a review item, not a hard fail (a single-row table is legitimate)
+        if t.get('header_repeats') is None:
+            miss = True
+        elif t.get('header_repeats') is False:
+            not_repeat += 1
+        if miss:
+            incomplete += 1
     if nonhouse_style:
         rep.add('fail', 'table-style', f'{nonhouse_style} table(s) not on a house table style (Grid Table 4 / LI Table)')
     if navy:
@@ -173,13 +220,23 @@ def verify(docx_path, update_fields=False, timeout=1800):
         rep.add('fail', 'table-header-fill', f'{wrong_fill} table header(s) render a non-house fill (not teal {HOUSE_HEADER_RGB})')
     if wrong_size:
         rep.add('fail', 'table-header-size', f'{wrong_size} table header(s) have a cell not rendering at {HOUSE_HEADER_PT:g}pt')
+    if wrong_font:
+        rep.add('fail', 'table-header-font', f'{wrong_font} table header(s) render a non-house font (not {HOUSE_HEADER_FONT})')
+    if not_bold:
+        rep.add('fail', 'table-header-not-bold', f'{not_bold} table header(s) render a non-bold cell')
+    if not_repeat:
+        rep.add('review', 'table-header-no-repeat', f'{not_repeat} table header row(s) are not marked to repeat across pages')
     if unknown_size:
-        rep.add('review', 'table-header-size-unknown', f'{unknown_size} table header(s) have an unreadable/mixed cell size (unverified)')
+        rep.add('unverified', 'table-header-size-unknown', f'{unknown_size} table header(s) have an unreadable/mixed cell size')
+    if read_err:
+        rep.add('unverified', 'table-header-read-error', f'{read_err} table header(s) could not be read')
+    if incomplete:
+        rep.add('unverified', 'table-header-incomplete', f'{incomplete} house table(s) missing a required header observation (fill/size/font/bold/repeat)')
 
     # ---- fields / TOC ----
     fields = data.get('fields') or {}
     if fields.get('updated') and fields.get('update_ok') is False:
-        rep.add('review', 'field-update-failed', 'a field/TOC update threw — PAGEREF/REF results below are unverified')
+        rep.add('unverified', 'field-update-failed', 'a field/TOC update threw — PAGEREF/REF results below are unverified')
     pr, pr1, prb = fields.get('pageref_total', 0), fields.get('pageref_showing_1', 0), fields.get('pageref_blank', 0)
     if pr and pr1 and pr1 >= max(3, pr // 2):
         rep.add('fail', 'toc-page-1', f'{pr1} of {pr} PAGEREF fields render page "1" — TOC/List of Tables collapsed to page 1'
@@ -246,7 +303,8 @@ def _fmt(rep):
         lines.append('  list style -> rendered marker (bullet/number), count')
         for (st, marker, cls) in sorted(tally, key=lambda k: -tally[k]):
             lines.append(f"    {st!r:38s} marker={marker!r:8s} {cls:7s} x{tally[(st, marker, cls)]}")
-    lines.append(f'  DEFECTS ({len(rep.fails)} fail):')
+    lines.append(f'  DEFECTS ({len(rep.fails)} fail, {len(rep.unverified)} unverified) — '
+                 f'gate {"PASS" if rep.passed else "NOT PASS"}:')
     for x in rep.defects:
         lines.append(f"    [{x['severity']}] {x['kind']}: {x['detail']}")
     if not rep.defects:
@@ -262,4 +320,5 @@ if __name__ == '__main__':
         sys.exit(2)
     r = verify(args[0], update_fields=do_fields)
     print(_fmt(r))
-    sys.exit(1 if r.fails else 0)
+    # a release gate fails on a real defect OR an unverified observation (incomplete read is not a pass)
+    sys.exit(0 if r.passed else 1)

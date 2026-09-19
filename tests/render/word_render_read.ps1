@@ -49,21 +49,23 @@ try {
     try { $e.nested = ($tb.Tables.Count -gt 0) } catch { $e.nested = $false }
     try {
       $hdr = $tb.Rows.Item(1)
-      try { $e.header_repeat = [bool]$hdr.HeadingFormat } catch {}
-      # read EVERY header cell, not only the first (a 10pt cell 1 must not mask a 16pt cell 2).
-      $sizes=@(); $fills=@()
+      try { $e.header_repeats = [bool]$hdr.HeadingFormat } catch {}   # repeats across pages (tblHeader)
+      # read EVERY header cell, not only the first (a 10pt/teal/bold cell 1 must not mask a bad cell 2).
+      $sizes=@(); $fills=@(); $fonts=@(); $bolds=@()
       foreach ($cell in $hdr.Cells) {
         try { $sizes += [double]$cell.Range.Font.Size } catch { $sizes += 9999999 }
         try { $fills += [long]$cell.Shading.BackgroundPatternColor } catch { $fills += 9999999 }
+        try { $fonts += [string]$cell.Range.Font.Name } catch { $fonts += $null }
+        try { $bolds += [bool]([int]$cell.Range.Font.Bold -ne 0) } catch { $bolds += $null }
       }
       $e.header_sizes = $sizes                        # per cell (9999999 = mixed/unreadable)
       $e.header_fills = $fills
+      $e.header_fonts = $fonts                        # per-cell font family
+      $e.header_bold  = $bolds                        # per-cell bold state
       $c1 = $hdr.Cells.Item(1)
       try { $e.header_cell1_fill_bgr = $c1.Shading.BackgroundPatternColor } catch {}
-      $cf = $c1.Range.Font
-      try { $e.header_size = $cf.Size } catch {}
-      try { $e.header_bold = $cf.Bold } catch {}
-      try { $e.header_name = $cf.Name } catch {}
+      try { $e.header_size = $c1.Range.Font.Size } catch {}
+      try { $e.header_name = $c1.Range.Font.Name } catch {}
     } catch { $e.header_error = $_.Exception.Message }
     $result.tables += $e
     # distinct-style firstRow conditional (style-driven header teal). wdFirstRow = 0 (1 is wdLastRow).
@@ -84,7 +86,9 @@ try {
   # ---- optional field update (SLOW) + TOC/PAGEREF/REF summary ----
   $updateOk = $true
   if ($UpdateFields) {
-    try { $doc.Fields.Update() | Out-Null } catch { $updateOk = $false }
+    # Fields.Update() returns the 1-based index of the FIRST field that errored (0 = all OK); a discarded
+    # non-zero return silently hid field errors, so capture it (GPT re-review R6).
+    try { $ferr = $doc.Fields.Update(); if ([int]$ferr -ne 0) { $updateOk = $false } } catch { $updateOk = $false }
     foreach ($toc in $doc.TablesOfContents) { try { $toc.Update() } catch { $updateOk = $false } }
     foreach ($tof in $doc.TablesOfFigures) { try { $tof.Update() } catch { $updateOk = $false } }
     $result.timing_ms.fields_update = $sw.ElapsedMilliseconds
