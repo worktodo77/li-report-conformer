@@ -31,7 +31,8 @@ a = Analysis(
     pathex=['src'],
     binaries=[],
     datas=[
-        ('src/conformer/assets/template.dotx', 'conformer/assets'),
+        ('src/conformer/assets/template.dotx', 'conformer/assets'),   # LI Letter (LTR) July 2026 template
+        ('src/conformer/assets/LI Report Template A4 23 July 2026.dotx', 'conformer/assets'),  # A4 variant (F7)
         ('src/conformer/assets/golden.docx', 'conformer/assets'),
         ('src/conformer/assets/KITCHEN_SINK.docx', 'conformer/assets'),
         ('src/conformer/assets/LI icon.png', 'conformer/assets'),

@@ -17,7 +17,7 @@ def _asset(name):
 LI_NAVY = '#005088'
 LI_SKY = '#28A0D8'
 
-from conformer.engine import Conformer, JudgmentCall
+from conformer.engine import Conformer, JudgmentCall, select_template, LETTER_TEMPLATE_NAME
 
 
 BACKUP_DIR_NAME = '_LI Conformer Backups'
@@ -562,7 +562,10 @@ class MainWindow(QMainWindow):
         self.resize(800, 700)
 
         self.input_path = None
-        self.template_path = os.path.join(_assets_dir(), 'template.dotx')
+        # Default to the Letter template; _open_file re-selects A4 vs Letter by the report's page size
+        # (GPT audit F7). A manual File -> Change template… choice sets _template_overridden and wins.
+        self.template_path = os.path.join(_assets_dir(), LETTER_TEMPLATE_NAME)
+        self._template_overridden = False
         self.conformer = None
         self.judgment_calls = []
         self.judgment_rows = []
@@ -1404,6 +1407,9 @@ class MainWindow(QMainWindow):
         )
         if path:
             self.input_path = path
+            if not self._template_overridden:
+                # conform to the LI template that matches this report's page size (A4 vs Letter) — F7
+                self.template_path = select_template(path, _assets_dir())
             self._build_ready_state()
 
     def _change_template(self):
@@ -1412,6 +1418,7 @@ class MainWindow(QMainWindow):
         )
         if path:
             self.template_path = path
+            self._template_overridden = True     # a manual choice sticks (no auto A4/Letter reselect)
             self._build_ready_state()
 
     def _start_analysis(self):
@@ -1714,5 +1721,7 @@ class MainWindow(QMainWindow):
             path = url.toLocalFile()
             if path.endswith('.docx'):
                 self.input_path = path
+                if not self._template_overridden:
+                    self.template_path = select_template(path, _assets_dir())   # A4 vs Letter — F7
                 self._build_ready_state()
                 break

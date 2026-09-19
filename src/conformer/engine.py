@@ -10,7 +10,48 @@ Original CLI flow (run() + save()) still works unchanged.
 import re, os, sys, json, zipfile
 from dataclasses import dataclass, field
 
-__all__ = ['Conformer', 'JudgmentCall', 'STYLE_ALTERNATIVES']
+__all__ = ['Conformer', 'JudgmentCall', 'STYLE_ALTERNATIVES',
+           'report_page_size', 'select_template', 'LETTER_TEMPLATE_NAME', 'A4_TEMPLATE_NAME']
+
+# The two authoritative LI templates (23 July 2026). template.dotx is byte-identical (styles/numbering/
+# document) to "LI Report Template LTR 23 July 2026.dotx" — the US-Letter variant — so it is the Letter
+# template under a stable bundled name. The A4 variant differs by page-size-specific style geometry
+# (ListBullet ilvl/indent, Heading 4-6 indents, Heading 6 size), so a report is conformed to whichever
+# matches its own page size (GPT audit F7).
+LETTER_TEMPLATE_NAME = 'template.dotx'
+A4_TEMPLATE_NAME = 'LI Report Template A4 23 July 2026.dotx'
+
+
+def report_page_size(path):
+    """Return 'A4' or 'Letter' for a .docx, from its first section's page height (A4 = 297mm ~= 16839
+    twips; US Letter = 11in = 15840 twips; the midpoint 16340 discriminates). Landscape sections are
+    de-rotated first. Defaults to Letter when the size cannot be read."""
+    try:
+        with zipfile.ZipFile(path) as z:
+            doc = z.read('word/document.xml').decode('utf8', 'replace')
+    except Exception:
+        return 'Letter'
+    for tag in re.findall(r'<w:pgSz\b[^>]*/>', doc):
+        wv = re.search(r'w:w="(\d+)"', tag)
+        hv = re.search(r'w:h="(\d+)"', tag)
+        if not (wv and hv):
+            continue
+        w, h = int(wv.group(1)), int(hv.group(1))
+        if 'w:orient="landscape"' in tag:
+            w, h = h, w
+        return 'A4' if h > 16340 else 'Letter'
+    return 'Letter'
+
+
+def select_template(input_path, assets_dir):
+    """Pick the authoritative LI template matching the report's page size: the A4 July 2026 template for
+    an A4 report, else the Letter (LTR) July 2026 template bundled as template.dotx. Falls back to the
+    Letter template when the A4 asset is absent (GPT audit F7)."""
+    if report_page_size(input_path) == 'A4':
+        a4 = os.path.join(assets_dir, A4_TEMPLATE_NAME)
+        if os.path.exists(a4):
+            return a4
+    return os.path.join(assets_dir, LETTER_TEMPLATE_NAME)
 
 STYLE_ALTERNATIVES = [
     'NumberedParagraph', 'NumberedParagraphL1', 'NumberedParagraphL2',
