@@ -11,11 +11,22 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
 from conformer.engine import Conformer   # noqa: E402
 
 
-def test_table_header_style_constant_is_10pt_bold():
+def test_table_header_style_constant_is_10pt_and_does_not_toggle_bold_off():
+    # Bold is a TOGGLE property: <w:b/> in this paragraph style AND in the Grid Table 4 firstRow conditional
+    # cancel each other, and Word renders the header NON-bold (Word-measured: 39/39 headers). The style must
+    # NOT carry bold; the firstRow conditional supplies it.
     s = Conformer.TABLE_HEADER_STYLE
     assert 'w:styleId="TableHeader"' in s
     assert '<w:sz w:val="20"/>' in s          # 10pt
-    assert '<w:b/>' in s                       # bold
+    assert '<w:b/>' not in s and '<w:b ' not in s
+
+
+def test_ensure_table_header_style_replaces_an_old_bold_toggling_definition():
+    c = Conformer.__new__(Conformer)
+    old = Conformer.TABLE_HEADER_STYLE.replace('<w:color w:val="auto"/>', '<w:b/><w:bCs/><w:color w:val="auto"/>')
+    c.styles = '<w:styles>' + old + '</w:styles>'
+    c._ensure_table_header_style()
+    assert c.styles == '<w:styles>' + Conformer.TABLE_HEADER_STYLE + '</w:styles>'
 
 
 def test_ensure_table_header_style_imports_once():
@@ -109,3 +120,18 @@ def test_header_marking_handles_attributed_tr_row():
     assert '<w:tblHeader/>' in hdr                             # attributed row still marked
     assert '<w:pStyle w:val="TableHeader"/>' in hdr           # header uses the 10pt style
     assert 'w:styleId="TableHeader"' in c.styles
+
+
+def test_text_header_cell_on_a_graphic_spacer_style_gets_table_header():
+    # authors reuse 'Space behind after a Graphic' for ordinary table text; as a header cell it rendered at
+    # the style's 12pt. A TEXT paragraph is restyled; one that actually HOLDS a graphic is left alone.
+    c = Conformer.__new__(Conformer)
+    c._table_notes = []
+    text_cell = ('<w:tc><w:tcPr/><w:p><w:pPr><w:pStyle w:val="SpacebehindafteraGraphic"/></w:pPr>'
+                 '<w:r><w:t>Head</w:t></w:r></w:p></w:tc>')
+    pic_cell = ('<w:tc><w:tcPr/><w:p><w:pPr><w:pStyle w:val="SpacebehindafteraGraphic"/></w:pPr>'
+                '<w:r><w:drawing><a/></w:drawing></w:r></w:p></w:tc>')
+    out, _, _ = c._repair_stray_header_formatting(_tbl(text_cell + pic_cell), 'loc')
+    hdr = re.search(r'<w:tr\b.*?</w:tr>', out, re.S).group(0)
+    assert hdr.count('<w:pStyle w:val="TableHeader"/>') == 1
+    assert hdr.count('<w:pStyle w:val="SpacebehindafteraGraphic"/>') == 1   # the graphic holder

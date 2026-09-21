@@ -631,14 +631,12 @@ class Conformer:
         i = 0
         while i < self.n() - 1:
             if self.is_par(i) and self.style(i) == 'ExcerptorQuote' and self.is_par(i + 1) and self.style(i + 1) == 'ExcerptorQuote':
-                a, b = self.text(i).rstrip(), self.text(i + 1).strip()
-                if not re.search(r'[.!?:;"\u201d]$', a) or a.endswith('-'):
+                if self._is_pdf_split_pair(self.item(i), self.item(i + 1)):
                     msg = 'joined PDF line-break paragraphs into one excerpt'
                     jc = self._jcall('merge', i, msg, 'Merge paragraphs')
                     self.say('J', i, msg)
                     if self._decision_for(jc) == 'accept':
-                        joined = (a[:-1] + b) if a.endswith('-') and b[:1].islower() else (a + ' ' + b)
-                        self.set(i, re.sub(r'(<w:r\b.*)</w:p>', '', self.item(i), flags=re.S).split('</w:pPr>')[0] + '</w:pPr>' + f'<w:r><w:t xml:space="preserve">{esc(joined)}</w:t></w:r></w:p>')
+                        self.set(i, self._join_split_paragraphs(self.item(i), self.item(i + 1)))
                         del self.items[self.b0 + i + 1]; continue
             i += 1
 
@@ -1537,8 +1535,68 @@ class Conformer:
         self.items[-1] = portrait; self.say('M', k, 'restored the section break ending the landscape block; final section back to portrait')
 
     def replace_parts(self):
+        old_num = self.num
         self.styles = self.t_styles; self.num = self.t_num
+        self._numbering_part_swapped = True               # numIds are no longer comparable to the source's
         self.say('M', -1, 'styles and numbering parts replaced from the template (foreign styles and extra list instances removed)')
+        self._carry_direct_list_instances(old_num)
+
+    def _carry_direct_list_instances(self, old_num):
+        """strip_direct() deliberately KEEPS a functioning direct <w:numPr> the style cannot supply (e.g. a
+        bulleted list inside an Excerpt or Quote), but replace_parts() then swaps in the template numbering,
+        which does not define that document-local list instance — the kept numPr dangles and Word drops the
+        bullet (or renders an unrelated number). Re-import every direct-referenced instance that the
+        template numbering lacks, under FRESH ids (numId/abstractNumId are part-local, so the old values
+        must never be trusted against the template's), and repoint the paragraphs at the new instance."""
+        refs = set()
+        for src in list(self.items) + [self.fn]:
+            for npr in re.findall(r'<w:numPr>.*?</w:numPr>', src, re.S):
+                m = re.search(r'<w:numId w:val="(\d+)"', npr)
+                if m and m.group(1) != '0':
+                    refs.add(m.group(1))
+        have = set(re.findall(r'<w:num\b(?![a-zA-Z])[^>]*w:numId="(\d+)"', self.num))
+        missing = sorted(refs - have, key=int)
+        if not missing:
+            return
+        next_num = max([int(v) for v in have] or [0]) + 1
+        next_abs = max([int(v) for v in re.findall(r'<w:abstractNum\b[^>]*w:abstractNumId="(\d+)"', self.num)] or [0]) + 1
+        abs_new = {}; abs_xml = []; num_xml = []; remap = {}
+        for nid in missing:
+            nm = re.search(r'<w:num\b(?![a-zA-Z])[^>]*w:numId="%s"[^>]*>.*?</w:num>' % nid, old_num, re.S)
+            aid = re.search(r'<w:abstractNumId w:val="(\d+)"', nm.group(0)) if nm else None
+            am = re.search(r'<w:abstractNum\b[^>]*w:abstractNumId="%s"[^>]*>.*?</w:abstractNum>' % aid.group(1),
+                           old_num, re.S) if aid else None
+            if not am:
+                continue                                  # never resolved in the source either — not ours to invent
+            if aid.group(1) not in abs_new:
+                abs_new[aid.group(1)] = str(next_abs); next_abs += 1
+                a = re.sub(r'(<w:abstractNum\b[^>]*w:abstractNumId=")\d+(")', r'\g<1>%s\2' % abs_new[aid.group(1)],
+                           am.group(0), count=1)
+                # a duplicated nsid makes Word fuse two lists; styleLink/numStyleLink point at styles the
+                # template part set may not define
+                a = re.sub(r'<w:(?:nsid|styleLink|numStyleLink) [^>]*/>', '', a)
+                abs_xml.append(a)
+            n = re.sub(r'(<w:num\b[^>]*w:numId=")\d+(")', r'\g<1>%d\2' % next_num, nm.group(0), count=1)
+            n = re.sub(r'(<w:abstractNumId w:val=")\d+(")', r'\g<1>%s\2' % abs_new[aid.group(1)], n, count=1)
+            num_xml.append(n); remap[nid] = str(next_num); next_num += 1
+        if not remap:
+            return
+        first_num = re.search(r'<w:num\b(?![a-zA-Z])', self.num)
+        pos = first_num.start() if first_num else self.num.index('</w:numbering>')
+        self.num = self.num[:pos] + ''.join(abs_xml) + self.num[pos:]
+        tail = re.search(r'<w:numIdMacAtCleanup\b|</w:numbering>', self.num)
+        self.num = self.num[:tail.start()] + ''.join(num_xml) + self.num[tail.start():]
+
+        def _repoint(src):
+            def one(pm):
+                return re.sub(r'(<w:numId w:val=")(\d+)(")',
+                              lambda m: m.group(1) + remap.get(m.group(2), m.group(2)) + m.group(3), pm.group(0))
+            return re.sub(r'<w:numPr>.*?</w:numPr>', one, src, flags=re.S)
+        self.items = [_repoint(it) if '<w:numPr>' in it else it for it in self.items]
+        self.fn = _repoint(self.fn)
+        self._carried_instances = dict(remap)             # old numId -> new numId, for reference verification
+        self.say('M', -1, f'kept {len(remap)} document list instance(s) still used by direct list formatting '
+                          '(re-imported into the template numbering)')
 
     def force_field_update(self):
         """Arm Word's on-open field refresh ONLY when the figure audit found numbering/TOC drift.
@@ -2046,9 +2104,60 @@ class Conformer:
     def _para_has_marker(self, i):
         return bool(self._MARKER_RE.search(self.item(i)))
 
+    # Inline content that is never part of a PDF line-wrap: if either paragraph carries any of it, the pair
+    # is two deliberate paragraphs (or a merge would have to move a footnote/field/anchor) — never merged.
+    _PDF_SPLIT_BLOCKERS = re.compile(
+        r'<w:(?:numPr|footnoteReference|endnoteReference|fldChar|fldSimple|instrText|drawing|pict|object|'
+        r'commentReference|commentRangeStart|commentRangeEnd|bookmarkStart|hyperlink|sym|br|tab|sectPr)\b')
+
+    @staticmethod
+    def _para_plain_text(x):
+        return ''.join(re.findall(r'<w:t(?: [^>]*)?>([^<]*)</w:t>', x))
+
+    @classmethod
+    def _is_pdf_split_pair(cls, xa, xb):
+        """True only with POSITIVE evidence that two consecutive excerpt paragraphs are one sentence a PDF
+        paste broke across lines: the first stops without terminal punctuation AND the second CONTINUES it
+        (starts lower-case, or completes a hyphenated word). 'No terminal punctuation' alone is NOT evidence —
+        list items, titles and table-like lines inside a quotation all lack it (McIntosh: 54 bulleted/
+        short-line excerpt paragraphs were flattened into run-on paragraphs). A list item (numPr), any
+        footnote/field/drawing/comment/bookmark/link/break, or differing paragraph properties also veto."""
+        if cls._PDF_SPLIT_BLOCKERS.search(xa) or cls._PDF_SPLIT_BLOCKERS.search(xb):
+            return False
+        a, b = cls._para_plain_text(xa).rstrip(), cls._para_plain_text(xb).strip()
+        if not a or not b:
+            return False
+        ppr = lambda x: re.sub(r'<w:rPr>.*?</w:rPr>', '', (re.search(r'<w:pPr>.*?</w:pPr>', x, re.S) or [''])[0], flags=re.S)
+        if ppr(xa) != ppr(xb):
+            return False                                  # different indent/alignment/spacing = different paragraphs
+        if re.search(r'[.!?:;"”]$', a):
+            return False
+        return b[:1].islower()
+
     @staticmethod
     def _pdf_join(a, b):
         return (a[:-1] + b) if a.endswith('-') and b[:1].islower() else (a + ' ' + b)
+
+    @classmethod
+    def _join_split_paragraphs(cls, xa, xb):
+        """Join paragraph xb onto xa KEEPING EVERY RUN of both (bold/italic emphasis, [sic] marks, character
+        styles): only the join point is edited — a trailing line-wrap hyphen is removed, otherwise one space
+        is inserted. (The old join rebuilt the paragraph as a single plain run, discarding all run content
+        that was not literal text — including footnote references.)"""
+        a_text = cls._para_plain_text(xa).rstrip()
+        hyphen = a_text.endswith('-')
+        ts = list(re.finditer(r'<w:t(?: [^>]*)?>([^<]*)</w:t>', xa))
+        while ts and not ts[-1].group(1).strip():
+            ts.pop()                                       # skip trailing whitespace-only text nodes
+        last = ts[-1]
+        txt = last.group(1).rstrip()
+        txt = txt[:-1] if hyphen else txt + ' '
+        head = xa[:last.start()] + f'<w:t xml:space="preserve">{txt}</w:t>'
+        rest = re.sub(r'<w:t(?: [^>]*)?>\s*</w:t>', '<w:t></w:t>', xa[last.end():])   # drop old trailing spaces
+        body_b = re.sub(r'^<w:p\b[^>]*>(?:<w:pPr>.*?</w:pPr>|<w:pPr/>)?', '', xb, count=1, flags=re.S)
+        body_b = re.sub(r'(<w:t(?: [^>]*)?>)\s+', r'\1', body_b, count=1)             # no double space at the seam
+        assert rest.endswith('</w:p>') and body_b.endswith('</w:p>')
+        return head + rest[:-len('</w:p>')] + body_b
 
     def _merge_pdf_lines_preserving(self):
         """#1 as an AUTHORIZED text edit: join two consecutive block-quote (Excerpt or Quote)
@@ -2066,11 +2175,8 @@ class Conformer:
             if (self.is_par(i) and self.style(i) == 'ExcerptorQuote'
                     and self.is_par(i + 1) and self.style(i + 1) == 'ExcerptorQuote'
                     and not self._para_has_marker(i) and not self._para_has_marker(i + 1)):
-                a, b = self.text(i).rstrip(), self.text(i + 1).strip()
-                if a and b and (not re.search(r'[.!?:;"”]$', a) or a.endswith('-')):
-                    joined = self._pdf_join(a, b)
-                    head = re.match(r'(<w:p\b[^>]*>(?:<w:pPr>.*?</w:pPr>)?)', self.item(i), re.S).group(1)
-                    self.set(i, head + f'<w:r><w:t xml:space="preserve">{esc(joined)}</w:t></w:r></w:p>')
+                if self._is_pdf_split_pair(self.item(i), self.item(i + 1)):
+                    self.set(i, self._join_split_paragraphs(self.item(i), self.item(i + 1)))
                     del self.items[self.b0 + i + 1]
                     merged += 1
                     self.say('M', i, 'merged PDF line-break split excerpt (authorized text edit)', 'pdf-merge')
@@ -2793,6 +2899,14 @@ class Conformer:
         redirected to a new meaning. We only import NEW definitions under fresh ids, so this must be empty.
         Returns [{numId, ilvl, before, after}] for any existing numId whose resolved format changed."""
         from conformer.numbering import NumberingGraph
+        if getattr(self, '_numbering_part_swapped', False):
+            # replace_parts() ran: the clean path, which runs ONLY on a revision-free document (_run_passes routes ANY revision to the
+            # preserving path), so no historical snapshot exists that could depend on an old numId, and
+            # replace_parts() deliberately swaps in the template numbering part — numIds are part-local and
+            # are NOT comparable across that swap. What each paragraph actually resolves to, before vs
+            # after, is verified paragraph-by-paragraph by _paragraph_reference_scan(). (McIntosh: every
+            # revision-free report with a document-local list was reported BLOCKING by this id comparison.)
+            return []
         before = NumberingGraph(self._orig_num0, self._orig_styles0)
         after = NumberingGraph(self.num, self.styles)
         viol = []
@@ -2958,7 +3072,12 @@ class Conformer:
             # same-category strip. The blanket "follows its output style" exemption is removed (issue #1 C).
             if not (bsig == asig and _inst_of(b_res) == _inst_of(a_res)):
                 exp = _repair_expected(ai['style'])
-                authorized = ((exp is not None and asig == exp) or _strip_authorized(bi, ai, a_res)
+                # a document-local list instance re-imported under a fresh id by
+                # _carry_direct_list_instances: same level meaning, and the SAME old->new instance mapping
+                # for every paragraph of that list (so continuation/grouping is unchanged).
+                carried = (bsig == asig and _inst_of(b_res) is not None
+                           and getattr(self, '_carried_instances', {}).get(_inst_of(b_res)) == _inst_of(a_res))
+                authorized = (carried or (exp is not None and asig == exp) or _strip_authorized(bi, ai, a_res)
                               or _restyle_authorized(bi, ai, a_res)
                               or _bullet_restore_authorized(bi, ai, a_res))
                 if not authorized:
@@ -3144,7 +3263,11 @@ class Conformer:
         '<w:style w:type="paragraph" w:customStyle="1" w:styleId="TableHeader">'
         '<w:name w:val="Table Header"/><w:basedOn w:val="TableData"/><w:uiPriority w:val="99"/>'
         '<w:pPr><w:spacing w:before="60" w:after="60"/><w:jc w:val="center"/></w:pPr>'
-        '<w:rPr><w:rFonts w:ascii="Times New Roman" w:hAnsi="Times New Roman"/><w:b/><w:bCs/>'
+        # NO <w:b/> here. Bold is a TOGGLE property: set in both this paragraph style and the Grid Table 4
+        # firstRow conditional, the two CANCEL and Word renders the header NON-bold (Word-measured on the
+        # McIntosh report: all 39 Table Header headers non-bold; style without <w:b/> -> 0). The firstRow
+        # conditional (always enabled via tblLook, verified by tablespec) supplies the bold.
+        '<w:rPr><w:rFonts w:ascii="Times New Roman" w:hAnsi="Times New Roman"/>'
         '<w:color w:val="auto"/><w:sz w:val="20"/><w:szCs w:val="20"/></w:rPr></w:style>')
 
     @classmethod
@@ -3178,7 +3301,11 @@ class Conformer:
     # Header-cell body paragraph styles that may be normalised to Table Header. A heading, numbered or
     # bulleted paragraph is NEVER reclassified here — that would strip its numbering (an unauthorized
     # reference flip); such a paragraph in a header cell is left exactly as authored.
-    _HEADER_BODY_STYLES = {'TableData', 'TableHeader', 'Normal', 'TableParagraph', 'TableText'}
+    _HEADER_BODY_STYLES = {'TableData', 'TableHeader', 'Normal', 'TableParagraph', 'TableText', 'BodyText'}
+    # Figure-spacer styles authors reuse for ordinary table TEXT (McIntosh: 944 cell paragraphs, 73 of them
+    # header cells that therefore rendered 12pt). Treated as body styles for a cell holding text — but a
+    # paragraph that actually HOLDS a graphic keeps its style.
+    _GRAPHIC_SPACER_STYLES = {'SpacebehindafteraGraphic', 'SpacebelowFigureTableTitle', 'TextBehindInsertedGraphic'}
 
     @classmethod
     def _restyle_cell_paragraph(cls, p, target, keep_only_jc=False):
@@ -3195,7 +3322,9 @@ class Conformer:
         if ppr_full and '<w:numPr>' in ppr_full.group(0):
             return p                                       # numbered/bulleted list item — never reclassify
         cur = re.search(r'<w:pStyle w:val="([^"]+)"', p)
-        if cur and cur.group(1) not in cls._HEADER_BODY_STYLES and cur.group(1) != target:
+        spacer_text = (cur and cur.group(1) in cls._GRAPHIC_SPACER_STYLES
+                       and not re.search(r'<w:(?:drawing|pict|object)\b', p))
+        if cur and cur.group(1) not in cls._HEADER_BODY_STYLES and cur.group(1) != target and not spacer_text:
             return p                                       # heading / other deliberate style — leave
         if keep_only_jc:
             inner = re.search(r'<w:pPr\b[^>]*>(.*?)</w:pPr>', p, re.S)
@@ -3287,7 +3416,11 @@ class Conformer:
         """Ensure the 10pt-bold 'Table Header' paragraph style exists so header cells render at the house
         10pt. A paragraph style overrides the Grid Table 4 firstRow rPr, so header cells cannot get their
         size from the table-style conditional alone. Imported once."""
-        if re.search(r'<w:style\b[^>]*w:styleId="TableHeader"', self.styles):
+        cur = re.search(r'<w:style\b[^>]*w:styleId="TableHeader".*?</w:style>', self.styles, re.S)
+        if cur:
+            # a report conformed by an earlier build carries the old bold-toggling definition — replace it
+            if cur.group(0) != self.TABLE_HEADER_STYLE and re.search(r'<w:b/>|<w:b w:val="(?:1|true|on)"/>', cur.group(0)):
+                self.styles = self.styles.replace(cur.group(0), self.TABLE_HEADER_STYLE, 1)
             return
         self.styles = self.styles.replace('</w:styles>', self.TABLE_HEADER_STYLE + '</w:styles>', 1)
         # internal prerequisite of the tables fix — not a separate ledger row (the 'tables' Skip covers it).
