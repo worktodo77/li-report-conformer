@@ -95,6 +95,7 @@ def outcome_verdicts(fresh):
         outcome = fresh.outcome_report() if hasattr(fresh, 'outcome_report') else {}
         conf = outcome.get('conformance', {})
         n_flip = len(conf.get('numbering_flips', []) or [])
+        n_pref = len(conf.get('paragraph_reference_flips', []) or [])
         n_integ = len(conf.get('definition_integrity_violations', []) or [])
         n_tblfail = len(conf.get('tables_failing_effective_format', []) or [])
         st = fresh.conformance_status()
@@ -109,7 +110,7 @@ def outcome_verdicts(fresh):
         n_info = sum(len(v) for v in st.get('informational', {}).values())
     except Exception:
         clean = None
-        n_flip = n_integ = n_tblfail = n_unres = n_rolled = n_broken = n_info = 0
+        n_flip = n_pref = n_integ = n_tblfail = n_unres = n_rolled = n_broken = n_info = 0
     _info_tail = f' ({n_info} preserved formatting note(s) — informational)' if n_info else ''
     _broken_tail = f', {n_broken} broken cross-reference(s)' if n_broken else ''
     if clean is None:
@@ -119,8 +120,9 @@ def outcome_verdicts(fresh):
         conformance_verdict = 'Clean — numbering, definitions and table formatting resolve as intended' + _info_tail
         unresolved_verdict = 'None' + _info_tail
     else:
-        conformance_verdict = (f'NOT CLEAN — {n_flip} list-meaning flip(s), {n_integ} definition-integrity '
-                               f'violation(s), {n_tblfail} table(s) failing effective format' + _broken_tail)
+        conformance_verdict = (f'NOT CLEAN — {n_flip} list-meaning flip(s), {n_pref} paragraph-reference '
+                               f'change(s), {n_integ} definition-integrity violation(s), {n_tblfail} table(s) '
+                               f'failing effective format' + _broken_tail)
         unresolved_verdict = (('None' + _info_tail) if not (n_unres or n_rolled or n_broken)
                               else f'{n_rolled} pass(es) rolled back, {n_unres} item(s) unresolved / need '
                                    f'independent review{_broken_tail}')

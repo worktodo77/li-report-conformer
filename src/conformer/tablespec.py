@@ -337,6 +337,20 @@ def effective_table_issues(tbl_xml, nsdecls=None, styles_xml=None):
                         if col and col.upper() not in _BLACK:
                             issues.append({'kind': 'header-text', 'detail': f'header cell c{ci} run colour '
                                            f'{col} is not the house black header text', 'severity': 'fail'})
+    # Only the FIRST row is treated as the header (conformed to the teal 10pt style). A table that marks a
+    # LATER row as a repeating header (a genuine multi-row header, or a spacer row 0 above the real header)
+    # is degraded to a body row on those extra header rows — the engine cannot reliably conform it, so it is
+    # reported UNRESOLVED rather than silently passing as CLEAN (GPT self-review D4).
+    extra = 0
+    for tr in rows[1:]:
+        trPr = tr.find(_w('trPr'))
+        h = trPr.find(_w('tblHeader')) if trPr is not None else None
+        if h is not None and not _disabled(h):
+            extra += 1
+    if extra:
+        issues.append({'kind': 'multi-header-row', 'detail': f'{extra} row(s) beyond the first are marked as a '
+                       'repeating header; only the first header row is conformed — review this table',
+                       'severity': 'unresolved'})
     return issues
 
 

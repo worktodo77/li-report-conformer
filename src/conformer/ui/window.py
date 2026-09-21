@@ -1315,15 +1315,29 @@ class MainWindow(QMainWindow):
             ok.setWordWrap(True)
             self.body_layout.addWidget(ok)
         else:
-            warn = QLabel(f'⚠  {len(audit)} issue(s) found — Word will renumber on open, but review these:')
-            warn.setStyleSheet('font-size: 12px; color: #b26a00; font-weight: 600;')
-            warn.setWordWrap(True)
-            self.body_layout.addWidget(warn)
-            for lvl, msg in audit:
-                row = QLabel(f'• [{lvl}] {msg}')
-                row.setStyleSheet('font-size: 11px; color: #66707a;')
-                row.setWordWrap(True)
-                self.body_layout.addWidget(row)
+            # A field refresh renumbers figure/heading/caption sequences on open, but a BROKEN cross-
+            # reference (missing target) it cannot fix — do not claim "Word will renumber" over those
+            # (GPT self-review). Split the two so the message matches the fix.
+            broken = [a for a in audit if a[0] in ('xref-broken', 'xref-target-missing')]
+            renumber = [a for a in audit if a not in broken]
+
+            def _add(items, header, colour):
+                w = QLabel(header)
+                w.setStyleSheet(f'font-size: 12px; color: {colour}; font-weight: 600;')
+                w.setWordWrap(True)
+                self.body_layout.addWidget(w)
+                for lvl, msg in items:
+                    row = QLabel(f'• [{lvl}] {msg}')
+                    row.setStyleSheet('font-size: 11px; color: #66707a;')
+                    row.setWordWrap(True)
+                    self.body_layout.addWidget(row)
+
+            if renumber:
+                _add(renumber, f'⚠  {len(renumber)} numbering issue(s) — Word will renumber these on open; review:',
+                     '#b26a00')
+            if broken:
+                _add(broken, f'⚠  {len(broken)} broken cross-reference(s) — a field refresh will NOT fix these; '
+                     'the target is missing and must be corrected manually:', '#c62828')
 
         if decisions_log:
             log_sec = QLabel(f'DECISION LOG ({len(decisions_log)})')

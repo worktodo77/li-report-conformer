@@ -23,14 +23,17 @@ A4_TEMPLATE_NAME = 'LI Report Template A4 23 July 2026.dotx'
 
 
 def report_page_size(path):
-    """Return 'A4' or 'Letter' for a .docx, from its first section's page height (A4 = 297mm ~= 16839
-    twips; US Letter = 11in = 15840 twips; the midpoint 16340 discriminates). Landscape sections are
-    de-rotated first. Defaults to Letter when the size cannot be read."""
+    """Return 'A4' or 'Letter' for a .docx by a MAJORITY vote over its sections' page heights, so one
+    stray/corrupted leading section cannot decide the whole report's template (this tool repairs corrupted
+    reports). A4 portrait is 297mm ≈ 16839 twips; only a height inside a tight A4 window counts as A4 — US
+    Letter (15840), Legal (20160), A3 (23811) and anything else fall to the SAFE default 'Letter' (the only
+    other bundled template). Landscape sections are de-rotated first; defaults to Letter when unreadable."""
     try:
         with zipfile.ZipFile(path) as z:
             doc = z.read('word/document.xml').decode('utf8', 'replace')
     except Exception:
         return 'Letter'
+    a4 = other = 0
     for tag in re.findall(r'<w:pgSz\b[^>]*/>', doc):
         wv = re.search(r'w:w="(\d+)"', tag)
         hv = re.search(r'w:h="(\d+)"', tag)
@@ -39,8 +42,11 @@ def report_page_size(path):
         w, h = int(wv.group(1)), int(hv.group(1))
         if 'w:orient="landscape"' in tag:
             w, h = h, w
-        return 'A4' if h > 16340 else 'Letter'
-    return 'Letter'
+        if 16340 < h < 17600:            # A4 height window (16839); Letter/Legal/A3/… are not A4
+            a4 += 1
+        else:
+            other += 1
+    return 'A4' if a4 > other else 'Letter'
 
 
 def select_template(input_path, assets_dir):
@@ -949,17 +955,20 @@ class Conformer:
 
     @staticmethod
     def _filter_table_rpr(inner):
-        """Filter a table run's rPr down to the properties the house style permits: keep style/bold/italic/
-        colour, and keep a DIRECT size only when it is <= 11pt (sz 22). An intentional small body font is
-        preserved so the reviewer gets the normalize-to-11pt judgment call (GPT audit F4: the clean pipeline
-        used to strip every size, so a small-font table silently became 11pt and was never offered); an
-        oversized run drops its size so Table Data's 11pt applies. The header row's size is stripped
-        separately (hr2 below), so this keep never blocks the 10pt header."""
+        """Filter a table run's rPr to the house PROPERTY POLICY (the shared keep_rpr_children set): keep
+        style/bold/italic/colour AND the meaning-bearing/review properties — super/subscript (a CO2 / m3),
+        strike, hidden, highlight — and a symbol/complex-script font, so those are never SILENTLY destroyed
+        in a table cell (GPT self-review D1). Keep a DIRECT size only when <= 11pt (sz 22): an intentional
+        small body font is preserved for the normalize-to-11pt offer (F4); an oversized run drops its size
+        so Table Data's 11pt applies. Header sizes are stripped separately, so this never blocks the 10pt
+        header. Ordinary body fonts, underline, spacing, etc. are still normalised to the style."""
         if not inner:
             return ''
         keep = []
         for t2, cx in children(inner):
-            if t2 in ('rStyle', 'b', 'bCs', 'i', 'iCs', 'color'):
+            if t2 == 'color' or t2 in KEEP_RPR:
+                keep.append(cx)
+            elif t2 == 'rFonts' and _keep_rfonts(cx):
                 keep.append(cx)
             elif t2 in ('sz', 'szCs'):
                 m = re.search(r'w:val="(\d+)"', cx)
@@ -1003,7 +1012,21 @@ class Conformer:
         for i in range(self.n()):
             x = self.item(i)
             if not x.startswith('<w:tbl'): continue
-            x = re.sub(r'<w:tblBorders>.*?</w:tblBorders>|<w:tcBorders>.*?</w:tcBorders>|<w:shd [^>]*/>', '', x, flags=re.S)
+            # A nested table (a <w:tbl> ELEMENT inside a cell) is left untouched and flagged — flat regexes
+            # cannot safely edit it, and summing its gridCols corrupts the outer width. Parity with the
+            # preserving path (GPT self-review D3).
+            if len(re.findall(r'<w:tbl[ >]', x)) > 1:
+                self._table_notes.append(f'{self._locator(i)}: nested table left untouched for independent review')
+                continue
+            # Strip direct borders (they fight the Grid Table 4 grid). Strip a direct cell FILL only in the
+            # HEADER row so the house teal shows; a BODY fill (e.g. a subtotal-row highlight) is meaningful
+            # and kept — parity with the preserving path, which flags body shading for review (self-review D2).
+            x = re.sub(r'<w:tblBorders>.*?</w:tblBorders>|<w:tcBorders>.*?</w:tcBorders>', '', x, flags=re.S)
+            _fr = re.search(r'<w:tr\b.*?</w:tr>', x, re.S)
+            if _fr:
+                _nfr = re.sub(r'<w:shd [^>]*/>', '', _fr.group(0))
+                if _nfr != _fr.group(0):
+                    x = x.replace(_fr.group(0), _nfr, 1)
             if '<w:tblStyle' not in x: x = x.replace('<w:tblPr>', '<w:tblPr><w:tblStyle w:val="GridTable4"/>', 1)
             else: x = re.sub(r'<w:tblStyle w:val="[^"]+"/>', '<w:tblStyle w:val="GridTable4"/>', x)
             x = re.sub(r'<w:tblLook [^>]*/>', '<w:tblLook w:val="04A0" w:firstRow="1" w:lastRow="0" w:firstColumn="0" w:lastColumn="0" w:noHBand="0" w:noVBand="1"/>', x)
@@ -1335,9 +1358,14 @@ class Conformer:
         included as read-only CONTEXT so it still protects adjacent settled text (a quote/range prefix in an
         insertion), but never itself edited (revision payloads stay byte-exact); deleted text (<w:delText>,
         and any run inside <w:del>) is not part of the current reading, so it is excluded entirely (GPT
-        re-review T1). Returns [(inner_start, inner_end, text, editable), …] in document order."""
+        re-review T1). A tracked MOVE is handled the same way: <w:moveTo> (the current, moved-in text) is
+        read-only context like <w:ins> — editing it would trip the gate and roll back the WHOLE pass — and
+        <w:moveFrom> (the moved-out old location) is excluded like <w:del> so its trailing words never poison
+        context (GPT self-review). Returns [(inner_start, inner_end, text, editable), …] in document order."""
         ins_spans = [(m.start(), m.end()) for m in re.finditer(r'<w:ins\b.*?</w:ins>', xml, re.S)]
+        ins_spans += [(m.start(), m.end()) for m in re.finditer(r'<w:moveTo\b.*?</w:moveTo>', xml, re.S)]
         del_spans = [(m.start(), m.end()) for m in re.finditer(r'<w:del\b(?![a-zA-Z]).*?</w:del>', xml, re.S)]
+        del_spans += [(m.start(), m.end()) for m in re.finditer(r'<w:moveFrom\b(?![a-zA-Z]).*?</w:moveFrom>', xml, re.S)]
         toks = []
         for m in re.finditer(r'<w:t(?: [^>]*)?>([^<]*)</w:t>', xml):
             s = m.start()
@@ -1348,14 +1376,12 @@ class Conformer:
         return toks
 
     @staticmethod
-    def _typography_paragraph(xml):
-        """Apply typo_text over the paragraph's LOGICAL text so quotation protection and from/between range
-        context hold across run boundaries AND across tracked insertions (GPT re-review S1/T1). Inserted
-        text contributes to context but is never edited; each SETTLED run is changed only when the change is
-        contained within that run AND the per-token gate authorizes it (fold on quote direction), so the
-        transformer and the preservation gate always agree — an edit the gate could not justify (e.g. a
-        sentence space that depends on a preceding run) is simply not made, never a whole-pass rollback
-        (T2)."""
+    def _transform_paragraph(xml, transform, authorize):
+        """Apply a per-string text `transform` over the paragraph's LOGICAL text (settled runs + read-only
+        revision CONTEXT), then map edits back to the SETTLED runs — each applied only when it is contained
+        in one run AND accepted by `authorize(old_run, new_run)` (the same predicate the content gate uses).
+        Shared by typography and house_style so BOTH honour quotation/context spans across run boundaries and
+        tracked insertions, and neither can make an edit the gate would reject (no whole-pass rollback)."""
         toks = Conformer._para_text_tokens(xml)
         if not any(t[3] for t in toks):
             return xml
@@ -1363,15 +1389,14 @@ class Conformer:
         # (SequenceMatcher on a long single run is orders of magnitude slower — GPT re-review perf note).
         if len(toks) == 1:
             s0, e0, seg, _ed = toks[0]
-            new = typo_text(seg)
+            new = transform(seg)
             return xml if new == seg else xml[:s0] + new + xml[e0:]
         segs = [t[2] for t in toks]
         editable = [t[3] for t in toks]
         full = ''.join(segs)
-        new_full = typo_text(full)
+        new_full = transform(full)
         if new_full == full:
             return xml
-        authorize = lambda old, new: Conformer._qfold(typo_text(old)) == Conformer._qfold(new)
         new_segs = Conformer._backmap_typo(segs, full, new_full, editable=editable, authorize=authorize)
         if new_segs == segs:
             return xml
@@ -1380,6 +1405,13 @@ class Conformer:
             out.append(xml[last:s0]); out.append(ns); last = e0
         out.append(xml[last:])
         return ''.join(out)
+
+    @staticmethod
+    def _typography_paragraph(xml):
+        """Typography over paragraph-logical text: quotation protection and from/between range context hold
+        across run boundaries AND across tracked insertions (S1/T1). The gate folds smart-quote direction."""
+        authorize = lambda old, new: Conformer._qfold(typo_text(old)) == Conformer._qfold(new)
+        return Conformer._transform_paragraph(xml, typo_text, authorize)
 
     @staticmethod
     def _backmap_typo(segs, full, new_full, editable=None, authorize=None):
@@ -1445,8 +1477,11 @@ class Conformer:
     def house_style(self):
         """LI house style (deterministic subset of docs/LI_STYLE_GUIDE.md): capitalization,
         terminology, and American spelling on LI prose. Skips block quotes, captions, headings, and
-        title/front-matter styles; in preserve mode revision content is masked and the change is
-        authorized by the content-stream gate via house_ok (only house-style variation permitted)."""
+        title/front-matter styles. Runs over paragraph-LOGICAL text (the same revision-aware model as
+        typography) so a quoted defined-term SPLIT across runs is not silently lowercased (GPT self-review):
+        inserted/moved-in text is read-only context, deleted/moved-out text is excluded, and each settled
+        run's edit is applied only when house_ok authorizes it — the content-stream gate predicate."""
+        authorize = lambda old, new: house_ok(old, new)
         n = 0
         for i in range(self.n()):
             if not self.is_par(i):
@@ -1455,10 +1490,7 @@ class Conformer:
             if st in self._HOUSE_SKIP_STYLES or st in HEADINGS:
                 continue
             x = self.item(i)
-            masked, masks = self._mask_revisions(x) if self.disposition == 'preserve' else (x, {})
-            nx = re.sub(r'(<w:t(?: xml:space="preserve")?>)([^<]*)(</w:t>)',
-                        lambda m: m.group(1) + self._house_edit(m.group(2)) + m.group(3), masked)
-            nx = self._unmask(nx, masks)
+            nx = self._transform_paragraph(x, self._house_edit, authorize)
             if nx != x and self._apply_text_edit('house', 'House style', i, x, nx):
                 n += 1
         if n:
@@ -1476,9 +1508,16 @@ class Conformer:
         while j < self.n() and self.style(j) != 'Heading1': j += 1
         k = j - 1
         while k > start and not self.is_par(k): k -= 1
-        land = re.sub(r'<w:sectPr\b[^>]*>', '<w:sectPr>', re.search(r'<w:sectPr\b.*?</w:sectPr>', final, re.S).group(0), 1)
-        x = self.item(k); x = x.replace('</w:pPr>', land + '</w:pPr>', 1) if '<w:pPr>' in x else x.replace('<w:p>', '<w:p><w:pPr>' + land + '</w:pPr>', 1)
-        self.set(k, x)
+        land = re.sub(r'<w:sectPr\b[^>]*>', '<w:sectPr>', re.search(r'<w:sectPr\b.*?</w:sectPr>', final, re.S).group(0), count=1)
+        if k <= start:
+            # No landscape-CONTENT paragraph exists between the prior section break and the next heading, so
+            # there is no paragraph to host the landscape section without writing a SECOND <w:sectPr> into the
+            # paragraph that already ends the prior section (invalid OOXML — at most one sectPr per pPr).
+            # Insert a fresh section-break paragraph instead (adversarial self-review).
+            self.items.insert(self.b0 + start + 1, '<w:p><w:pPr>' + land + '</w:pPr></w:p>')
+        else:
+            x = self.item(k); x = x.replace('</w:pPr>', land + '</w:pPr>', 1) if '<w:pPr>' in x else x.replace('<w:p>', '<w:p><w:pPr>' + land + '</w:pPr>', 1)
+            self.set(k, x)
         # Derive the portrait page size from THIS section's OWN landscape dimensions (swap so height >=
         # width and drop the landscape orient) — an A4 report stays A4, a Letter report stays Letter; do
         # NOT hard-code Letter (GPT re-review R7). Portrait margins come from the report's own prior portrait

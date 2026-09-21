@@ -76,6 +76,15 @@ def test_read_error_is_unverified(monkeypatch):
     assert not r.passed
 
 
+def test_all_pageref_collapsed_small_n_fails(monkeypatch):
+    # GPT self-review: 2 of 2 PAGEREF fields rendering "1" (100% collapsed) was silently passed by the
+    # max(3, ...) floor; a wholly-collapsed set must fail regardless of N.
+    r = _verify(monkeypatch, _data([], fields={'updated': True, 'update_ok': True,
+                                               'pageref_total': 2, 'pageref_showing_1': 2}))
+    assert any(d['kind'] == 'toc-page-1' for d in r.fails)
+    assert not r.passed
+
+
 def test_ref_error_counts(monkeypatch):
     r = _verify(monkeypatch, _data([], fields={'updated': True, 'update_ok': True,
                                                'pageref_total': 5, 'pageref_showing_1': 0,

@@ -45,6 +45,23 @@ def test_r7_a4_landscape_section_returns_to_a4_portrait_not_letter():
     assert 'orient="landscape"' in c.items[2]
 
 
+def test_no_duplicate_sectpr_when_no_landscape_content_between():
+    """GPT self-review: when the next Heading1 immediately follows the prior section break (no landscape
+    content paragraph between them), the repair used to write a SECOND <w:sectPr> into the paragraph that
+    already ends the prior section — invalid OOXML. It now hosts the landscape break on a fresh paragraph."""
+    items = [
+        '<w:p><w:pPr><w:pStyle w:val="Heading1"/></w:pPr><w:r><w:t>INTRO</w:t></w:r></w:p>',
+        f'<w:p><w:pPr>{_A4_PORTRAIT_SECT}</w:pPr><w:r><w:t>ends portrait</w:t></w:r></w:p>',
+        '<w:p><w:pPr><w:pStyle w:val="Heading1"/></w:pPr><w:r><w:t>NEXT</w:t></w:r></w:p>',   # no landscape para
+        '<w:p><w:r><w:t>after</w:t></w:r></w:p>',
+        _A4_LANDSCAPE_SECT,
+    ]
+    c = _conformer(items)
+    c.fix_sections()
+    for it in c.items:
+        assert it.count('<w:sectPr') <= 1, it            # never two sectPr in one paragraph
+
+
 def test_r7_letter_report_still_returns_to_letter():
     letter_land = ('<w:sectPr><w:pgSz w:w="15840" w:h="12240" w:orient="landscape" w:code="9"/>'
                    '<w:pgMar w:top="1080" w:right="1440" w:bottom="1080" w:left="1440" '

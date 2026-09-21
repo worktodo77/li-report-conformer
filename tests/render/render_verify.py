@@ -275,7 +275,10 @@ def verify(docx_path, update_fields=False, timeout=1800):
     if fields.get('updated') and fields.get('update_ok') is False:
         rep.add('unverified', 'field-update-failed', 'a field/TOC update threw — PAGEREF/REF results below are unverified')
     pr, pr1, prb = fields.get('pageref_total', 0), fields.get('pageref_showing_1', 0), fields.get('pageref_blank', 0)
-    if pr and pr1 and pr1 >= max(3, pr // 2):
+    # A wholly-collapsed set (every PAGEREF renders "1") is the exact wrong-render this check names, so it
+    # fails regardless of N — the max(3, …) floor alone let a small (<=2 field) TOC collapse silently pass
+    # (GPT self-review).
+    if pr and pr1 and (pr1 == pr or pr1 >= max(3, pr // 2)):
         rep.add('fail', 'toc-page-1', f'{pr1} of {pr} PAGEREF fields render page "1" — TOC/List of Tables collapsed to page 1'
                 + ('' if fields.get('updated') else ' (fields NOT updated; rerun with --fields to confirm live)'))
     if prb:

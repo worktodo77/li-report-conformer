@@ -107,6 +107,139 @@ def _combined_text(c):
     return ''.join(re.findall(r'<w:t[^>]*>([^<]*)</w:t>', ''.join(c.items)))
 
 
+def _tbl(*rows):
+    return ('<w:tbl><w:tblPr><w:tblStyle w:val="TableGrid"/><w:tblW w:w="5000" w:type="dxa"/>'
+            '<w:tblLook w:val="04A0"/></w:tblPr><w:tblGrid><w:gridCol w:w="5000"/></w:tblGrid>'
+            + ''.join(rows) + '</w:tbl>')
+
+
+def _row(cell_inner, tcpr='<w:tcPr/>'):
+    return f'<w:tr><w:tc>{tcpr}<w:p><w:pPr><w:pStyle w:val="TableData"/></w:pPr>{cell_inner}</w:p></w:tc></w:tr>'
+
+
+def test_d1_table_run_keeps_meaning_bearing_formatting(tmp_path):
+    """GPT self-review D1: a table cell's subscript / symbol font must NOT be silently destroyed (CO2, a
+    Symbol glyph) — the run filter kept only style/bold/italic/colour/size and dropped everything else,
+    reporting CLEAN. Now it keeps the shared meaning-bearing set."""
+    body = _row('<w:r><w:t>CO</w:t></w:r>'
+                '<w:r><w:rPr><w:vertAlign w:val="subscript"/></w:rPr><w:t>2</w:t></w:r>'
+                '<w:r><w:rPr><w:rFonts w:ascii="Symbol" w:hAnsi="Symbol"/></w:rPr><w:t>a</w:t></w:r>')
+    src, tpl = _package(tmp_path, _HEADING + _tbl(_row('<w:r><w:t>Head</w:t></w:r>'), body))
+    c = Conformer(tpl, src); c.run()
+    out = ''.join(c.items)
+    assert '<w:vertAlign w:val="subscript"/>' in out       # subscript preserved
+    assert 'w:ascii="Symbol"' in out                        # symbol font preserved (the glyph)
+
+
+def test_d2_clean_path_keeps_body_fill_strips_header_fill(tmp_path):
+    """GPT self-review D2: the clean path wiped EVERY <w:shd>, deleting a meaningful subtotal-row fill. It
+    now strips only the header row's fill (so the house teal shows) and keeps body shading."""
+    hdr = ('<w:tr><w:tc><w:tcPr><w:shd w:val="clear" w:fill="BDD6EE"/></w:tcPr>'
+           '<w:p><w:pPr><w:pStyle w:val="TableData"/></w:pPr><w:r><w:t>Head</w:t></w:r></w:p></w:tc></w:tr>')
+    body = _row('<w:r><w:t>subtotal</w:t></w:r>', tcpr='<w:tcPr><w:shd w:val="clear" w:fill="D9D9D9"/></w:tcPr>')
+    src, tpl = _package(tmp_path, _HEADING + _tbl(hdr, body))     # no revision -> clean pipeline
+    c = Conformer(tpl, src); c.run()
+    out = ''.join(c.items)
+    assert 'D9D9D9' in out                                  # body subtotal fill kept
+    assert 'BDD6EE' not in out                              # non-house header fill stripped
+
+
+def test_d3_clean_path_leaves_nested_table_untouched(tmp_path):
+    """GPT self-review D3: the clean path had no nested-table guard — it restyled the nested table and
+    summed its gridCols into the outer width. It must leave a nested table untouched and flag it."""
+    inner = ('<w:tbl><w:tblPr><w:tblStyle w:val="Plain"/><w:tblW w:w="2000" w:type="dxa"/></w:tblPr>'
+             '<w:tblGrid><w:gridCol w:w="2000"/></w:tblGrid>'
+             '<w:tr><w:tc><w:tcPr/><w:p><w:r><w:t>inner</w:t></w:r></w:p></w:tc></w:tr></w:tbl>')
+    outer = ('<w:tbl><w:tblPr><w:tblStyle w:val="Plain"/><w:tblW w:w="5000" w:type="dxa"/></w:tblPr>'
+             '<w:tblGrid><w:gridCol w:w="5000"/></w:tblGrid>'
+             f'<w:tr><w:tc><w:tcPr/><w:p><w:r><w:t>outer</w:t></w:r></w:p>{inner}</w:tc></w:tr></w:tbl>')
+    src, tpl = _package(tmp_path, _HEADING + outer)
+    c = Conformer(tpl, src); c.run()
+    assert any('nested table' in n for n in c._table_notes)
+    assert '<w:tblStyle w:val="GridTable4"/>' not in ''.join(c.items)   # nothing restyled
+
+
+def test_typ1_house_style_preserves_split_run_quotation(tmp_path):
+    """GPT self-review: house_style ran per-run, so a quoted defined-term split across runs got lowercased
+    (verbatim evidence corrupted) while the verdict stayed CLEAN. Paragraph-logical house_style keeps it."""
+    body = ('<w:p><w:pPr><w:pStyle w:val="BodyText"/></w:pPr>'
+            '<w:r><w:t xml:space="preserve">The tribunal held that "</w:t></w:r>'
+            '<w:r><w:t>the Contractor breached</w:t></w:r>'
+            '<w:r><w:t>" here.</w:t></w:r></w:p>' + _FMT_REV)
+    src, tpl = _package(tmp_path, _HEADING + body)
+    c = Conformer(tpl, src); c.run()
+    assert 'the Contractor breached' in _combined_text(c)    # quoted term preserved verbatim
+    clean, disc = c.verify_preservation()
+    assert clean, disc
+
+
+def test_typ2_moveto_does_not_roll_back_typography(tmp_path):
+    """GPT self-review: a <w:moveTo> was treated as editable, so editing its payload tripped the gate and
+    rolled back the WHOLE typography pass. It is now read-only context; unrelated typography survives."""
+    body = ('<w:p><w:pPr><w:pStyle w:val="BodyText"/></w:pPr>'
+            '<w:r><w:t xml:space="preserve">She said "hello" today.</w:t></w:r></w:p>'
+            '<w:moveToRangeStart w:id="20" w:author="R" w:name="m1"/>'
+            '<w:p><w:pPr><w:pStyle w:val="BodyText"/></w:pPr>'
+            '<w:moveTo w:id="21" w:author="R" w:date="2026-01-01T00:00:00Z">'
+            '<w:r><w:t xml:space="preserve">He said "yes" now</w:t></w:r></w:moveTo></w:p>'
+            '<w:moveToRangeEnd w:id="20"/>' + _FMT_REV)
+    src, tpl = _package(tmp_path, _HEADING + body)
+    c = Conformer(tpl, src); c.run()
+    assert '“' in _combined_text(c)                     # the innocent paragraph got smart quotes
+    assert not any(name == 'typography' for name, _ in getattr(c, 'exceptions', []))
+
+
+def test_typ3_movefrom_excluded_from_range_context(tmp_path):
+    """GPT self-review: <w:moveFrom> (moved-out old text) was included in context, so its trailing 'from '
+    suppressed a legitimate en dash on adjacent settled text. It is now excluded like deleted text."""
+    body = ('<w:p><w:pPr><w:pStyle w:val="BodyText"/></w:pPr>'
+            '<w:r><w:t xml:space="preserve">Compare </w:t></w:r>'
+            '<w:moveFromRangeStart w:id="30" w:author="R" w:name="m2"/>'
+            '<w:moveFrom w:id="31" w:author="R" w:date="2026-01-01T00:00:00Z">'
+            '<w:r><w:t xml:space="preserve">from </w:t></w:r></w:moveFrom>'
+            '<w:moveFromRangeEnd w:id="30"/>'
+            '<w:r><w:t xml:space="preserve">2017-2019 fully.</w:t></w:r></w:p>' + _FMT_REV)
+    src, tpl = _package(tmp_path, _HEADING + body)
+    c = Conformer(tpl, src); c.run()
+    assert '2017–2019' in _combined_text(c)             # en dash applied (moveFrom 'from' not counted)
+
+
+def test_d4_multi_header_row_table_is_unresolved():
+    """GPT self-review D4: a table that marks a LATER row as a repeating header (multi-row / spacer-led
+    header) is only partly conformed (rows past the first degrade to body), so it must be reported
+    UNRESOLVED, not silently CLEAN."""
+    from conformer import tablespec
+    hdr = ('<w:tr><w:trPr><w:tblHeader/></w:trPr><w:tc><w:tcPr>'
+           '<w:shd w:val="clear" w:fill="B6DDE8"/></w:tcPr>'
+           '<w:p><w:pPr><w:pStyle w:val="TableHeader"/></w:pPr><w:r><w:t>{}</w:t></w:r></w:p></w:tc></w:tr>')
+    tbl = ('<w:tbl><w:tblPr><w:tblStyle w:val="GridTable4"/>'
+           '<w:tblLook w:val="04A0" w:firstRow="1"/></w:tblPr>'
+           + hdr.format('H1') + hdr.format('H2')                 # TWO repeating-header rows
+           + '<w:tr><w:tc><w:tcPr/><w:p><w:r><w:t>data</w:t></w:r></w:p></w:tc></w:tr></w:tbl>')
+    issues = tablespec.effective_table_issues(tbl)
+    assert any(i['kind'] == 'multi-header-row' and i['severity'] == 'unresolved' for i in issues)
+    assert not tablespec.table_conformant(tbl)                   # unresolved -> not conformant (not CLEAN)
+
+
+def test_v2_export_verdict_counts_paragraph_reference_flips():
+    from conformer import audit_export as ax
+
+    class _F:
+        def outcome_report(self):
+            return {'conformance': {'paragraph_reference_flips': [{'text': 'see paragraph 4.2'}]}}
+        def conformance_status(self):
+            return {'clean': False, 'blocking': True, 'informational': {},
+                    'reasons': {'numbering_flips': [], 'definition_integrity_violations': [],
+                                'tables_failing_effective_format': [], 'tables_needing_review': [],
+                                'tables_unresolved': [], 'unresolved_imports': [],
+                                'paragraph_reference_unresolved': [], 'rolled_back_passes': [],
+                                'broken_references': []}}
+
+    conf_v, _u, clean = ax.outcome_verdicts(_F())
+    assert clean is False
+    assert '1 paragraph-reference change' in conf_v          # the blocking cause is now visible
+
+
 def test_t1_quote_prefix_inside_insertion_protects_settled_date(tmp_path):
     """GPT re-review T1: an opening quote inside a tracked INSERTION must still protect the adjacent
     SETTLED date — the insertion is read-only context, not erased. The quoted date stays verbatim; the
