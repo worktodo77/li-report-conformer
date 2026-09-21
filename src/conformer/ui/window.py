@@ -554,7 +554,9 @@ class ChecklistView(QFrame):
 class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle('LI Report Conformer')
+        from conformer.buildinfo import short_build_id
+        # show the build id in the title so a tester's screenshot always identifies which build they ran
+        self.setWindowTitle(f'LI Report Conformer · build {short_build_id()}')
         _icon = QIcon(_asset('LI icon.png'))
         if not _icon.isNull():
             self.setWindowIcon(_icon)

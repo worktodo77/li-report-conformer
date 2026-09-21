@@ -5,6 +5,12 @@ records following the agreed schema; `write_csv` / `write_xlsx` / `write_docx` r
 is derived from what actually ran, so the log reflects the real output, not intentions."""
 import os, csv, hashlib, datetime
 
+try:
+    from conformer.buildinfo import build_id as _build_id
+except Exception:                                    # never let build-id lookup break an export
+    def _build_id():
+        return 'unknown'
+
 # category key -> (change type, element, basis/rule) for the skippable/structural conformance passes.
 _CAT_META = {
     'styles-repair': ('Repair corrupt style definition', 'Style definition', 'Template style repair'),
@@ -223,6 +229,7 @@ def build_records(fresh, source_path, output_path, decisions_log=None,
         'output_name': os.path.basename(output_path),
         'output_sha256': output_sha or _sha256(output_path),
         'template': os.path.basename(getattr(fresh, 'template_path', '') or ''),
+        'app_build': _build_id(),                # the app build (git SHA) that produced this output
         'run_at': datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
         'mode': 'Review-preserving' if preserve else 'Clean conform',
         'review_copy_label': getattr(fresh, 'REVIEW_COPY_LABEL', '') if preserve else '',

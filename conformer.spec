@@ -8,6 +8,25 @@ from PyInstaller.utils.hooks import collect_data_files, collect_submodules
 
 block_cipher = None
 
+# --- build stamp: bake the git commit (and UTC build time) into a data file so every build, and every
+# conformed document's audit, self-identifies. No more guessing which commit an .exe/.app came from. ---
+import subprocess as _sp
+import tempfile as _tf
+import datetime as _dt
+def _write_build_stamp():
+    try:
+        _sha = _sp.check_output(['git', 'rev-parse', '--short', 'HEAD']).decode().strip()
+        _dirty = _sp.check_output(['git', 'status', '--porcelain']).decode().strip()
+        _sha += '-dirty' if _dirty else ''
+    except Exception:
+        _sha = 'unknown'
+    _dir = _tf.mkdtemp(prefix='li_build_stamp_')
+    _p = os.path.join(_dir, 'BUILD_STAMP.txt')
+    with open(_p, 'w', encoding='utf-8') as _f:
+        _f.write(f"{_sha}  built {_dt.datetime.utcnow().strftime('%Y-%m-%d %H:%M UTC')}")
+    return _p
+_BUILD_STAMP = _write_build_stamp()
+
 # python-docx ships a default .docx template it needs at runtime; openpyxl + docx have lazily-imported
 # submodules PyInstaller's static analysis misses. Collect them so the audit-log export works frozen.
 _export_datas = collect_data_files('docx')
@@ -38,6 +57,7 @@ a = Analysis(
         ('src/conformer/assets/LI icon.png', 'conformer/assets'),
         ('src/conformer/assets/LI logo.png', 'conformer/assets'),
         ('src/conformer/ui/styles.qss', 'conformer/ui'),
+        (_BUILD_STAMP, 'conformer/assets'),                           # git SHA + build time (build stamp)
     ] + _qt_plugins + _export_datas,
     hiddenimports=[
         'conformer',
@@ -50,6 +70,7 @@ a = Analysis(
         'conformer.audit_export',
         'conformer.numbering',
         'conformer.tablespec',
+        'conformer.buildinfo',
     ] + _export_hidden,
     hookspath=[],
     hooksconfig={},
